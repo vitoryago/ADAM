@@ -1,0 +1,40 @@
+# Core AI/ML
+langchain==0.1.1
+langchain-community==0.0.13
+ollama==0.1.4
+chromadb==0.4.22
+openai==1.6.1  # For vision capabilities when needed
+
+# Voice capabilities
+openai-whisper==20231117
+pyttsx3==2.90
+SpeechRecognition==3.10.1
+pyaudio==0.2.14
+
+# Data tools
+pandas==2.1.4
+sqlalchemy==2.0.25
+dbt-core==1.7.4
+sqlparse==0.4.4
+psycopg2-binary==2.9.9  # PostgreSQL
+
+# Utilities
+python-dotenv==1.0.0
+pydantic==2.5.3
+pyyaml==6.0.1
+rich==13.7.0  # Beautiful terminal output
+click==8.1.7  # CLI tools
+
+# Web interface
+streamlit==1.29.0
+gradio==4.13.0  # Alternative to Streamlit
+
+# Development
+pytest==7.4.4
+black==23.12.1
+ruff==0.1.9
+ipykernel==6.28.0  # For Jupyter notebooks
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.5.3
