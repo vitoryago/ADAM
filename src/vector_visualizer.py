@@ -127,10 +127,15 @@ class VectorVisualizer:
         the high-dimensional and low-dimensional probability distributions
         of point neighborhoods.
         """
-        console.print(f"\n[yellow]Running t-SNE reduction (perplexity={perplexity})...[/yellow]")
-        console.print("[dim]t-SNE focuses on preserving local neighborhoods[/dim]")
+        # Adjust perplexity to be valid for the number of samples
+        n_samples = embeddings.shape[0]
+        perplexity = min(perplexity, n_samples - 1)
         
-        tsne = TSNE(n_components=2, perplexity=min(15, len(embeddings)-1), random_state=42)
+        console.print(f"\n[yellow]Running t-SNE reduction (perplexity={perplexity})...[/yellow]")
+        console.print(f"[dim]t-SNE focuses on preserving local neighborhoods[/dim]")
+        console.print(f"[dim]Adjusted perplexity to {perplexity} for {n_samples} samples[/dim]")
+        
+        tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42)
         embeddings_2d = tsne.fit_transform(embeddings)
         
         return embeddings_2d
@@ -188,12 +193,12 @@ class VectorVisualizer:
         # Create legend elements with proper color mapping
         unique_labels = list(dict.fromkeys(labels))  # Preserves order unlike set()
         legend_elements = [Patch(facecolor=color_map[label], label=label) 
-                        for label in unique_labels]
+                          for label in unique_labels]
         plt.legend(handles=legend_elements, loc='best')
         
         plt.tight_layout()
         return plt
-
+    
     def analyze_clusters(self, embeddings_2d, labels):
         """
         Analyze how well different text types clustered together
