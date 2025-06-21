@@ -374,7 +374,7 @@ class ADAMMemoryAdvanced:
             n_results=n_results * 2  # Get more candidates for filtering
         )
         
-        if not results['documents'][0]:
+        if not results['documents'] or not results['documents'][0]:
             self.access_patterns["memory_misses"] += 1
             self._save_metadata()
             return []
