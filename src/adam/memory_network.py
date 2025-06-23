@@ -428,6 +428,18 @@ class MemoryNetworkSystem:
             self.threads[thread_id] = thread
             # Index it by topic for fast lookup
             self.topic_to_threads[primary_topic].append(thread_id)
+
+        # Compute evolution summary for this thread
+        thread_memories = [
+            self.memory_graph.nodes[mid]['data']
+            for mid in thread.memory_ids
+            if self.memory_graph.has_node(mid)
+        ]
+        thread_memories.sort(key=lambda m: m.timestamp, reverse=True)
+        thread.evolution_summary = self._trace_topic_evolution(thread_memories)
+
+        # Persist updated thread state
+        self._save_network()
     
     def get_memory_context_chain(self, memory_id: str, 
                                max_depth: int = 5) -> List[MemoryNode]:
@@ -533,6 +545,7 @@ class MemoryNetworkSystem:
             'last_updated': latest_thread.last_updated,
             # Trace how the problem evolved over time
             'evolution': self._trace_topic_evolution(thread_memories),
+            'evolution_summary': latest_thread.evolution_summary,
             # Extract the most important learnings
             'key_insights': self._extract_key_insights(thread_memories),
             # Find what's still not resolved
