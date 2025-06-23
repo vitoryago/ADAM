@@ -135,25 +135,32 @@ class MemoryNetworkSystem:
         # Load any previously saved network
         self._load_network()
     
-    def add_memory_with_references(self, 
-                                  query: str, 
+    def add_memory_with_references(self,
+                                  query: str,
                                   response: str,
                                   memory_type: str,
                                   topics: List[str],
-                                  potential_references: Optional[List[str]] = None) -> str:
+                                  potential_references: Optional[List[str]] = None,
+                                  *,
+                                  auto_save: bool = True) -> str:
         """
-        Add a new memory and automatically find and link related memories
+        Add a new memory and automatically find and link related memories.
 
         This is like adding a new research paper that cites previous work -
-        we need to find what existing knowledge this builds upon.
+        we need to find what existing knowledge this builds upon.  After the
+        new memory is inserted into the network, the current state of the
+        network is automatically persisted to disk so it is available on the
+        next load.  The auto-save behavior can be disabled when performing
+        bulk updates by passing ``auto_save=False``.
 
         Args:
             query: The question/problem
             response: ADAM's answer/solution
             memory_type: Classification (error_solution, explanation, etc.)
             topics: List of topics this memory covers
-            potential_references: Optional list of memory IDS to reference
-                                  If None, we'll find them automatically
+            potential_references: Optional list of memory IDs to reference.
+                                  If ``None``, we'll find them automatically.
+            auto_save: Persist the network to disk after adding the memory.
 
         Returns:
             memory_id: The ID of the newly created memory
@@ -219,7 +226,10 @@ class MemoryNetworkSystem:
         
         # Update or the conversation thread for this topic
         self._update_conversation_thread(memory_node)
-        
+
+        if auto_save:
+            self._save_network()
+
         return memory_id
     
     def _find_related_memories(self, query: str, topics: List[str], 
