@@ -616,8 +616,8 @@ class MemoryNetworkSystem:
         # Simple heuristic: questions without successful follow-ups
         for i, mem in enumerate(memories):
             if "?" in mem.query and i > 0:  # It's a question
-                # Check if the next memory indicates resolution
-                next_memories = memories[:i]  # Memories after this one
+                # Check if any later memory indicates resolution
+                next_memories = memories[i+1:]  # Later memories
                 resolved = any(
                     "work" in m.query.lower() or 
                     "success" in m.response.lower() or
