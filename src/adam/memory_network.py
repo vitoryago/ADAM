@@ -435,7 +435,8 @@ class MemoryNetworkSystem:
             for mid in thread.memory_ids
             if self.memory_graph.has_node(mid)
         ]
-        thread_memories.sort(key=lambda m: m.timestamp, reverse=True)
+        # Sort memories chronologically for a coherent evolution trace
+        thread_memories.sort(key=lambda m: m.timestamp)
         thread.evolution_summary = self._trace_topic_evolution(thread_memories)
 
         # Persist updated thread state
@@ -533,8 +534,11 @@ class MemoryNetworkSystem:
             if self.memory_graph.has_node(mem_id):
                 thread_memories.append(self.memory_graph.nodes[mem_id]['data'])
         
-        # Sort by timestamp (newest first)
+        # Sort by timestamp (newest first) for the memory chain
         thread_memories.sort(key=lambda m: m.timestamp, reverse=True)
+
+        # Prepare memories in chronological order for evolution tracing
+        chronological = list(reversed(thread_memories))
         
         # Build summary
         summary = {
@@ -544,7 +548,7 @@ class MemoryNetworkSystem:
             'total_memories': len(thread_memories),
             'last_updated': latest_thread.last_updated,
             # Trace how the problem evolved over time
-            'evolution': self._trace_topic_evolution(thread_memories),
+            'evolution': self._trace_topic_evolution(chronological),
             'evolution_summary': latest_thread.evolution_summary,
             # Extract the most important learnings
             'key_insights': self._extract_key_insights(thread_memories),
