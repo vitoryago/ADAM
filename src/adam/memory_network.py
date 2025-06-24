@@ -829,40 +829,91 @@ class MemoryNetworkSystem:
         """
         Load the memory network from disk
         
-        This restores ADAM's knowledge graph from previous sessions.
+        This restores ADAM's knowledge graph from previous sessions,
+        allowing him to remember everything he's learned.
         """
         # Check if saved network exists
         graph_file = self.network_path / "memory_graph.gpickle"
+        
         if graph_file.exists():
-            # Load the graph structure
-            self.memory_graph = nx.read_gpickle(graph_file)
-            
-            # Load indices
-            indices_file = self.network_path / "indices.json"
-            if indices_file.exists():
+            try:
+                # Load the graph structure
+                self.memory_graph = nx.read_gpickle(graph_file)
+                console.print(f"[green]Loaded memory graph with {len(self.memory_graph.nodes)} memories[/green]")
+                
+                # Rebuild our reference tracking from the graph
+                # This is necessary because referenced_by lists aren't persisted in the edge data
+                for node_id in self.memory_graph.nodes():
+                    node_data = self.memory_graph.nodes[node_id]['data']
+                    # Clear and rebuild referenced_by lists
+                    node_data.referenced_by = []
+                
+                # Now populate referenced_by based on edges
+                for source, target in self.memory_graph.edges():
+                    # If source references target, then target is referenced by source
+                    target_node = self.memory_graph.nodes[target]['data']
+                    target_node.referenced_by.append(source)
+            except Exception as e:
+                console.print(f"[red]Error loading graph: {e}[/red]")
+                self.memory_graph = nx.DiGraph()
+        
+        # Load indices
+        indices_file = self.network_path / "indices.json"
+        if indices_file.exists():
+            try:
                 with open(indices_file, 'r') as f:
                     indices_data = json.load(f)
-                    # Convert lists back to sets
+                    # Convert lists back to sets for efficient lookups
                     self.topic_to_memories = {
-                        k: set(v) for k, v in indices_data['topic_to_memories'].items()
+                        k: set(v) for k, v in indices_data.get('topic_to_memories', {}).items()
                     }
-                    self.topic_to_threads = defaultdict(list, indices_data['topic_to_threads'])
-            
-            # Load threads
-            threads_file = self.network_path / "threads.json"
-            if threads_file.exists():
+                    self.topic_to_threads = defaultdict(list, indices_data.get('topic_to_threads', {}))
+                    
+                console.print(f"[green]Loaded indices for {len(self.topic_to_memories)} topics[/green]")
+            except Exception as e:
+                console.print(f"[red]Error loading indices: {e}[/red]")
+        
+        # Load threads
+        threads_file = self.network_path / "threads.json"
+        if threads_file.exists():
+            try:
                 with open(threads_file, 'r') as f:
                     threads_data = json.load(f)
-                    for tid, thread_dict in threads_data.items():
-                        # Reconstruct thread objects
-                        thread = ConversationThread(
-                            thread_id=thread_dict['thread_id'],
-                            primary_topic=thread_dict['primary_topic'],
-                            subtopics=thread_dict['subtopics'],
-                            conversation_ids=thread_dict['conversation_ids'],
-                            memory_ids=thread_dict['memory_ids'],
-                            last_updated=datetime.fromisoformat(thread_dict['last_updated']),
-                            total_interactions=thread_dict['total_interactions'],
-                            evolution_summary=thread_dict.get('evolution_summary')
-                        )
-                        self.threads[tid] = thread
+                    
+                for tid, thread_dict in threads_data.items():
+                    # Reconstruct thread objects from saved data
+                    thread = ConversationThread(
+                        thread_id=thread_dict['thread_id'],
+                        primary_topic=thread_dict['primary_topic'],
+                        subtopics=thread_dict.get('subtopics', []),
+                        conversation_ids=thread_dict.get('conversation_ids', []),
+                        memory_ids=thread_dict.get('memory_ids', []),
+                        last_updated=datetime.fromisoformat(thread_dict['last_updated']),
+                        total_interactions=thread_dict.get('total_interactions', 0),
+                        evolution_summary=thread_dict.get('evolution_summary')
+                    )
+                    self.threads[tid] = thread
+                    
+                console.print(f"[green]Loaded {len(self.threads)} conversation threads[/green]")
+                
+                # Show a summary of active threads
+                active_threads = [t for t in self.threads.values() 
+                                if (datetime.now() - t.last_updated).days < 14]
+                if active_threads:
+                    console.print(f"[cyan]Active threads: {', '.join(t.primary_topic for t in active_threads[:5])}[/cyan]")
+                    
+            except Exception as e:
+                console.print(f"[red]Error loading threads: {e}[/red]")
+
+    # Additional helper method to ensure persistence after major operations
+    def save_checkpoint(self):
+        """
+        Save the current state of the network
+        Call this after significant changes to ensure persistence
+        """
+        try:
+            self._save_network()
+            return True
+        except Exception as e:
+            console.print(f"[red]Failed to save checkpoint: {e}[/red]")
+            return False
