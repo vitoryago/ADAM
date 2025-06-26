@@ -7,7 +7,7 @@ This creates a graph of interconnected memories that ADAM can traverse intellige
 # We need these dataclasses (decorators) to structure our memory objects cleanly
 from dataclasses import dataclass, field
 # Type hints make our code self-documenting and catch errors early
-from typing import List, Dict, Set, Optional, Tuple
+from typing import List, Dict, Set, Optional, Tuple, Any
 # For timestamp tracking - knowing WHEN memories were created is crucial
 from datetime import datetime
 # defaultdict creates dictionaries that auto-initialize missing keys
@@ -17,6 +17,14 @@ import networkx as nx
 # For saving/loading our memory network to disk
 import json
 from pathlib import Path
+# For logging instead of undefined console
+import logging
+# For embedding-based semantic similarity
+import numpy as np
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @dataclass
 class MemoryNode:
@@ -42,6 +50,12 @@ class MemoryNode:
     topics: List[str]
     # Type classification: error_solution, explanation, etc.
     memory_type: str
+    # Embedding vector for semantic similarity
+    embedding: Optional[np.ndarray] = None
+    # Access count for memory decay calculations
+    access_count: int = 0
+    # Last accessed timestamp for decay
+    last_accessed: Optional[datetime] = None
 
     # HERE'S WHERE THE MAGIC HAPPENS - RELATIONSHIPS!
 
@@ -83,16 +97,23 @@ class ConversationThread:
     # finally optimized with materialized views
     total_interactions: int
     # AI-generated summary of how the problem/solution evolved
-    # Like "Started with tiemout errors, found it was missing indexes"
+    # Like "Started with timeout errors, found it was missing indexes"
     evolution_summary: Optional[str] = None
+    # Pattern signatures extracted from this thread
+    pattern_signatures: List[str] = field(default_factory=list)
 
 class MemoryNetworkSystem:
     """
     Manages the network of interconnected memories and conversations
 
     This is ADAM's "brain structure" - it doesn't just store memories,
-    it understand show they connect and relate to each other.
+    it understands how they connect and relate to each other.
     """
+    
+    # Memory decay parameters
+    DECAY_THRESHOLD_DAYS = 30  # Start decay after 30 days
+    MIN_ACCESS_COUNT_FOR_PERSISTENCE = 3  # Memories accessed < 3 times decay faster
+    DECAY_RATE = 0.1  # 10% decay per month after threshold
     
     def __init__(self, base_memory_system, conversation_system):
         """
@@ -184,6 +205,14 @@ class MemoryNetworkSystem:
         if potential_references is None:
             potential_references = self._find_related_memories(query, topics)
         
+        # Get embedding if available
+        embedding = None
+        if hasattr(self.base_memory, 'get_embedding'):
+            try:
+                embedding = self.base_memory.get_embedding(query)
+            except:
+                pass  # Embedding generation failed, continue without it
+        
         # Create our memory node with all its metadata
         memory_node = MemoryNode(
             memory_id=memory_id,
@@ -193,7 +222,8 @@ class MemoryNetworkSystem:
             response=response,
             topics=topics,
             memory_type=memory_type,
-            references=potential_references # Who we build upon
+            references=potential_references, # Who we build upon
+            embedding=embedding
         )
         
         # Add this node to our graph
@@ -292,13 +322,22 @@ class MemoryNetworkSystem:
             importance_score = min(len(mem_node.referenced_by) * 0.1, 0.2)  # Boost popular memories
             
             # 4. Semantic similarity using embeddings
-            # In full implementation, we'd use vector similarity too
+            semantic_score = 0.0
+            if hasattr(self.base_memory, 'get_embedding'):
+                # Get embeddings for semantic comparison
+                query_embedding = self.base_memory.get_embedding(query)
+                if mem_node.embedding is not None and query_embedding is not None:
+                    # Cosine similarity between embeddings
+                    semantic_score = np.dot(query_embedding, mem_node.embedding) / (
+                        np.linalg.norm(query_embedding) * np.linalg.norm(mem_node.embedding)
+                    )
 
-            #Combine scores with weights
+            # Combine scores with weights
             # These weights (0.5, 0.3, 0.2) are tunable hyperparameters
-            total_score = (topic_overlap * 0.5 +          # Topic match most important
-                          recency_score * 0.3 +           # Then recency
-                          min(importance_score, 0.2))     # Then popularity
+            total_score = (topic_overlap * 0.4 +          # Topic match important
+                          recency_score * 0.2 +           # Then recency
+                          semantic_score * 0.3 +          # Semantic similarity
+                          min(importance_score, 0.1))     # Then popularity
             
             scored_memories.append((mem_id, total_score))
         
@@ -380,7 +419,58 @@ class MemoryNetworkSystem:
         # After 3 days: ~0.67
         # After 1 week: ~0.50
         # After 1 month: ~0.15
-        return 1.0 / (1.0 + age / 168)  # Decay over a week
+        
+        # Apply memory decay for old, unused memories
+        # Get memory node to access its decay-related fields
+        decay_factor = 1.0
+        for node_id in self.memory_graph.nodes():
+            node = self.memory_graph.nodes[node_id]['data']
+            if node.timestamp == timestamp:
+                decay_factor = self._calculate_memory_decay(
+                    timestamp, 
+                    node.access_count, 
+                    node.last_accessed
+                )
+                break
+        
+        return (1.0 / (1.0 + age / 168)) * decay_factor  # Decay over a week with additional decay
+    
+    def _calculate_memory_decay(self, timestamp: datetime, access_count: int = 0, 
+                               last_accessed: Optional[datetime] = None) -> float:
+        """
+        Calculate memory decay factor based on age and usage patterns
+        
+        Implements forgetting curve: memories decay unless reinforced through access
+        
+        Args:
+            timestamp: When memory was created
+            access_count: How many times memory was accessed
+            last_accessed: When memory was last accessed
+            
+        Returns:
+            Decay factor from 0.0 (forgotten) to 1.0 (fresh)
+        """
+        # Calculate age in days
+        age_days = (datetime.now() - timestamp).days
+        
+        # No decay for recent memories
+        if age_days < self.DECAY_THRESHOLD_DAYS:
+            return 1.0
+        
+        # Calculate base decay
+        months_old = (age_days - self.DECAY_THRESHOLD_DAYS) / 30
+        base_decay = np.exp(-self.DECAY_RATE * months_old)
+        
+        # Boost for frequently accessed memories
+        access_boost = min(access_count / self.MIN_ACCESS_COUNT_FOR_PERSISTENCE, 2.0)
+        
+        # Additional decay if not accessed recently
+        if last_accessed:
+            days_since_access = (datetime.now() - last_accessed).days
+            if days_since_access > 60:  # Not accessed in 2 months
+                base_decay *= 0.5
+        
+        return min(base_decay * access_boost, 1.0)
     
     def _update_conversation_thread(self, memory_node: MemoryNode):
         """
@@ -585,7 +675,22 @@ class MemoryNetworkSystem:
                 evolution_points.append(f"Found solution: {mem.response[:50]}...")
         
         # Join with arrows to show progression
-        return " → ".join(evolution_points)
+        evolution = " → ".join(evolution_points)
+        
+        # Update thread with evolution summary if we have one
+        thread_id = None
+        for tid, thread in self.threads.items():
+            if any(m.memory_id in thread.memory_ids for m in memories):
+                thread_id = tid
+                break
+        
+        if thread_id:
+            self.threads[thread_id].evolution_summary = evolution
+            # Extract patterns from this evolution
+            patterns = self._extract_patterns_from_memories(memories)
+            self.threads[thread_id].pattern_signatures = patterns
+        
+        return evolution
     
     def _extract_key_insights(self, memories: List[MemoryNode]) -> List[str]:
         """
@@ -722,19 +827,24 @@ class MemoryNetworkSystem:
         
         return recap, memory_ids
     
-    def visualize_memory_network(self, topic: Optional[str] = None):
+    def visualize_memory_network(self, topic: Optional[str] = None, 
+                               show_decay: bool = True,
+                               highlight_patterns: bool = True):
         """
-        Create a visual representation of the memory network
+        Create an enhanced visual representation of the memory network
         
-        This is incredibly useful for debugging and understanding how ADAM's knowledge
-        is structured. You can literally SEE the connections between memories.
+        This visualization helps debug and understand ADAM's knowledge structure,
+        showing decay states, access patterns, and thread connections.
 
         Args:
             topic: Optional - visualize only memories about this topic
+            show_decay: Show memory decay status with node transparency
+            highlight_patterns: Highlight memories that are part of patterns
         Returns:
             matplotlib figure object
         """
         import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
         
         # Decide what to visualize
         if topic:
@@ -747,46 +857,122 @@ class MemoryNetworkSystem:
             subgraph = self.memory_graph
         
         # Create the figure
-        plt.figure(figsize=(12, 8))
-        # Calculate node positions using spring layout
-        # This creates a nice organic layout where connected nodes cluster
-        pos = nx.spring_layout(subgraph, k=2, iterations=50)
+        fig, ax = plt.subplots(figsize=(14, 10))
         
-        # Color nodes by age (newer = brighter)
+        # Calculate node positions using hierarchical layout for better structure
+        # This groups related memories together
+        if len(subgraph) > 1:
+            pos = nx.spring_layout(subgraph, k=3, iterations=100, seed=42)
+        else:
+            pos = {list(subgraph.nodes())[0]: (0.5, 0.5)}
+        
+        # Prepare node visualization data
         node_colors = []
+        node_sizes = []
+        node_alphas = []
+        
         for node in subgraph.nodes():
             node_data = subgraph.nodes[node]['data']
-            age_hours = (datetime.now() - node_data.timestamp).total_seconds() / 3600
-            node_colors.append(age_hours)
+            
+            # Color by memory type
+            if node_data.memory_type == "error_solution":
+                color = 'red'
+            elif node_data.memory_type == "explanation":
+                color = 'blue'
+            elif node_data.memory_type == "pattern":
+                color = 'green'
+            else:
+                color = 'gray'
+            node_colors.append(color)
+            
+            # Size by importance (access count + reference count)
+            importance = node_data.access_count + len(node_data.referenced_by)
+            node_sizes.append(300 + importance * 50)
+            
+            # Alpha by decay if enabled
+            if show_decay:
+                decay_factor = self._calculate_memory_decay(
+                    node_data.timestamp,
+                    node_data.access_count,
+                    node_data.last_accessed
+                )
+                node_alphas.append(max(0.3, decay_factor))
+            else:
+                node_alphas.append(0.8)
         
-        nx.draw_networkx_nodes(
-            subgraph, pos, 
-            node_color=node_colors,
-            cmap='viridis_r',
-            node_size=500,
-            alpha=0.8
-        )
+        # Draw nodes
+        for i, node in enumerate(subgraph.nodes()):
+            nx.draw_networkx_nodes(
+                subgraph, pos,
+                nodelist=[node],
+                node_color=[node_colors[i]],
+                node_size=[node_sizes[i]],
+                alpha=node_alphas[i],
+                ax=ax
+            )
         
-        # Draw edges with weights
-        edges = subgraph.edges()
-        weights = [subgraph[u][v].get('weight', 0.5) for u, v in edges]
-        nx.draw_networkx_edges(
-            subgraph, pos,
-            width=[w * 3 for w in weights],
-            alpha=0.5,
-            edge_color='gray'
-        )
+        # Draw edges with varying styles
+        for u, v in subgraph.edges():
+            weight = subgraph[u][v].get('weight', 0.5)
+            
+            # Strong connections are solid, weak are dashed
+            if weight > 0.7:
+                style = 'solid'
+                width = weight * 4
+            else:
+                style = 'dashed'
+                width = weight * 2
+                
+            nx.draw_networkx_edges(
+                subgraph, pos,
+                edgelist=[(u, v)],
+                width=width,
+                alpha=0.6,
+                edge_color='gray',
+                style=style,
+                ax=ax
+            )
         
-        # Add labels (memory IDs)
-        labels = {node: node[:8] for node in subgraph.nodes()}
-        nx.draw_networkx_labels(subgraph, pos, labels, font_size=8)
+        # Add detailed labels
+        labels = {}
+        for node in subgraph.nodes():
+            node_data = subgraph.nodes[node]['data']
+            # Show first few words of query
+            query_preview = ' '.join(node_data.query.split()[:3]) + "..."
+            labels[node] = f"{node[:6]}\n{query_preview}"
         
-        plt.title(f"Memory Network {'for ' + topic if topic else '(All Topics)'}")
-        plt.colorbar(label='Age (hours)')
+        nx.draw_networkx_labels(subgraph, pos, labels, font_size=6, ax=ax)
+        
+        # Create legend
+        legend_elements = [
+            mpatches.Patch(color='red', label='Error Solutions'),
+            mpatches.Patch(color='blue', label='Explanations'),
+            mpatches.Patch(color='green', label='Patterns'),
+            mpatches.Patch(color='gray', label='Other'),
+        ]
+        
+        if show_decay:
+            legend_elements.extend([
+                mpatches.Patch(color='white', label=''),  # Spacer
+                mpatches.Patch(color='black', alpha=1.0, label='Fresh Memory'),
+                mpatches.Patch(color='black', alpha=0.3, label='Decaying Memory'),
+            ])
+        
+        ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1, 1))
+        
+        # Add title with statistics
+        memory_count = len(subgraph)
+        edge_count = len(subgraph.edges())
+        avg_connections = edge_count / memory_count if memory_count > 0 else 0
+        
+        title = f"Memory Network {'for ' + topic if topic else '(All Topics)'}\n"
+        title += f"{memory_count} memories, {edge_count} connections (avg: {avg_connections:.1f})"
+        plt.title(title, fontsize=14, fontweight='bold')
+        
         plt.axis('off')
         plt.tight_layout()
         
-        return plt
+        return fig
     
     def _save_network(self):
         """
@@ -819,7 +1005,8 @@ class MemoryNetworkSystem:
                 'memory_ids': thread.memory_ids,
                 'last_updated': thread.last_updated.isoformat(),
                 'total_interactions': thread.total_interactions,
-                'evolution_summary': thread.evolution_summary
+                'evolution_summary': thread.evolution_summary,
+                'pattern_signatures': thread.pattern_signatures
             }
         
         with open(self.network_path / "threads.json", 'w') as f:
@@ -853,7 +1040,7 @@ class MemoryNetworkSystem:
 
                 # Give feedback so we know the load succeeded
                 # len(self.memory_graph.nodes) tells us how many memories ADAM has accumulated
-                console.print(f"[green]Loaded memory graph with {len(self.memory_graph.nodes)} memories[/green]")
+                logger.info(f"Loaded memory graph with {len(self.memory_graph.nodes)} memories")
                 
                 # CRITICAL STEP: Rebuild the biderectional references
                 # Here's why this is necessary:
@@ -882,12 +1069,12 @@ class MemoryNetworkSystem:
             except Exception as e:
                 # If ANYTHING goes wrong loading the graph, we don't want ADAM to crash
                 # Better to start fresh than to fail completely
-                console.print(f"[red]Error loading graph: {e}[/red]")
+                logger.error(f"Error loading graph: {e}")
                 # Initialize empty graph - ADAM won't remember but can still work
                 self.memory_graph = nx.DiGraph()
         else:
             # No saved graph exists - this might be ADAM's first run
-            console.print("[cyan]No existing memory graph found - starting fresh![/cyan]")
+            logger.info("No existing memory graph found - starting fresh!")
         
         # STEP 2: LOAD THE TOPIC INDICES
         # These are like the index in a book - they help us quickly find all memories
@@ -911,9 +1098,9 @@ class MemoryNetworkSystem:
                     # defaultdict ensures we get empty list for new topics automatically
                     self.topic_to_threads = defaultdict(list, indices_data.get('topic_to_threads', {}))
                     
-                console.print(f"[green]Loaded indices for {len(self.topic_to_memories)} topics[/green]")
+                logger.info(f"Loaded indices for {len(self.topic_to_memories)} topics")
             except Exception as e:
-                console.print(f"[red]Error loading indices: {e}[/red]")
+                logger.error(f"Error loading indices: {e}")
         
         # Load threads
         threads_file = self.network_path / "threads.json"
@@ -936,16 +1123,16 @@ class MemoryNetworkSystem:
                     )
                     self.threads[tid] = thread
                     
-                console.print(f"[green]Loaded {len(self.threads)} conversation threads[/green]")
+                logger.info(f"Loaded {len(self.threads)} conversation threads")
                 
                 # Show a summary of active threads
                 active_threads = [t for t in self.threads.values() 
                                 if (datetime.now() - t.last_updated).days < 14]
                 if active_threads:
-                    console.print(f"[cyan]Active threads: {', '.join(t.primary_topic for t in active_threads[:5])}[/cyan]")
+                    logger.info(f"Active threads: {', '.join(t.primary_topic for t in active_threads[:5])}")
                     
             except Exception as e:
-                console.print(f"[red]Error loading threads: {e}[/red]")
+                logger.error(f"Error loading threads: {e}")
 
     # Additional helper method to ensure persistence after major operations
     def save_checkpoint(self):
@@ -957,5 +1144,207 @@ class MemoryNetworkSystem:
             self._save_network()
             return True
         except Exception as e:
-            console.print(f"[red]Failed to save checkpoint: {e}[/red]")
+            logger.error(f"Failed to save checkpoint: {e}")
             return False
+    
+    def _extract_patterns_from_memories(self, memories: List[MemoryNode]) -> List[str]:
+        """
+        Extract common patterns from a sequence of memories
+        
+        Patterns are recurring problem-solution signatures that can be
+        recognized in future scenarios
+        
+        Args:
+            memories: List of memories to analyze
+            
+        Returns:
+            List of pattern signatures
+        """
+        patterns = []
+        
+        # Pattern 1: Error → Solution sequences
+        for i in range(len(memories) - 1):
+            current = memories[i]
+            next_mem = memories[i + 1]
+            
+            # Check for error-solution pattern
+            if "error" in current.query.lower() and (
+                "work" in next_mem.response.lower() or 
+                "success" in next_mem.response.lower() or
+                "fixed" in next_mem.response.lower()
+            ):
+                # Extract error type and solution approach
+                error_keywords = self._extract_keywords(current.query, ["error", "fail", "issue"])
+                solution_keywords = self._extract_keywords(next_mem.response, ["fix", "solve", "work"])
+                
+                if error_keywords and solution_keywords:
+                    pattern = f"ERROR:{error_keywords[0]}→SOLUTION:{solution_keywords[0]}"
+                    patterns.append(pattern)
+        
+        # Pattern 2: Progressive refinement (multiple attempts)
+        attempt_count = 0
+        for mem in memories:
+            if "try" in mem.query.lower() or "attempt" in mem.query.lower():
+                attempt_count += 1
+        
+        if attempt_count > 2:
+            patterns.append("PATTERN:iterative_refinement")
+        
+        # Pattern 3: Tool/Technology specific patterns
+        tech_keywords = ["sql", "dbt", "python", "javascript", "docker", "git"]
+        for keyword in tech_keywords:
+            if sum(1 for m in memories if keyword in m.query.lower()) > 2:
+                patterns.append(f"TECH:{keyword}_recurring")
+        
+        return patterns
+    
+    def _extract_keywords(self, text: str, keyword_types: List[str]) -> List[str]:
+        """
+        Extract relevant keywords from text based on keyword types
+        
+        Args:
+            text: Text to analyze
+            keyword_types: Types of keywords to look for
+            
+        Returns:
+            List of extracted keywords
+        """
+        # Simple keyword extraction - in production, use NLP
+        words = text.lower().split()
+        keywords = []
+        
+        for word in words:
+            for kw_type in keyword_types:
+                if kw_type in word:
+                    # Get the full word/phrase containing the keyword
+                    keywords.append(word.strip('.,!?;:'))
+        
+        return keywords
+    
+    def find_similar_patterns(self, current_query: str, current_context: Dict[str, Any]) -> List[Tuple[str, float]]:
+        """
+        Find threads with similar problem patterns to current query
+        
+        This enables ADAM to say "This looks similar to the issue we solved in March"
+        
+        Args:
+            current_query: Current user query
+            current_context: Current context (screen content, etc.)
+            
+        Returns:
+            List of (thread_id, similarity_score) tuples
+        """
+        similar_threads = []
+        
+        # Extract patterns from current query
+        current_keywords = self._extract_keywords(
+            current_query, 
+            ["error", "fail", "issue", "problem", "not working"]
+        )
+        
+        # Check each thread for pattern matches
+        for thread_id, thread in self.threads.items():
+            similarity_score = 0.0
+            
+            # Check pattern signatures
+            for pattern in thread.pattern_signatures:
+                for keyword in current_keywords:
+                    if keyword in pattern.lower():
+                        similarity_score += 0.3
+            
+            # Check topic overlap
+            query_topics = set(current_query.lower().split())
+            thread_topics = set(thread.primary_topic.lower().split()) | set(
+                topic.lower() for topic in thread.subtopics
+            )
+            
+            topic_overlap = len(query_topics & thread_topics) / max(len(query_topics), 1)
+            similarity_score += topic_overlap * 0.5
+            
+            # Check recency (prefer recent similar problems)
+            days_old = (datetime.now() - thread.last_updated).days
+            recency_boost = 1.0 / (1.0 + days_old / 30)
+            similarity_score += recency_boost * 0.2
+            
+            if similarity_score > 0.3:  # Threshold for relevance
+                similar_threads.append((thread_id, similarity_score))
+        
+        # Sort by similarity score
+        similar_threads.sort(key=lambda x: x[1], reverse=True)
+        
+        return similar_threads[:5]  # Top 5 similar threads
+    
+    def update_memory_access(self, memory_id: str):
+        """
+        Update access count and timestamp when a memory is retrieved
+        
+        This is crucial for memory decay calculations - frequently accessed
+        memories persist longer
+        
+        Args:
+            memory_id: ID of the accessed memory
+        """
+        if self.memory_graph.has_node(memory_id):
+            memory_node = self.memory_graph.nodes[memory_id]['data']
+            memory_node.access_count += 1
+            memory_node.last_accessed = datetime.now()
+            
+            # Also update access for strongly connected memories
+            # This reinforces related knowledge
+            for ref_id in memory_node.references:
+                if self.memory_graph.has_node(ref_id):
+                    ref_weight = memory_node.reference_weights.get(ref_id, 0)
+                    if ref_weight > 0.7:  # Strong connection
+                        ref_node = self.memory_graph.nodes[ref_id]['data']
+                        ref_node.access_count += 0.5  # Partial reinforcement
+                        ref_node.last_accessed = datetime.now()
+    
+    def cleanup_decayed_memories(self, decay_threshold: float = 0.1) -> int:
+        """
+        Remove memories that have decayed below the threshold
+        
+        This prevents the memory network from growing indefinitely with
+        obsolete information
+        
+        Args:
+            decay_threshold: Memories with decay factor below this are removed
+            
+        Returns:
+            Number of memories removed
+        """
+        memories_to_remove = []
+        
+        for node_id in self.memory_graph.nodes():
+            node_data = self.memory_graph.nodes[node_id]['data']
+            
+            # Calculate current decay factor
+            decay_factor = self._calculate_memory_decay(
+                node_data.timestamp,
+                node_data.access_count,
+                node_data.last_accessed
+            )
+            
+            # Mark for removal if below threshold
+            if decay_factor < decay_threshold:
+                memories_to_remove.append(node_id)
+        
+        # Remove decayed memories
+        for mem_id in memories_to_remove:
+            # Remove from graph
+            self.memory_graph.remove_node(mem_id)
+            
+            # Remove from topic indices
+            for topic, memories in self.topic_to_memories.items():
+                memories.discard(mem_id)
+            
+            # Remove from threads
+            for thread in self.threads.values():
+                if mem_id in thread.memory_ids:
+                    thread.memory_ids.remove(mem_id)
+        
+        # Save if we removed anything
+        if memories_to_remove:
+            self._save_network()
+            logger.info(f"Removed {len(memories_to_remove)} decayed memories")
+        
+        return len(memories_to_remove)
