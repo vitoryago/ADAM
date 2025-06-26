@@ -828,45 +828,87 @@ class MemoryNetworkSystem:
     def _load_network(self):
         """
         Load the memory network from disk
-        
-        This restores ADAM's knowledge graph from previous sessions,
-        allowing him to remember everything he's learned.
+
+        This method is THE BRIDGE between ADAM's sessions. Without it, ADAM would forget everything
+        when restarted. With it, ADAM's knowledge acumulates over days, weeks, and months.
+
+        Think of this like waking up in the morning and remembering everything from yesterday -
+        not just facts, but how those facts connect to each other. 
         """
-        # Check if saved network exists
+        # First, let's understand what we're loading:
+        # 1. The graph structure (nodes = memories, edges = refereneces)
+        # 2. Topic indices (for fast topic-based searches)
+        # 3. Conversation threads (ongoing problem-solving journeys)
+
+        # STEP 1: LOAD THE MEMORY GRAPH
+        # This is the core structure - without it, we have no memories at all
         graph_file = self.network_path / "memory_graph.gpickle"
         
+        # Check if we have a saved brain to load
         if graph_file.exists():
             try:
-                # Load the graph structure
+                # NetworkX's read_gpickle desrializes the entire graph structure
+                # This includes all nodes (memories) and edges (references between memories)
                 self.memory_graph = nx.read_gpickle(graph_file)
+
+                # Give feedback so we know the load succeeded
+                # len(self.memory_graph.nodes) tells us how many memories ADAM has accumulated
                 console.print(f"[green]Loaded memory graph with {len(self.memory_graph.nodes)} memories[/green]")
                 
-                # Rebuild our reference tracking from the graph
-                # This is necessary because referenced_by lists aren't persisted in the edge data
+                # CRITICAL STEP: Rebuild the biderectional references
+                # Here's why this is necessary:
+                # - The graph edges store "Memory A references Memory B"
+                # - But we also need to know "Memory B is referenced by Memory A"
+                # - The edges only store one direction, so we rebuild the other
+
+                # First, clear all referenced_by lists to start fresh
+                # This prevents duplicates if the lists somehow got corrupted
                 for node_id in self.memory_graph.nodes():
                     node_data = self.memory_graph.nodes[node_id]['data']
                     # Clear and rebuild referenced_by lists
                     node_data.referenced_by = []
                 
-                # Now populate referenced_by based on edges
+                # Now, traverse every edge and build the reverse references
                 for source, target in self.memory_graph.edges():
                     # If source references target, then target is referenced by source
                     target_node = self.memory_graph.nodes[target]['data']
                     target_node.referenced_by.append(source)
+                
+                # At this point, our memory network is fully reconstructed!
+                # Every memory knows both:
+                # - What memories it builds upon (references)
+                # - What memories build upon it (referenced_by)
+
             except Exception as e:
+                # If ANYTHING goes wrong loading the graph, we don't want ADAM to crash
+                # Better to start fresh than to fail completely
                 console.print(f"[red]Error loading graph: {e}[/red]")
+                # Initialize empty graph - ADAM won't remember but can still work
                 self.memory_graph = nx.DiGraph()
+        else:
+            # No saved graph exists - this might be ADAM's first run
+            console.print("[cyan]No existing memory graph found - starting fresh![/cyan]")
         
-        # Load indices
+        # STEP 2: LOAD THE TOPIC INDICES
+        # These are like the index in a book - they help us quickly find all memories
+        # about a specific topic without searching through every single memory
         indices_file = self.network_path / "indices.json"
+        
         if indices_file.exists():
             try:
                 with open(indices_file, 'r') as f:
                     indices_data = json.load(f)
-                    # Convert lists back to sets for efficient lookups
+                    
+                    # topic_to_memories: Maps each topic to all memories about that topic
+                    # Example: "SQL" -> {"mem001", "mem047", "mem112", ...}
+                    # We convert list back to sets for 0(1) lookup performance
                     self.topic_to_memories = {
                         k: set(v) for k, v in indices_data.get('topic_to_memories', {}).items()
                     }
+
+                    # topic_to_threads: Maps topics to conversation threads about them
+                    # Example: "dbt debugging" -> ["thread_001", "thread_002"]
+                    # defaultdict ensures we get empty list for new topics automatically
                     self.topic_to_threads = defaultdict(list, indices_data.get('topic_to_threads', {}))
                     
                 console.print(f"[green]Loaded indices for {len(self.topic_to_memories)} topics[/green]")
