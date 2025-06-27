@@ -2,6 +2,32 @@
 """
 Memory Network System - Connecting related conversations and memories
 This creates a graph of interconnected memories that ADAM can traverse intelligently
+
+OVERVIEW:
+The Memory Network System is ADAM's "neural network" - it doesn't just store memories,
+it understands how they relate to each other. Think of it like a brain where:
+- Memories are neurons
+- References are synapses
+- Topics are regions
+- Threads are pathways
+
+KEY CONCEPTS:
+1. Memory Nodes: Individual memories with rich metadata and relationships
+2. Reference Weights: Not all connections are equal - some are stronger than others
+3. Conversation Threads: Track how understanding evolves over multiple sessions
+4. Memory Decay: Old, unused memories fade like human memory
+5. Pattern Recognition: Identifies recurring problem-solution patterns
+
+ARCHITECTURE:
+- Built on NetworkX for graph operations
+- Integrates with base memory system for storage
+- Links to conversation system for context
+- Persists to disk for continuity across sessions
+
+USAGE:
+The system is typically used through the ConversationAwareMemorySystem,
+but can be used directly for advanced memory operations like visualization
+or manual thread management.
 """
 
 # We need these dataclasses (decorators) to structure our memory objects cleanly
@@ -35,6 +61,28 @@ class MemoryNode:
     - It holds information (the memory itself)
     - It has connections to other neurons (references)
     - Those connections have different strengths (weights)
+    
+    DESIGN PHILOSOPHY:
+    A memory is more than just stored information - it's a living entity that:
+    1. Knows its origin (conversation_id, timestamp)
+    2. Understands its purpose (memory_type, topics)
+    3. Tracks its relationships (references, referenced_by)
+    4. Monitors its relevance (access_count, last_accessed)
+    5. Can decay over time if not reinforced
+    
+    FIELDS EXPLAINED:
+    - memory_id: Unique identifier, typically from the base memory system
+    - conversation_id: Links this memory to its originating conversation
+    - timestamp: When created - used for recency calculations and decay
+    - query/response: The actual Q&A content
+    - topics: Semantic tags for categorization and search
+    - memory_type: Classification (error_solution, explanation, etc.)
+    - embedding: Vector representation for semantic similarity
+    - access_count: How often this memory is retrieved (prevents decay)
+    - last_accessed: When last used (for decay calculations)
+    - references: Memories this builds upon (outgoing edges)
+    - referenced_by: Memories that build upon this (incoming edges)
+    - reference_weights: Strength of each reference connection
     """
     # Core identity - every memory needs a unique ID
     memory_id: str
@@ -78,6 +126,30 @@ class ConversationThread:
     
     Example: "dbt debugging thread" might span 4 conversations over 3 days,
     containing 15 individual memories, showing how the problem evolved.
+    
+    CONCEPTUAL MODEL:
+    A thread is like a "story arc" in ADAM's experience:
+    - Chapter 1: "User encounters timeout error" (Monday)
+    - Chapter 2: "We try optimizing CTEs" (Tuesday)  
+    - Chapter 3: "Discover it's missing indexes" (Wednesday)
+    - Chapter 4: "Solution implemented successfully" (Thursday)
+    
+    WHY THREADS MATTER:
+    1. Continuity: Users don't solve problems in one conversation
+    2. Evolution: Solutions evolve through trial and error
+    3. Learning: Patterns emerge across multiple attempts
+    4. Context: Later conversations build on earlier ones
+    
+    FIELDS EXPLAINED:
+    - thread_id: Unique identifier with timestamp for sorting
+    - primary_topic: Main subject (e.g., "dbt optimization")
+    - subtopics: Related subjects discovered along the way
+    - conversation_ids: All conversations in this thread (newest first)
+    - memory_ids: All memories created during this journey
+    - last_updated: When we last worked on this problem
+    - total_interactions: Measure of topic importance/complexity
+    - evolution_summary: AI-generated story of how understanding evolved
+    - pattern_signatures: Extracted patterns for future recognition
     """
 
     # Unique identifier for this thread
@@ -173,6 +245,34 @@ class MemoryNetworkSystem:
         network is automatically persisted to disk so it is available on the
         next load.  The auto-save behavior can be disabled when performing
         bulk updates by passing ``auto_save=False``.
+
+        THE PROCESS:
+        1. First, the base memory system evaluates worthiness
+        2. If worthy, we create a MemoryNode with full metadata
+        3. We find related memories to reference (if not provided)
+        4. We create weighted edges to referenced memories
+        5. We update the referenced memories to know about this reference
+        6. We update indices for fast topic-based retrieval
+        7. We update or create a conversation thread
+        8. We persist everything to disk
+
+        WHY THIS MATTERS:
+        - Automatic reference discovery builds a self-organizing knowledge graph
+        - Bidirectional references enable traversal in both directions
+        - Weighted connections distinguish strong vs. weak relationships
+        - Thread tracking shows how understanding evolves over time
+
+        EXAMPLE SCENARIO:
+        User: "My dbt model is slow" (Monday)
+        -> Creates memory M1, starts thread T1
+        
+        User: "I tried indexes but still slow" (Tuesday)  
+        -> Creates memory M2, references M1 (weight: 0.8)
+        -> Updates thread T1 with evolution
+        
+        User: "Fixed it with incremental models!" (Wednesday)
+        -> Creates memory M3, references M1 & M2
+        -> Thread T1 now shows complete problem->solution journey
 
         Args:
             query: The question/problem
@@ -270,6 +370,35 @@ class MemoryNetworkSystem:
         This is like a research assistant finding relevant prior work -
         we look for memories that cover similar topics and might provide
         context or foundation for this new memory.
+
+        THE ALGORITHM:
+        1. Find all memories sharing at least one topic (candidate pool)
+        2. Score each candidate by multiple factors:
+           - Topic overlap (how many topics in common)
+           - Recency (newer memories often more relevant)
+           - Importance (how often others reference this memory)
+           - Semantic similarity (if embeddings available)
+        3. Return top N highest scoring memories
+
+        SCORING PHILOSOPHY:
+        We use a weighted multi-factor approach because:
+        - Topic overlap is the strongest signal (50% weight)
+        - Recent memories likely have updated solutions (30% weight)
+        - Popular memories are probably important (20% weight)
+        
+        This creates a balanced scoring that finds truly relevant memories,
+        not just the newest or most popular ones.
+
+        EXAMPLE:
+        New memory: "How to optimize dbt models with CTEs"
+        Topics: ["dbt", "optimization", "CTE"]
+        
+        Finds and scores:
+        - Memory A: "Basic dbt tutorial" [topics: "dbt"] -> Score: 0.3
+        - Memory B: "Optimizing SQL CTEs" [topics: "SQL", "CTE", "optimization"] -> Score: 0.7
+        - Memory C: "Recent dbt performance fix" [topics: "dbt", "performance"] -> Score: 0.8
+        
+        Returns: [Memory C, Memory B] (top 2)
 
         Args:
             query: The current question (helps find semantic similarity)
@@ -442,6 +571,37 @@ class MemoryNetworkSystem:
         
         Implements forgetting curve: memories decay unless reinforced through access
         
+        THE DECAY MODEL:
+        Based on Ebbinghaus's forgetting curve with modifications:
+        1. Recent memories (< 30 days) don't decay
+        2. Base decay follows exponential curve: e^(-rate * time)
+        3. Frequently accessed memories decay slower
+        4. Long-unused memories decay faster
+        
+        DECAY FORMULA:
+        decay = base_decay * access_boost * recency_penalty
+        
+        Where:
+        - base_decay = e^(-0.1 * months_old)
+        - access_boost = min(access_count / 3, 2.0)
+        - recency_penalty = 0.5 if not accessed in 60+ days
+        
+        WHY THIS MATTERS:
+        1. Prevents memory bloat - old, unused memories fade away
+        2. Preserves important knowledge - frequently used memories persist
+        3. Mimics human memory - we forget what we don't use
+        4. Maintains system performance - fewer memories to search
+        
+        EXAMPLE SCENARIOS:
+        - New memory (5 days old): decay = 1.0 (no decay)
+        - Old but popular (6 months, accessed 10 times): decay = 0.8
+        - Old and forgotten (1 year, never accessed): decay = 0.05
+        
+        THRESHOLDS:
+        - decay < 0.1: Memory should be removed
+        - decay < 0.5: Memory is fading, needs reinforcement
+        - decay > 0.8: Memory is fresh and relevant
+        
         Args:
             timestamp: When memory was created
             access_count: How many times memory was accessed
@@ -537,6 +697,33 @@ class MemoryNetworkSystem:
         This is what ADAM uses to understand the full context of a problem.
         Like following citations in a research paper to understand the
         complete background
+
+        THE TRAVERSAL ALGORITHM:
+        Uses depth-first search to follow reference chains, prioritizing
+        stronger connections. This creates a "context chain" that tells
+        the complete story of how we arrived at current understanding.
+
+        WHY THIS MATTERS:
+        When ADAM needs to understand a complex problem, he doesn't just
+        look at the most recent memory - he traces back through the entire
+        learning journey to build complete context.
+
+        EXAMPLE TRAVERSAL:
+        Starting from: "Solution: Use incremental models"
+        
+        Traverses to find:
+        1. "Solution: Use incremental models" (starting point)
+        2. "Tried indexes but still slow" (weight: 0.9)
+        3. "Initial problem: dbt model timeout" (weight: 0.8)
+        4. "General dbt optimization tips" (weight: 0.6)
+        
+        This gives ADAM the full context of the problem evolution.
+
+        DESIGN DECISIONS:
+        - max_depth prevents infinite traversal in circular references
+        - Visited set prevents processing same memory twice
+        - Sorting by weight ensures most relevant references first
+        - Recursive approach naturally builds chronological chain
 
         Args:
             memory_id: Starting memory (usually the most recent)
@@ -836,6 +1023,42 @@ class MemoryNetworkSystem:
         This visualization helps debug and understand ADAM's knowledge structure,
         showing decay states, access patterns, and thread connections.
 
+        VISUALIZATION FEATURES:
+        1. Node Colors: Indicate memory type
+           - Red: Error solutions
+           - Blue: Explanations  
+           - Green: Patterns
+           - Gray: Other
+        
+        2. Node Size: Shows importance
+           - Larger = more accessed + more referenced
+           - Small = rarely used
+        
+        3. Node Transparency: Shows decay status
+           - Opaque = fresh memory
+           - Transparent = decaying memory
+        
+        4. Edge Styles: Show connection strength
+           - Solid thick = strong connection (>0.7)
+           - Dashed thin = weak connection (<0.7)
+        
+        5. Labels: Show memory preview
+           - First 6 chars of ID
+           - First 3 words of query
+        
+        WHY VISUALIZE:
+        - Debug memory connections
+        - Identify memory clusters
+        - Spot decaying memories
+        - Understand topic relationships
+        - Verify pattern recognition
+        
+        USAGE TIPS:
+        - Start with topic-specific views for clarity
+        - Look for disconnected memories (might be orphaned)
+        - Check for overly connected nodes (might be too general)
+        - Identify fading clusters (might need reinforcement)
+
         Args:
             topic: Optional - visualize only memories about this topic
             show_decay: Show memory decay status with node transparency
@@ -1017,10 +1240,37 @@ class MemoryNetworkSystem:
         Load the memory network from disk
 
         This method is THE BRIDGE between ADAM's sessions. Without it, ADAM would forget everything
-        when restarted. With it, ADAM's knowledge acumulates over days, weeks, and months.
+        when restarted. With it, ADAM's knowledge accumulates over days, weeks, and months.
 
         Think of this like waking up in the morning and remembering everything from yesterday -
-        not just facts, but how those facts connect to each other. 
+        not just facts, but how those facts connect to each other.
+        
+        THE LOADING PROCESS:
+        1. Load the graph structure (nodes and edges)
+        2. Rebuild bidirectional references (referenced_by lists)
+        3. Load topic indices for fast search
+        4. Load conversation threads
+        5. Resume any active sessions
+        
+        DATA STRUCTURES LOADED:
+        - memory_graph.gpickle: The core NetworkX graph
+        - indices.json: Topic-to-memory mappings
+        - threads.json: Conversation thread metadata
+        
+        ERROR HANDLING:
+        If any component fails to load, we log the error but continue.
+        Better to have partial memory than no memory at all.
+        
+        CRITICAL RECONSTRUCTION:
+        The bidirectional reference rebuild is crucial because:
+        - Graph edges only store one direction (A->B)
+        - But we need both directions for traversal
+        - So we rebuild B.referenced_by = [A] from edges
+        
+        PERFORMANCE CONSIDERATIONS:
+        Loading can be slow with thousands of memories, but it's
+        a one-time cost at startup. The payoff is instant access
+        to all historical knowledge.
         """
         # First, let's understand what we're loading:
         # 1. The graph structure (nodes = memories, edges = refereneces)
@@ -1221,11 +1471,46 @@ class MemoryNetworkSystem:
         
         return keywords
     
-    def find_similar_patterns(self, current_query: str, current_context: Dict[str, Any]) -> List[Tuple[str, float]]:
+    def find_similar_patterns(self, current_query: str, current_context: Optional[Dict[str, Any]] = None) -> List[Tuple[str, float]]:
         """
         Find threads with similar problem patterns to current query
         
         This enables ADAM to say "This looks similar to the issue we solved in March"
+        
+        THE PATTERN MATCHING PROCESS:
+        1. Extract keywords from current query (error types, issues)
+        2. Compare against stored pattern signatures in threads
+        3. Check topic overlap between query and threads
+        4. Apply recency boost (prefer recent similar problems)
+        5. Return top matches above similarity threshold
+        
+        PATTERN SIGNATURES EXPLAINED:
+        Threads store patterns like:
+        - "ERROR:timeout→SOLUTION:indexes" (specific error-solution pair)
+        - "PATTERN:iterative_refinement" (took multiple attempts)
+        - "TECH:dbt_recurring" (technology-specific pattern)
+        
+        SIMILARITY SCORING:
+        - Pattern match: +0.3 per matching pattern
+        - Topic overlap: +0.5 * (shared_topics / total_topics)
+        - Recency boost: +0.2 * (1 / (1 + days_old/30))
+        
+        WHY THIS MATTERS:
+        Users often encounter similar problems. By recognizing patterns,
+        ADAM can immediately suggest relevant past solutions, saving time
+        and preventing repeated troubleshooting.
+        
+        EXAMPLE:
+        User: "Getting timeout errors in my SQL query"
+        
+        Finds threads with:
+        - Pattern: "ERROR:timeout→SOLUTION:indexes" (score +0.3)
+        - Topics: ["SQL", "performance"] (score +0.5)
+        - Recent: 5 days old (score +0.18)
+        Total: 0.98 similarity
+        
+        ADAM: "This looks similar to the timeout issue we solved last week
+                by adding indexes. Here's what worked..."
         
         Args:
             current_query: Current user query
@@ -1334,7 +1619,7 @@ class MemoryNetworkSystem:
             self.memory_graph.remove_node(mem_id)
             
             # Remove from topic indices
-            for topic, memories in self.topic_to_memories.items():
+            for memories in self.topic_to_memories.values():
                 memories.discard(mem_id)
             
             # Remove from threads
