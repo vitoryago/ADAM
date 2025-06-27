@@ -1205,8 +1205,11 @@ class MemoryNetworkSystem:
         We save both the structure and the metadata.
         """
         # Save the graph structure using NetworkX's pickle format
-        # This preservers all node and edge data
-        nx.write_gpickle(self.memory_graph, self.network_path / "memory_graph.gpickle")
+        # This preserves all node and edge data
+        # Note: In NetworkX 3.x, write_gpickle is deprecated, use pickle directly
+        import pickle
+        with open(self.network_path / "memory_graph.gpickle", 'wb') as f:
+            pickle.dump(self.memory_graph, f)
         
         # Save our indices as JSON for human readability
         with open(self.network_path / "indices.json", 'w') as f:
@@ -1284,9 +1287,12 @@ class MemoryNetworkSystem:
         # Check if we have a saved brain to load
         if graph_file.exists():
             try:
-                # NetworkX's read_gpickle desrializes the entire graph structure
+                # NetworkX's read_gpickle deserializes the entire graph structure
                 # This includes all nodes (memories) and edges (references between memories)
-                self.memory_graph = nx.read_gpickle(graph_file)
+                # Note: In NetworkX 3.x, read_gpickle is deprecated, use pickle directly
+                import pickle
+                with open(graph_file, 'rb') as f:
+                    self.memory_graph = pickle.load(f)
 
                 # Give feedback so we know the load succeeded
                 # len(self.memory_graph.nodes) tells us how many memories ADAM has accumulated
