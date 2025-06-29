@@ -1,0 +1,44 @@
+{
+  "session_id": "session_20250629_185308_2096bb92",
+  "start_time": "2025-06-29T18:53:08.583670",
+  "end_time": "2025-06-29T18:58:30.876527",
+  "state": "completed",
+  "title": "Discussion about dbt, time, window-functions",
+  "parent_session_id": null,
+  "topics": [
+    "dbt",
+    "time",
+    "window-functions",
+    "optimization"
+  ],
+  "total_exchanges": 2,
+  "memories_created": 1,
+  "exchanges": [
+    {
+      "exchange_id": "exchange_03d55f3cd31c",
+      "query": "How do I optimize a slow dbt model with window functions?",
+      "response": "To optimize dbt models with window functions:\n1. Partition wisely\n2. Order only when needed\n3. Consider materialization",
+      "timestamp": "2025-06-29T18:58:30.876469",
+      "topics": [
+        "dbt",
+        "window-functions",
+        "optimization"
+      ],
+      "stored_in_memory": true,
+      "memory_id": "mem_How do I o",
+      "context": {}
+    },
+    {
+      "exchange_id": "exchange_f8629e3c062a",
+      "query": "What time is it?",
+      "response": "I don't have access to real-time data.",
+      "timestamp": "2025-06-29T18:58:30.876499",
+      "topics": [
+        "time"
+      ],
+      "stored_in_memory": false,
+      "memory_id": null,
+      "context": {}
+    }
+  ]
+}

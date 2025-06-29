@@ -1,0 +1,63 @@
+{
+  "session_id": "session_20250629_185830_142f30a0",
+  "start_time": "2025-06-29T18:58:30.874943",
+  "end_time": "2025-06-29T18:58:30.875104",
+  "state": "completed",
+  "title": "DBT Performance Issues",
+  "parent_session_id": null,
+  "topics": [
+    "materialization",
+    "CTE",
+    "indexes",
+    "dbt",
+    "optimization",
+    "performance"
+  ],
+  "total_exchanges": 3,
+  "memories_created": 2,
+  "exchanges": [
+    {
+      "exchange_id": "exchange_348664285654",
+      "query": "My dbt model is taking 45 minutes to run. It has multiple CTEs and joins.",
+      "response": "I can help optimize your dbt model. The long runtime suggests inefficient queries. Let me analyze the common causes:\n1. Unoptimized CTEs\n2. Missing indexes\n3. Inefficient joins",
+      "timestamp": "2025-06-29T18:58:30.875088",
+      "topics": [
+        "dbt",
+        "performance",
+        "optimization",
+        "CTE"
+      ],
+      "stored_in_memory": true,
+      "memory_id": "mem_001",
+      "context": {}
+    },
+    {
+      "exchange_id": "exchange_3f4588a71a75",
+      "query": "Here's my model code with 5 CTEs doing aggregations",
+      "response": "I see the issue. Your CTEs are scanning the full table multiple times. Try:\n1. Materialize intermediate CTEs as views\n2. Add WHERE clauses early\n3. Use incremental models",
+      "timestamp": "2025-06-29T18:58:30.875097",
+      "topics": [
+        "dbt",
+        "CTE",
+        "materialization"
+      ],
+      "stored_in_memory": true,
+      "memory_id": "mem_002",
+      "context": {}
+    },
+    {
+      "exchange_id": "exchange_56e7a63da43f",
+      "query": "I materialized the CTEs but it's still slow",
+      "response": "Let's check if you have proper indexes. Run: EXPLAIN ANALYZE on your query",
+      "timestamp": "2025-06-29T18:58:30.875102",
+      "topics": [
+        "dbt",
+        "indexes",
+        "performance"
+      ],
+      "stored_in_memory": false,
+      "memory_id": null,
+      "context": {}
+    }
+  ]
+}

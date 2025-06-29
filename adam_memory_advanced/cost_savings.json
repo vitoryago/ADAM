@@ -1,6 +1,6 @@
 {
   "total_saved": 0.0,
-  "storage_cost": 2e-05,
-  "retrieval_savings": 0.013333333333333334,
+  "storage_cost": 3.0000000000000004e-05,
+  "retrieval_savings": 0.034117,
   "expensive_queries_cached": 0
 }

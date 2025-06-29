@@ -15,5 +15,23 @@
     "total_interactions": 1,
     "evolution_summary": null,
     "pattern_signatures": []
+  },
+  "thread_dbt_20250629_185830": {
+    "thread_id": "thread_dbt_20250629_185830",
+    "primary_topic": "dbt",
+    "subtopics": [
+      "window-functions",
+      "optimization"
+    ],
+    "conversation_ids": [
+      "session_20250629_185308_2096bb92"
+    ],
+    "memory_ids": [
+      "mem_How do I o"
+    ],
+    "last_updated": "2025-06-29T18:58:30.875882",
+    "total_interactions": 1,
+    "evolution_summary": null,
+    "pattern_signatures": []
   }
 }
