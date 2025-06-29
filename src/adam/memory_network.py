@@ -352,6 +352,9 @@ class MemoryNetworkSystem:
         
         # Update our topic indices for fast topic-based search
         for topic in topics:
+            # Ensure the topic exists in our dictionary
+            if topic not in self.topic_to_memories:
+                self.topic_to_memories[topic] = set()
             self.topic_to_memories[topic].add(memory_id)
         
         # Update or the conversation thread for this topic
@@ -1345,9 +1348,10 @@ class MemoryNetworkSystem:
                     # topic_to_memories: Maps each topic to all memories about that topic
                     # Example: "SQL" -> {"mem001", "mem047", "mem112", ...}
                     # We convert list back to sets for 0(1) lookup performance
-                    self.topic_to_memories = {
-                        k: set(v) for k, v in indices_data.get('topic_to_memories', {}).items()
-                    }
+                    # Use defaultdict to handle new topics automatically
+                    self.topic_to_memories = defaultdict(set)
+                    for k, v in indices_data.get('topic_to_memories', {}).items():
+                        self.topic_to_memories[k] = set(v)
 
                     # topic_to_threads: Maps topics to conversation threads about them
                     # Example: "dbt debugging" -> ["thread_001", "thread_002"]
