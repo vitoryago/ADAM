@@ -145,5 +145,5 @@ These need more thought but show promise:
 
 ---
 
-*Last updated: [Current Date]*
+*Last updated: 2025-06-29
 *Contributors: ADAM Development Team*
