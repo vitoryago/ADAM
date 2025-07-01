@@ -1,9 +1,13 @@
 # Core AI/ML
 langchain==0.1.1
 langchain-community==0.0.13
+langchain-openai==0.0.5
+langchain-anthropic==0.1.1
+langgraph==0.0.26
 ollama==0.1.4
 chromadb==0.4.22
-openai==1.6.1  # For vision capabilities when needed
+openai==1.6.1  # For O1 models and vision
+anthropic==0.8.1  # For Claude Opus 4
 
 # Voice capabilities
 openai-whisper==20231117
@@ -30,6 +34,7 @@ pydantic==2.5.3
 pyyaml==6.0.1
 rich==13.7.0  # Beautiful terminal output
 click==8.1.7  # CLI tools
+aiohttp==3.9.1  # Async HTTP for real-time pricing
 
 # Web interface
 streamlit==1.29.0
