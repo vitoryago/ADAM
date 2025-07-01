@@ -291,6 +291,31 @@ Each challenge builds on the previous ones. Start with cost optimization to unde
 
 Remember: The best way to learn AI development isn't to follow tutorials - it's to build something real, hit real problems, and solve them. ADAM is your laboratory for mastering modern AI engineering.
 
+1. **LangGraph:** Turn Your Conversation Flow into a State Machine
+- **Current Problem:** Your conversation flow is linear - query → memory check → LLM → store.
+- **What we'll build:** A sophisticated decision flow that handles edge cases.
+- **What you'll learn:** How modern AI agents make decisions.
+
+2. **Advanced RAG:** Multi-Stage Retrieval
+- Current Problem: You do simple similarity search. This misses relevant memories that use different words.
+- What we'll build: A three-stage retrieval system.
+- What you'll learn: Why simple RAG fails and how to fix it.
+
+3. Smart LLM Routing: Actually Implement Your Day 4 Research
+- Current Problem: You always use Mistral, missing cost/quality optimization.
+- What we'll build: Intelligent routing based on query analysis.
+- What you'll learn: How to analyze queries and match them to model capabilities.
+
+4. Conversation Patterns: Add Intelligence to Your System
+- Current Problem: Conversations are isolated. No learning across sessions.
+- What we'll build: Pattern extraction and proactive assistance.
+- What you'll learn: How to make AI truly helpful, not just responsive.
+
+5. Production Robustness: Make ADAM Reliable
+- Current Problem: No error handling, no fallbacks, no monitoring.
+- What we'll build: Production-grade reliability.
+- What you'll learn: Why 50% of AI engineering is handling failures.
+
 ---
 
 *Last updated: 2025-06-29
