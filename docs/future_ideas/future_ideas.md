@@ -182,7 +182,7 @@ These need more thought but show promise:
 - Compute: $0.20/month (efficient algorithms)
 
 **Techniques to explore**:
-- Use Mistral-7B for 80% of queries, GPT-4 only for complex problems
+- Use grok-3-mini-high for 80% of queries, GPT-4 only for complex problems
 - Implement semantic caching - similar queries get cached responses
 - Compress embeddings from 1536 to 256 dimensions with minimal loss
 - Store only memory deltas, not full snapshots
