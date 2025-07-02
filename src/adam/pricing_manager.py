@@ -195,20 +195,20 @@ class PricingManager:
             
         Example:
             cost = estimate_query_cost("o3", 1500)
-            # Returns: 0.05625 ($37.50/1K * 1.5K)
+            # Returns: 0.0075 ($5/M * 0.0015M)
         """
         # Try to use cached price first for speed
         cache_key = f"{model}_both"
         
         if cache_key in self._price_cache:
-            price_per_1k, _ = self._price_cache[cache_key]
+            price_per_million, _ = self._price_cache[cache_key]
         else:
             # Fall back to default prices
             default = self._default_prices.get(model, {"input": 1.0, "output": 1.0})
-            price_per_1k = (default["input"] + default["output"]) / 2
+            price_per_million = (default["input"] + default["output"]) / 2
         
-        # Calculate cost: (tokens / 1000) * price_per_1k
-        return (estimated_tokens / 1000) * price_per_1k
+        # Calculate cost: (tokens / 1_000_000) * price_per_million
+        return (estimated_tokens / 1_000_000) * price_per_million
     
     async def update_all_prices(self):
         """

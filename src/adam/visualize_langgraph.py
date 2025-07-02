@@ -266,13 +266,13 @@ def create_cost_optimization_diagram():
     # Shows how routing to appropriate models saves money
     model_text = [
         "Model Usage Strategy:",
-        "• Simple → Grok-3-mini ($0.20/1K)",
-        "• Moderate → Grok-3-mini ($0.20/1K)",  
-        "• Complex → O3 ($37.50/1K)",
-        "• Coding → Claude Opus 4 ($45/1K)",
+        "• Simple → Grok-3-mini ($0.4/M)",
+        "• Moderate → Grok-3-mini ($0.4/M)",  
+        "• Complex → O3 ($5/M)",
+        "• Coding → Claude Opus 4 ($45/M)",
         "",
-        "Weighted average: $4.13/1K tokens",
-        "Without routing: $37.50/1K (O3 for all)"
+        "Weighted average: ~$1.85/M tokens",
+        "Without routing: $5/M (O3 for all)"
     ]
     
     for i, text in enumerate(model_text):
