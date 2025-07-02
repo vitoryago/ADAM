@@ -100,10 +100,11 @@ class IntegratedADAMSystem:
         
         # Cost tracking (will be overridden by dynamic pricing)
         self.total_cost = 0.0
+        # Costs per token (divide per-million prices by 1M)
         self.cost_per_model = {
-            "grok-3-mini-reasoning-high": 0.0002,  # $0.20/1K tokens
-            "o3": 0.0375,                          # $37.50/1K tokens
-            "claude-opus-4": 0.045                 # $45/1K tokens
+            "grok-3-mini-reasoning-high": 0.0000004,  # $0.4/M tokens
+            "o3": 0.000005,                           # $5/M tokens
+            "claude-opus-4": 0.000045                 # $45/M tokens
         }
     
     def _init_llms(self):
