@@ -5,7 +5,8 @@
       "Bash(python:*)",
       "Bash(grep:*)",
       "Bash(touch:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(pip install:*)"
     ],
     "deny": []
   }
