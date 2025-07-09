@@ -64,7 +64,7 @@ from rich.table import Table
 from rich.panel import Panel
 
 # Import our existing systems
-from .memory import MemorySystem, Memory
+from .memory import ADAMMemoryAdvanced as MemorySystem, Memory
 from .memory_network import MemoryNetworkSystem, MemoryNode
 from .conversation_aware_memory import ConversationAwareMemorySystem
 
@@ -154,13 +154,13 @@ class AdvancedRAGSystem:
         self.k1 = k1
         self.b = b
         
-        # Initialize components
-        self._initialize_bm25_index()
-        self._initialize_vector_store()
-        
         # Cache for performance
         self._doc_cache = {}
         self._embedding_cache = {}
+        
+        # Initialize components
+        self._initialize_vector_store()
+        self._initialize_bm25_index()
         
         console.print("[green]Advanced RAG System initialized with three retrieval methods[/green]")
     
@@ -207,13 +207,17 @@ class AdvancedRAGSystem:
         
         # Initialize BM25 with our corpus
         # BM25Okapi is the most common variant of BM25
-        self.bm25 = BM25Okapi(
-            tokenized_corpus,
-            k1=self.k1,
-            b=self.b
-        )
-        
-        console.print(f"[green]BM25 index built with {len(tokenized_corpus)} documents[/green]")
+        if tokenized_corpus:
+            self.bm25 = BM25Okapi(
+                tokenized_corpus,
+                k1=self.k1,
+                b=self.b
+            )
+            console.print(f"[green]BM25 index built with {len(tokenized_corpus)} documents[/green]")
+        else:
+            # Handle empty corpus case
+            self.bm25 = None
+            console.print("[yellow]No documents to index for BM25[/yellow]")
     
     def _tokenize_for_bm25(self, text: str) -> List[str]:
         """
@@ -377,6 +381,11 @@ class AdvancedRAGSystem:
         - Vector search might return general Python errors
         - BM25 finds the EXACT error message and its solution
         """
+        # Check if BM25 index exists
+        if self.bm25 is None:
+            logger.info("BM25 index not available, returning empty results")
+            return []
+            
         # Tokenize query using same method as corpus
         query_tokens = self._tokenize_for_bm25(query)
         
@@ -558,16 +567,18 @@ class AdvancedRAGSystem:
                 
                 # Explore neighbors if not too deep
                 if depth < 3:  # Max depth of 3 to avoid drift
-                    neighbors = self.memory_network.get_related_memories(node_id, k=5)
-                    
-                    for neighbor in neighbors:
-                        if neighbor['memory_id'] not in visited:
-                            # Calculate relevance based on edge weight and current score
-                            edge_weight = neighbor.get('weight', 0.5)
-                            new_score = score * edge_weight * 0.8  # Decay factor
-                            
-                            new_path = path + [neighbor['memory_id']]
-                            pq.put((-new_score, depth + 1, neighbor['memory_id'], new_path))
+                    # Get neighbors directly from the NetworkX graph
+                    if self.memory_network.memory_graph.has_node(node_id):
+                        # Get outgoing edges (memories this one references)
+                        for neighbor_id in self.memory_network.memory_graph.successors(node_id):
+                            if neighbor_id not in visited:
+                                # Get edge weight
+                                edge_data = self.memory_network.memory_graph.get_edge_data(node_id, neighbor_id)
+                                edge_weight = edge_data.get('weight', 0.5) if edge_data else 0.5
+                                new_score = score * edge_weight * 0.8  # Decay factor
+                                
+                                new_path = path + [neighbor_id]
+                                pq.put((-new_score, depth + 1, neighbor_id, new_path))
         
         logger.info(f"Graph traversal found {len(graph_results)} additional results")
         return graph_results
