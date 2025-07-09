@@ -29,7 +29,7 @@ from typing import List, Dict, Set
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.adam.memory import MemorySystem, MemoryType
+from src.adam.memory import ADAMMemoryAdvanced as MemorySystem, MemoryType
 from src.adam.memory_network import MemoryNetworkSystem
 from src.adam.advanced_rag import (
     AdvancedRAGSystem, 
