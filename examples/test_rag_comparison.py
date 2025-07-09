@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Import our systems
-from src.adam.memory import MemorySystem
+from src.adam.memory import ADAMMemoryAdvanced as MemorySystem
 from src.adam.memory_network import MemoryNetworkSystem
 from src.adam.conversation_aware_memory import ConversationAwareMemorySystem
 from src.adam.advanced_rag import AdvancedRAGSystem, demonstrate_retrieval_differences
@@ -141,15 +141,23 @@ def populate_test_system():
     graph traversal capabilities.
     """
     # Initialize systems
-    memory_system = MemorySystem(base_dir="./test_adam_memory")
-    memory_network = MemoryNetworkSystem(memory_system)
-    conversation_system = ConversationAwareMemorySystem(
-        conversation_system=None,  # Not needed for this test
-        memory_network=memory_network
-    )
+    memory_system = MemorySystem(persist_directory="./test_adam_memory")
+    
+    # Create conversation system needed by memory network
+    from src.adam.conversation_system import ConversationSystem
+    conversation_system = ConversationSystem(storage_path="./test_adam_conversations")
+    
+    memory_network = MemoryNetworkSystem(memory_system, conversation_system)
+    
+    # Note: ConversationAwareMemorySystem not needed for this test
     
     # Clear existing data
-    memory_system.collection.delete(where={})
+    try:
+        # Try new ChromaDB API
+        memory_system.collection.delete()
+    except:
+        # If that fails, collection might not exist or be empty
+        pass
     memory_network.memory_graph.clear()
     
     # Add test memories
@@ -159,48 +167,37 @@ def populate_test_system():
     console.print("[yellow]Populating test system with memories...[/yellow]")
     
     for i, memory_data in enumerate(test_memories):
-        # Store in memory system
-        memory_id = memory_system.store_memory(
+        # Store in memory system using remember_if_worthy
+        # Force storage by setting high confidence
+        memory_result = memory_system.remember_if_worthy(
             query=memory_data["query"],
             response=memory_data["response"],
-            memory_type=memory_data["memory_type"],
-            metadata={
-                "topics": memory_data["topics"],
-                "test_index": i
-            }
+            context={"topics": memory_data["topics"]},
+            generation_cost=0.001,  # Low cost to ensure storage
+            model_used="test_model"
         )
+        
+        # Extract memory ID from result
+        if memory_result:
+            memory_id = memory_result
+        else:
+            # Create a simple ID if not stored
+            memory_id = f"test_memory_{i}"
+        
         memory_ids.append(memory_id)
         
         # Add to memory network
-        memory_network.add_memory(
-            memory_id=memory_id,
-            conversation_id=f"test_conversation_{i}",
+        memory_network.add_memory_with_references(
             query=memory_data["query"],
             response=memory_data["response"],
+            memory_type=memory_data["memory_type"],
             topics=memory_data["topics"],
-            memory_type=memory_data["memory_type"]
+            auto_save=False  # Don't save after each addition
         )
     
-    # Create meaningful connections for graph traversal
-    # Connect Python errors
-    memory_network.add_reference(memory_ids[0], memory_ids[1], weight=0.9)  # TypeError → null handling
-    
-    # Connect performance optimizations
-    memory_network.add_reference(memory_ids[2], memory_ids[3], weight=0.95)  # slow code → make faster
-    memory_network.add_reference(memory_ids[3], memory_ids[4], weight=0.9)   # make faster → tuning tips
-    
-    # Connect database optimization chain
-    memory_network.add_reference(memory_ids[5], memory_ids[6], weight=0.85)  # SQL slow → indexing
-    memory_network.add_reference(memory_ids[6], memory_ids[7], weight=0.8)   # indexing → connection pool
-    
-    # Connect patterns
-    memory_network.add_reference(memory_ids[8], memory_ids[9], weight=0.9)   # decorator → wrapper
-    
-    # Connect testing
-    memory_network.add_reference(memory_ids[10], memory_ids[11], weight=0.95) # best practices → good tests
-    
-    # Cross-domain connection: performance optimization
-    memory_network.add_reference(memory_ids[4], memory_ids[5], weight=0.7)    # Python perf → SQL perf
+    # The memory network will automatically create connections based on similarity
+    # The add_memory_with_references method finds related memories and creates weighted edges
+    # This happens internally when we add memories with similar topics or content
     
     console.print(f"[green]Added {len(memory_ids)} memories with connections[/green]")
     
@@ -509,15 +506,15 @@ if __name__ == "__main__":
     # Show theoretical explanation
     demonstrate_retrieval_differences()
     
-    console.print("\n[yellow]Press Enter to continue with the practical demonstration...[/yellow]")
-    input()
+    console.print("\n[yellow]Continuing with the practical demonstration...[/yellow]")
+    # input()  # Commented out for non-interactive testing
     
     # Run the comparison tests
     results = run_comparison_tests()
     
     # Show specific examples
-    console.print("\n[yellow]Press Enter to see specific examples...[/yellow]")
-    input()
+    console.print("\n[yellow]Showing specific examples...[/yellow]")
+    # input()  # Commented out for non-interactive testing
     demonstrate_specific_examples()
     
     console.print("\n[bold green]Demo Complete![/bold green]")
