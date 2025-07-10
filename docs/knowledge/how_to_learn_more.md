@@ -511,13 +511,13 @@ def _calculate_reference_weight(self, new_memory, existing_memory):
 ## 7. LLM Integration and Prompt Engineering
 
 ### What You'll Learn
-How to effectively integrate and control large language models in production systems.
+How to effectively integrate and control large language models in production systems. ADAM now has a complete LLM configuration system supporting multiple providers.
 
-### Key Concepts to Study
-- Prompt design patterns
-- Token economics
-- Model routing strategies
-- Response validation
+### Key Files to Study
+- `src/adam/llm/config.py` - Model configurations and selection
+- `src/adam/llm/client.py` - Unified client for multiple providers
+- `test_llm_setup.py` - Testing and verification
+- `docs/llm_setup_guide.md` - Setup instructions
 
 ### Questions You Should Be Able to Answer
 
@@ -527,7 +527,7 @@ How to effectively integrate and control large language models in production sys
    - Grasp chain-of-thought techniques
 
 2. **When should you use which model?**
-   - Study model capabilities
+   - Study model capabilities (grok-4 vs grok-3-mini vs o4-mini-high)
    - Understand cost-performance tradeoffs
    - Learn routing strategies
 
@@ -538,40 +538,68 @@ How to effectively integrate and control large language models in production sys
 
 ### Deep Dive Topics
 
-#### Intelligent Model Routing
+#### Intelligent Model Routing (Implemented in ADAM)
 ```python
-def route_to_model(self, query_complexity):
-    if query_complexity == QueryComplexity.TRIVIAL:
-        return "gpt-3.5-turbo"  # Fast and cheap
-    elif query_complexity == QueryComplexity.COMPLEX:
-        return "gpt-4"  # Powerful but expensive
-    elif query_complexity == QueryComplexity.EXPERT:
-        return "claude-3-opus"  # Best for complex reasoning
+def _auto_select_model(self, prompt: str, reasoning_effort: Optional[str]) -> Optional[str]:
+    prompt_lower = prompt.lower()
+    
+    # If reasoning is requested, prefer reasoning models
+    if reasoning_effort:
+        if reasoning_effort == "high":
+            if "o4-mini-high" in self.config.get_available_models():
+                return "o4-mini-high"
+        elif reasoning_effort == "low":
+            if "grok-3-mini" in self.config.get_available_models():
+                return "grok-3-mini"
+    
+    # Check for SQL/analytics keywords
+    sql_keywords = ["sql", "query", "database", "dbt", "snowflake", "optimize"]
+    if any(keyword in prompt_lower for keyword in sql_keywords):
+        if "grok-4" in self.config.get_available_models():
+            return "grok-4"
 ```
 
 **What This Teaches**:
 - Model selection criteria
 - Performance optimization
 - Cost management
-- Quality assurance
+- Domain-specific routing
+
+#### Multi-Provider Integration
+```python
+# ADAM supports multiple providers with different APIs
+class UnifiedLLMClient:
+    async def _complete_grok(self, ...):
+        # xAI API with reasoning_effort parameter
+        
+    async def _complete_openai(self, ...):
+        # OpenAI responses API with effort parameter
+```
+
+**What This Teaches**:
+- API abstraction patterns
+- Provider-specific handling
+- Unified interfaces
+- Error resilience
 
 ### Practical Exercises
 
-1. **Build Prompt Templates**
-   - Reusable prompt components
-   - Variable injection
-   - Safety mechanisms
+1. **Build Analytics-Specific Prompts**
+   - SQL optimization prompts
+   - dbt error analysis prompts
+   - Data quality check prompts
 
-2. **Implement Response Parsing**
-   - Structured output extraction
-   - Error handling
-   - Validation pipelines
+2. **Implement Cost Tracking**
+   - Monitor token usage
+   - Track costs per query type
+   - Optimize model selection
 
 ### AI Concepts You'll Master
 - **Prompt Engineering**: The new programming paradigm
 - **In-Context Learning**: How LLMs adapt
-- **Token Economics**: Cost optimization
-- **Model Capabilities**: Knowing limits
+- **Token Economics**: Cost optimization with real pricing
+- **Model Capabilities**: Understanding grok-4, grok-3-mini, o4-mini-high
+- **Reasoning Models**: How effort parameters affect output
 
 ---
 
@@ -799,19 +827,43 @@ def retrieve(query):
 
 ---
 
+## Current Development Status (January 2025)
+
+### ✅ Completed Components
+1. **Memory System** - Advanced worthiness evaluation, versioning, cost tracking
+2. **RAG System** - Three-stage retrieval (BM25 + Vector + Graph)
+3. **Conversation System** - Session management with context awareness
+4. **Memory Network** - Graph-based connections between memories
+5. **Test Infrastructure** - Comprehensive test suite and documentation
+6. **LLM Configuration** - Multi-provider support (xAI Grok, OpenAI o4)
+
+### 🚧 In Progress (Week 1 of Roadmap)
+1. **LLM Integration** ✅ - Just completed configuration for grok-4, grok-3-mini, o4-mini-high
+2. **SQL Tools** - Next up: SQL analyzer and optimizer
+3. **dbt Integration** - Coming soon: Error parser and model analyzer
+
+### 📋 Next Steps
+- Set API keys and test LLM configuration (`python test_llm_setup.py`)
+- Implement SQL analysis tools from roadmap
+- Begin dbt integration
+- Start using ADAM for real Analytics Engineering tasks
+
+---
+
 ## Learning Path Recommendations
 
-### Phase 1: Foundation (Weeks 1-2)
-1. Study memory system implementation
-2. Understand basic retrieval (BM25)
-3. Learn conversation management
-4. Run all basic tests
+### Phase 1: Foundation (Weeks 1-2) 
+1. Study memory system implementation ✅
+2. Understand basic retrieval (BM25) ✅
+3. Learn conversation management ✅
+4. Run all basic tests ✅
+5. **NEW: Configure and test LLM integration** ✅
 
 ### Phase 2: Advanced Concepts (Weeks 3-4)
-1. Master three-stage retrieval
-2. Understand graph algorithms
-3. Study agent architectures
-4. Implement simple improvements
+1. Master three-stage retrieval ✅
+2. Understand graph algorithms ✅
+3. Study agent architectures ⏳
+4. Implement SQL and dbt tools 🚧
 
 ### Phase 3: Production Skills (Weeks 5-6)
 1. Add monitoring and metrics
