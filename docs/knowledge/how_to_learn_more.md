@@ -603,7 +603,322 @@ class UnifiedLLMClient:
 
 ---
 
-## 8. System Design and Architecture
+## 8. SQL Analysis and Optimization Tools
+
+### What You'll Learn
+How ADAM helps analytics engineers optimize SQL queries, identify performance issues, and maintain code quality standards. This is Week 1 of the roadmap implementation.
+
+### Key Files to Study
+- `src/adam/tools/sql_tools.py` - Complete SQL analysis implementation
+- `tests/test_sql_tools.py` - Comprehensive test suite
+- `examples/sql_tools_demo.py` - Real-world usage examples
+
+### Questions You Should Be Able to Answer
+
+1. **How does ADAM detect SQL anti-patterns?**
+   - Understand pattern matching techniques
+   - Learn about query parsing strategies
+   - Grasp performance impact estimation
+
+2. **What makes a query "complex"?**
+   - Study the complexity scoring algorithm
+   - Understand CTE and join impact
+   - Learn about query metrics
+
+3. **How does dialect-specific optimization work?**
+   - Analyze Snowflake vs BigQuery patterns
+   - Understand clustering key detection
+   - Learn platform-specific features
+
+### Deep Dive Topics
+
+#### SQL Issue Detection
+```python
+class SQLAnalyzer:
+    def analyze_query(self, query: str) -> Tuple[List[SQLIssue], QueryMetrics]:
+        issues = []
+        # Pattern-based detection
+        issues.extend(self._check_select_star(query))
+        issues.extend(self._check_expensive_operations(query))
+        issues.extend(self._check_subquery_issues(query))
+        # Dialect-specific checks
+        if self.dialect == "snowflake":
+            issues.extend(self._check_snowflake_specific(query))
+```
+
+**What This Teaches**:
+- Regular expression patterns for SQL
+- Static analysis techniques
+- Performance heuristics
+- Domain-specific knowledge encoding
+
+#### Complexity Metrics
+```python
+def _calculate_metrics(self, query: str) -> QueryMetrics:
+    # Accurate CTE counting
+    cte_pattern = r'\b\w+\s+AS\s*\('
+    cte_count = len([m for m in matches if 'WITH' in query[:query.find(m)]])
+    
+    # Complexity scoring
+    complexity_score = min(10, max(1, (
+        (line_count // 30) +
+        (cte_count) +
+        (join_count) +
+        (subquery_count)
+    )))
+```
+
+**What This Teaches**:
+- Code complexity measurement
+- Heuristic-based scoring
+- Pattern recognition
+- Metric aggregation
+
+#### AI-Powered Optimization
+```python
+async def suggest_optimizations(self, query: str, issues: List[SQLIssue]) -> str:
+    client = await self._get_llm_client()
+    
+    prompt = f"""As an expert in SQL optimization, help optimize this {self.dialect} query...
+    Issues found: {issue_summary}
+    Original query: {query}
+    Provide an optimized version..."""
+    
+    response = await client.complete(prompt, model="grok-4")
+```
+
+**What This Teaches**:
+- Prompt engineering for technical tasks
+- LLM integration patterns
+- Context building from analysis
+- Model selection strategies
+
+### Practical Exercises
+
+1. **Add New SQL Anti-Pattern Detection**
+   - Detect missing indexes on JOIN columns
+   - Find UNION vs UNION ALL misuse
+   - Identify missing partition filters
+
+2. **Implement Query Cost Estimation**
+   - Parse execution plans
+   - Estimate row counts
+   - Calculate approximate costs
+
+3. **Build SQL Migration Tools**
+   - Convert between SQL dialects
+   - Update deprecated syntax
+   - Modernize legacy queries
+
+### Real-World Applications
+
+#### Example: Snowflake Query Optimization
+```python
+# Before ADAM
+slow_query = """
+SELECT DISTINCT *
+FROM orders o, customers c
+WHERE o.customer_id = c.id
+AND o.amount NOT IN (SELECT amount FROM cancelled_orders)
+"""
+
+# ADAM detects:
+# - SELECT * anti-pattern
+# - Implicit cross join
+# - NOT IN with subquery (NULL issues)
+# - Missing clustering key usage
+
+# After ADAM optimization:
+optimized = """
+SELECT DISTINCT
+    o.order_id,
+    o.customer_id,
+    c.customer_name
+FROM orders o
+JOIN customers c ON o.customer_id = c.id
+WHERE NOT EXISTS (
+    SELECT 1 FROM cancelled_orders co 
+    WHERE co.amount = o.amount
+)
+-- Consider clustering on customer_id for better performance
+"""
+```
+
+### Testing Strategies
+
+The SQL tools include comprehensive tests demonstrating:
+- **Pattern Detection**: How to test regex-based analysis
+- **Edge Cases**: Handling complex nested queries
+- **Mocking LLMs**: Testing AI features without API calls
+- **Dialect Variations**: Platform-specific test cases
+
+### AI Concepts You'll Master
+- **Static Code Analysis**: Pattern-based detection
+- **Heuristic Algorithms**: Complexity scoring
+- **Domain-Specific Languages**: SQL parsing techniques
+- **Hybrid AI Systems**: Combining rules and LLMs
+
+---
+
+## 9. Interactive ADAM System
+
+### What You'll Learn
+How to interact with ADAM as a complete system, understanding model selection, memory usage, and the full AI assistant experience.
+
+### Key Files to Study
+- `adam_complete.py` - Full-featured interactive interface
+- `adam_simple_chat.py` - Lightweight chat interface  
+- `adam_chat.py` - Memory-focused chat system
+- `docs/how_to_run_adam.md` - Complete usage guide
+
+### Questions You Should Be Able to Answer
+
+1. **How does ADAM select which LLM model to use?**
+   - Understand content-based routing
+   - Learn cost-performance tradeoffs
+   - Grasp fallback strategies
+
+2. **How do all components work together?**
+   - Memory search → Context building → LLM generation
+   - Conversation tracking and session management
+   - Tool integration (SQL analysis)
+
+3. **What makes ADAM different from ChatGPT?**
+   - Specialized for analytics engineering
+   - Memory system for long-term learning
+   - Transparent model selection
+   - Integrated SQL analysis tools
+
+### Deep Dive Topics
+
+#### Model Selection Logic
+```python
+def _get_model_selection_reason(self, text: str) -> str:
+    text_lower = text.lower()
+    
+    if any(word in text_lower for word in ['sql', 'query', 'database']):
+        return "SQL/Database content - grok-4 preferred for analytics"
+    elif any(word in text_lower for word in ['explain', 'why', 'debug']):
+        return "Reasoning task - Complex model preferred"
+    else:
+        return "General query - Balanced model selection"
+```
+
+**What This Teaches**:
+- Content-aware routing
+- Domain-specific optimization
+- Fallback strategies
+- Cost-performance balance
+
+#### Complete System Flow
+```python
+async def process_input(self, user_input: str):
+    # 1. Check if SQL query
+    if self._is_sql_query(user_input):
+        return self._analyze_sql(user_input)
+    
+    # 2. Search memory
+    search_results = self.rag.retrieve(user_input, k=5)
+    
+    # 3. Build context
+    context = self._build_context(search_results)
+    
+    # 4. Select model
+    model = self._auto_select_model(user_input)
+    
+    # 5. Generate response
+    response = await self.llm_client.complete(prompt, model)
+    
+    # 6. Store if valuable
+    self.memory.remember_if_worthy(user_input, response)
+    
+    # 7. Track conversation
+    self.conversations.record_exchange(user_input, response)
+```
+
+**What This Teaches**:
+- System orchestration
+- Component integration
+- Data flow patterns
+- State management
+
+### Practical Exercises
+
+1. **Add Custom Model Selection Rules**
+   - Detect dbt-specific queries
+   - Route data quality questions
+   - Implement cost caps
+
+2. **Enhance Memory Display**
+   - Show memory connections
+   - Visualize retrieval paths
+   - Add memory search commands
+
+3. **Build Conversation Analytics**
+   - Track topic trends
+   - Measure response quality
+   - Analyze model performance
+
+### Real-World Usage Patterns
+
+#### Pattern 1: SQL Development Workflow
+```
+You: Here's my query that's running slow
+[Paste SQL]
+
+ADAM: [Analyzes query, finds issues]
+
+You: optimize
+
+ADAM: [Provides optimized version]
+
+You: Why did you change the JOIN order?
+
+ADAM: [Explains optimization reasoning]
+```
+
+#### Pattern 2: Debugging Session
+```
+You: My dbt model fails with "column not found"
+
+ADAM: [Asks for error details, suggests checks]
+
+You: Here's the full error: [paste]
+
+ADAM: [Identifies issue, provides solution]
+```
+
+### Interface Features
+
+The complete interface provides:
+
+1. **Transparency Mode**
+   - See memory search results
+   - Watch model selection process
+   - Track costs in real-time
+   - Understand retrieval methods
+
+2. **Session Management**
+   - Conversations are saved
+   - Memories persist between sessions
+   - Statistics tracking
+   - Cost monitoring
+
+3. **Interactive Commands**
+   - `help` - Command list
+   - `stats` - Usage statistics
+   - `models` - Model details
+   - `memory` - Memory inspection
+
+### AI Concepts You'll Master
+- **Multi-Model Systems**: Routing queries to appropriate models
+- **Context Management**: Building effective prompts from memory
+- **Session State**: Maintaining conversation continuity
+- **Hybrid Systems**: Combining rule-based (SQL analysis) with AI
+
+---
+
+## 10. System Design and Architecture
 
 ### What You'll Learn
 How to build production-grade AI systems that scale, perform, and maintain.
@@ -838,14 +1153,15 @@ def retrieve(query):
 6. **LLM Configuration** - Multi-provider support (xAI Grok, OpenAI o4)
 
 ### 🚧 In Progress (Week 1 of Roadmap)
-1. **LLM Integration** ✅ - Just completed configuration for grok-4, grok-3-mini, o4-mini-high
-2. **SQL Tools** - Next up: SQL analyzer and optimizer
-3. **dbt Integration** - Coming soon: Error parser and model analyzer
+1. **LLM Integration** ✅ - Completed configuration for grok-4, grok-3-mini, gpt-4, gpt-3.5-turbo
+2. **SQL Tools** ✅ - Completed SQL analyzer, formatter, and AI-powered optimizer
+3. **dbt Integration** - Next up: Error parser and model analyzer
 
 ### 📋 Next Steps
-- Set API keys and test LLM configuration (`python test_llm_setup.py`)
-- Implement SQL analysis tools from roadmap
-- Begin dbt integration
+- Run ADAM: `python adam_complete.py` (see docs/how_to_run_adam.md)
+- Begin dbt integration (Week 1 continues)
+- Implement memory integration with SQL tools
+- Add more SQL dialect support (Redshift, Postgres)
 - Start using ADAM for real Analytics Engineering tasks
 
 ---
