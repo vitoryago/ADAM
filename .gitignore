@@ -36,16 +36,17 @@ api_keys.json
 config/secrets.yaml
 
 # Memory and Conversation Data
+adam_memory/
 adam_memory_advanced/
+adam_complete_memory/
+adam_complete_conversations/
 conversations/
 demo_conversations/
 memory_network_data/
 
 # Test outputs
-test_*.png
-test_*.jpg
-*.png
-*.jpg
+tests/artifacts/
+tests/manual/
 
 # Seed files
 seeds/
