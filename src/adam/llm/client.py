@@ -4,9 +4,12 @@ Handles different APIs: xAI (Grok) and OpenAI
 """
 import os
 import asyncio
+import logging
 from typing import Dict, List, Optional, Union, AsyncGenerator
 from dataclasses import dataclass
 import json
+
+logger = logging.getLogger(__name__)
 
 # Import model-specific SDKs
 try:
@@ -150,10 +153,22 @@ class UnifiedLLMClient:
         if stream:
             # Return async generator for streaming
             async def stream_generator():
-                response = chat.sample_stream()
-                for chunk in response:
-                    if hasattr(chunk, 'delta'):
-                        yield chunk.delta
+                try:
+                    # Grok uses sample_stream() method
+                    if hasattr(chat, 'sample_stream'):
+                        response = chat.sample_stream()
+                        for chunk in response:
+                            if hasattr(chunk, 'delta'):
+                                yield chunk.delta
+                    else:
+                        # Fallback to non-streaming if method not available
+                        response = chat.sample()
+                        yield response.content
+                except Exception as e:
+                    logger.error(f"Grok streaming error: {e}")
+                    # Fallback to non-streaming
+                    response = chat.sample()
+                    yield response.content
             return stream_generator()
         else:
             # Get complete response
