@@ -10,7 +10,8 @@
       "Bash(mkdir:*)",
       "Bash(ls:*)",
       "Bash(mv:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(./scripts/manage_memory_lifecycle.py activity)"
     ],
     "deny": []
   }
