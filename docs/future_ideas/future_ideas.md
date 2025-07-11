@@ -72,6 +72,82 @@ This document captures innovative ideas for ADAM's future development. Each idea
 - Memories below a threshold become "archived" (not deleted, just deprioritized)
 - Simulates human memory patterns for more natural recall
 
+**Implementation details**:
+- Initial strength: 1.0 for all new memories
+- Decay formula: strength = strength * (0.95 ^ days_since_last_access)
+- Reinforcement: Each access adds 0.1 to strength (max 1.0)
+- Archive threshold: strength < 0.3
+- Complete fade threshold: strength < 0.1 (candidate for compression)
+
+### Idea 4b: Memory Compression and Summarization
+**Concept**: Periodically compress old conversations into summary memories, maintaining context while dramatically reducing storage.
+
+**How it works**:
+1. **Age-based compression tiers**:
+   - 0-7 days: Full fidelity (keep everything)
+   - 7-30 days: Moderate compression (keep important exchanges)
+   - 30-90 days: High compression (key insights only)
+   - 90+ days: Ultra compression (single summary per conversation)
+
+2. **Compression strategy**:
+   - Identify "landmark memories" - highly referenced or important
+   - Extract key patterns, solutions, and decisions
+   - Generate semantic summary using LLM
+   - Preserve metadata and references
+   - Store compression ratio for transparency
+
+3. **Multi-level summarization**:
+   ```
+   Original conversation (10 exchanges, 5000 tokens)
+   ↓ Level 1: Keep problem/solution pairs (5 exchanges, 2000 tokens)
+   ↓ Level 2: Extract key insights (1 exchange, 500 tokens)
+   ↓ Level 3: Single paragraph summary (100 tokens)
+   ```
+
+4. **Smart compression triggers**:
+   - Low memory strength (< 0.3)
+   - Storage threshold reached
+   - Scheduled batch job (weekly)
+   - Manual trigger for cleanup
+
+5. **Retrieval enhancement**:
+   - Compressed memories have "expansion" links
+   - Can regenerate context from summaries when needed
+   - Priority boost for compressed memories to compensate for lost detail
+
+**Benefits**:
+- 80-90% storage reduction for old conversations
+- Maintains semantic searchability
+- Preserves important patterns and solutions
+- Natural "forgetting" like human memory
+- Cost-effective for long-term storage
+
+**Technical approach**:
+```python
+class MemoryCompressor:
+    def compress_memory(self, memory, compression_level):
+        if compression_level == 1:
+            # Remove redundant exchanges, keep substance
+            return self.extract_key_exchanges(memory)
+        elif compression_level == 2:
+            # Generate insight summary
+            return self.generate_insights(memory)
+        elif compression_level == 3:
+            # Ultra-compressed summary
+            return self.generate_summary(memory)
+    
+    def calculate_importance_score(self, memory):
+        # Based on: access frequency, reference count, 
+        # user feedback, solution quality
+        return importance_score
+```
+
+**Preservation rules**:
+- Never compress memories marked as "landmark"
+- Keep full detail for memories with active references
+- Preserve code snippets and specific solutions
+- Maintain enough context for regeneration
+
 ## Learning and Adaptation
 
 ### Idea 5: Pattern Recognition Across Users
