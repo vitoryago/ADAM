@@ -97,10 +97,14 @@ class MemoryLifecycleManager:
             return self.strength_cache[memory_id]
             
         # Initialize from metadata if available
+        last_accessed = metadata.get('last_accessed', datetime.now())
+        if isinstance(last_accessed, str):
+            last_accessed = datetime.fromisoformat(last_accessed)
+        
         strength = MemoryStrength(
             current_strength=metadata.get('strength', 1.0),
             access_count=metadata.get('access_count', 0),
-            last_accessed=metadata.get('last_accessed', datetime.now())
+            last_accessed=last_accessed
         )
         
         self.strength_cache[memory_id] = strength
