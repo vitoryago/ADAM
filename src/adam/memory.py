@@ -254,6 +254,9 @@ class ADAMMemoryAdvanced:
         # Memory lifecycle management
         self.lifecycle_manager = MemoryLifecycleManager(self)
         
+        # Track activity for each interaction
+        self.lifecycle_manager.activity_tracker.record_interaction()
+        
         console.print("[green]✅ Advanced Memory System Ready![/green]")
     
     def _load_access_patterns(self) -> Dict[str, Any]:
@@ -400,6 +403,9 @@ class ADAMMemoryAdvanced:
         """
         console.print(f"[cyan]🔍 Searching memories for: '{query[:50]}...'[/cyan]")
         
+        # Track this interaction
+        self.lifecycle_manager.activity_tracker.record_interaction()
+        
         # Update access patterns
         self.access_patterns["total_queries"] += 1
         
@@ -426,7 +432,16 @@ class ADAMMemoryAdvanced:
             
             # Apply decay and get current strength
             strength = self.lifecycle_manager.get_memory_strength(memory_id, metadata)
-            current_strength = strength.calculate_decayed_strength()
+            
+            # Calculate active days for this memory
+            timestamp = metadata.get('timestamp')
+            if timestamp:
+                memory_date = datetime.fromisoformat(timestamp) if isinstance(timestamp, str) else timestamp
+                active_days = self.lifecycle_manager.activity_tracker.calculate_active_age_days(memory_date)
+            else:
+                active_days = 0
+                
+            current_strength = strength.calculate_decayed_strength(active_days)
             
             # Boost score for exact query matches
             if metadata.get('query_text', '').lower() == query.lower():

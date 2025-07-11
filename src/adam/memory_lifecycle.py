@@ -82,6 +82,10 @@ class MemoryLifecycleManager:
             "compression_ratio": 0.0
         }
         
+        # Initialize activity tracker
+        persist_dir = getattr(memory_system, 'persist_directory', './adam_memory_advanced')
+        self.activity_tracker = ActivityTracker(persist_dir)
+        
     def get_memory_strength(self, memory_id: str, metadata: Dict) -> MemoryStrength:
         """Get or create memory strength tracker"""
         if memory_id in self.strength_cache:
@@ -101,9 +105,17 @@ class MemoryLifecycleManager:
         """Calculate overall importance score for a memory"""
         strength = self.get_memory_strength(memory_id, metadata)
         
+        # Calculate active days elapsed for this memory
+        timestamp = metadata.get('timestamp')
+        if timestamp:
+            memory_date = datetime.fromisoformat(timestamp) if isinstance(timestamp, str) else timestamp
+            active_days = self.activity_tracker.calculate_active_age_days(memory_date)
+        else:
+            active_days = 0
+        
         # Factors that increase importance
         factors = {
-            'strength': strength.calculate_decayed_strength(),
+            'strength': strength.calculate_decayed_strength(active_days),
             'access_frequency': min(1.0, strength.access_count / 10),
             'success_rate': metadata.get('success_rate', 1.0),
             'has_code': 1.0 if metadata.get('memory_type') == 'code_pattern' else 0.5,
@@ -128,7 +140,16 @@ class MemoryLifecycleManager:
     def classify_memory_tier(self, memory_id: str, metadata: Dict) -> str:
         """Classify memory into preservation tiers"""
         strength = self.get_memory_strength(memory_id, metadata)
-        current_strength = strength.calculate_decayed_strength()
+        
+        # Calculate active days for this memory
+        timestamp = metadata.get('timestamp')
+        if timestamp:
+            memory_date = datetime.fromisoformat(timestamp) if isinstance(timestamp, str) else timestamp
+            active_days = self.activity_tracker.calculate_active_age_days(memory_date)
+        else:
+            active_days = 0
+            
+        current_strength = strength.calculate_decayed_strength(active_days)
         importance = self.calculate_memory_importance(memory_id, metadata)
         
         # Never compress landmarks
@@ -141,13 +162,12 @@ class MemoryLifecycleManager:
         elif current_strength < self.ARCHIVE_THRESHOLD:
             return 'compress_high'
         
-        # Check age-based tiers
-        age_days = (datetime.now() - strength.last_accessed).days
-        if age_days > self.TIER_HIGH:
+        # Check age-based tiers using active days
+        if active_days > self.TIER_HIGH:
             return 'compress_high'
-        elif age_days > self.TIER_MODERATE:
+        elif active_days > self.TIER_MODERATE:
             return 'compress_moderate'
-        elif age_days > self.TIER_FULL:
+        elif active_days > self.TIER_FULL:
             return 'archive'
         
         return 'active'

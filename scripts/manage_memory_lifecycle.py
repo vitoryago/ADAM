@@ -14,9 +14,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.adam.memory import ADAMMemoryAdvanced
 from src.adam.memory_lifecycle import MemoryLifecycleManager
+from src.adam.activity_tracker import ActivityTracker
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.panel import Panel
 
 console = Console()
 
@@ -164,6 +166,64 @@ def mark_landmark(memory_path: str, memory_id: str):
     
     console.print(f"[green]✅ Memory {memory_id} marked as landmark![/green]")
 
+def show_activity_report(memory_path: str):
+    """Show activity patterns and usage statistics"""
+    console.print("\n[bold cyan]ADAM Activity Report[/bold cyan]\n")
+    
+    # Initialize activity tracker
+    tracker = ActivityTracker(memory_path)
+    summary = tracker.get_activity_summary()
+    
+    if summary.get("status") == "No activity recorded":
+        console.print("[yellow]No activity has been recorded yet.[/yellow]")
+        return
+    
+    # Display summary panel
+    summary_text = f"""[bold]Activity Overview[/bold]
+    
+First Activity: {summary.get('first_activity', 'N/A')}
+Last Activity: {summary.get('last_activity', 'N/A')}
+Days Since Last Activity: {summary.get('days_since_last_activity', 0)} calendar days
+
+[bold]Usage Statistics[/bold]
+Total Active Days: {summary.get('total_active_days', 0)}
+Total Interactions: {summary.get('total_interactions', 0)}
+Average per Active Day: {summary.get('avg_interactions_per_day', 0)}
+
+[bold]Peak Usage[/bold]
+Most Active Day: {summary.get('most_active_day', 'N/A')}
+Interactions: {summary.get('most_active_day_count', 0)}
+
+[bold]Memory Age Calculation[/bold]
+Current Active Day Index: {summary.get('current_active_day_index', 0)}
+(Memories age based on active days, not calendar days)"""
+    
+    console.print(Panel(summary_text, title="📊 Activity Summary", border_style="blue"))
+    
+    # Show recent activity pattern
+    recent_pattern = tracker.get_activity_pattern(last_n_days=14)
+    if recent_pattern:
+        activity_table = Table(title="Last 14 Active Days")
+        activity_table.add_column("Date", style="cyan")
+        activity_table.add_column("Interactions", style="green")
+        activity_table.add_column("Activity Level", style="yellow")
+        
+        for date, count in recent_pattern.items():
+            # Visual activity level
+            if count >= 20:
+                level = "████████ High"
+            elif count >= 10:
+                level = "█████ Medium"
+            elif count >= 5:
+                level = "███ Low"
+            else:
+                level = "█ Minimal"
+            
+            activity_table.add_row(date, str(count), level)
+        
+        console.print("\n")
+        console.print(activity_table)
+
 def main():
     parser = argparse.ArgumentParser(description="ADAM Memory Lifecycle Management")
     parser.add_argument(
@@ -184,6 +244,9 @@ def main():
     landmark_parser = subparsers.add_parser("landmark", help="Mark memory as landmark")
     landmark_parser.add_argument("memory_id", help="Memory ID to mark as landmark")
     
+    # Activity command
+    activity_parser = subparsers.add_parser("activity", help="Show activity report")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -197,6 +260,8 @@ def main():
             show_memory_health(args.path)
         elif args.command == "landmark":
             mark_landmark(args.path, args.memory_id)
+        elif args.command == "activity":
+            show_activity_report(args.path)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         import traceback
