@@ -65,6 +65,7 @@ class ADAMChat:
         self.last_cost = 0.0
         self.total_cost = 0.0
         self.stream_output = stream_output
+        self.first_interaction = True  # Track if this is the first interaction
         
         print("ADAM is ready for real-world conversations!\n")
     
@@ -110,18 +111,27 @@ class ADAMChat:
                         context += f"\n[Memory {i+1}]: {content[:300]}...\n"
             
             # Determine query complexity
+            # Complex queries - use grok-4
             is_complex = any(keyword in query.lower() for keyword in [
                 'debug', 'optimize', 'architect', 'implement', 'refactor',
-                'analyze', 'complex', 'production', 'scale', 'performance'
+                'analyze', 'complex', 'production', 'scale', 'performance',
+                'design', 'architecture', 'integration', 'migration'
+            ])
+            
+            # Medium complexity queries - also use grok-4
+            is_medium = any(keyword in query.lower() for keyword in [
+                'create', 'build', 'develop', 'query', 'sql', 'code',
+                'function', 'class', 'model', 'schema', 'database',
+                'explain', 'how does', 'why', 'compare', 'difference'
             ])
             
             # Select model based on complexity
-            if is_complex and 'grok-4' in self.llm_config.get_available_models():
-                model = 'grok-4'
+            if (is_complex or is_medium) and 'grok-4' in self.llm_config.get_available_models():
+                model = 'grok-4'  # Use grok-4 for medium and complex queries
+            elif 'grok-3-mini' in self.llm_config.get_available_models():
+                model = 'grok-3-mini'  # Use grok-3-mini only for basic queries
             elif 'gpt-4' in self.llm_config.get_available_models():
                 model = 'gpt-4'
-            elif 'grok-3-mini' in self.llm_config.get_available_models():
-                model = 'grok-3-mini'
             else:
                 model = self.llm_config.get_available_models()[0]
             
@@ -134,9 +144,12 @@ class ADAMChat:
             ])
             
             # Build prompt with context
+            # Add instruction to not introduce yourself if not first interaction
+            intro_instruction = "" if self.first_interaction else "\nIMPORTANT: Do not introduce yourself. The user already knows who you are. Just answer their question directly."
+            
             if context and is_memory_query:
                 # Special prompt for memory queries
-                prompt = f"""You are ADAM, an AI assistant with perfect memory. The user is asking about previous conversations.
+                prompt = f"""You are ADAM, an AI assistant with perfect memory. The user is asking about previous conversations.{intro_instruction}
 
 {context}
 
@@ -145,7 +158,7 @@ User's current question: {query}
 Based on the memory context above, provide a helpful summary of what was discussed in the previous conversation(s). Be specific about the details you recall."""
             elif context:
                 # Regular prompt with context
-                prompt = f"""You are ADAM, an AI assistant with memory of previous conversations.
+                prompt = f"""You are ADAM, an AI assistant with memory of previous conversations.{intro_instruction}
 
 Relevant context from memory:
 {context}
@@ -154,7 +167,10 @@ Current question: {query}
 
 Please answer the current question, using the context if relevant."""
             else:
-                prompt = query
+                if self.first_interaction:
+                    prompt = query
+                else:
+                    prompt = f"You are ADAM. Do not introduce yourself, just answer directly.\n\nUser's question: {query}"
             
             # Generate response with streaming
             if self.stream_output:
@@ -168,7 +184,8 @@ Please answer the current question, using the context if relevant."""
                 async for chunk in await self.llm_client.complete(
                     prompt=prompt,
                     model=model,
-                    stream=True
+                    stream=True,
+                    reasoning_effort="high"  # Use high reasoning for grok-3-mini
                 ):
                     response_chunks.append(chunk)
                     if RICH_AVAILABLE:
@@ -186,7 +203,8 @@ Please answer the current question, using the context if relevant."""
                 llm_response = await self.llm_client.complete(
                     prompt=prompt,
                     model=model,
-                    stream=False
+                    stream=False,
+                    reasoning_effort="high"  # Use high reasoning for grok-3-mini
                 )
                 response = llm_response.content
                 self.last_cost = llm_response.cost
@@ -221,6 +239,9 @@ Please answer the current question, using the context if relevant."""
                     context={"session_id": self.session_id, "model": model},
                     generation_cost=0.001  # Estimate
                 )
+            
+            # Mark that we've had at least one interaction
+            self.first_interaction = False
             
             return response
             
@@ -325,8 +346,19 @@ ADAM remembers all your conversations and learns from them!
                 # Process the message
                 response = await self.process_message(query)
                 
-                # Display the response
-                self.display_response(response)
+                # Display the response (only if not already streamed)
+                if self.stream_output:
+                    # Response was already displayed during streaming
+                    # Just show cost info
+                    if RICH_AVAILABLE:
+                        console.print(
+                            f"[dim]Model: {self.last_model} | Cost: ${self.last_cost:.4f} | Total: ${self.total_cost:.4f}[/dim]\n"
+                        )
+                    else:
+                        print(f"[Cost: ${self.last_cost:.4f}, Total: ${self.total_cost:.4f}]\n")
+                else:
+                    # Display the full response
+                    self.display_response(response)
                 
             except KeyboardInterrupt:
                 print("\n\nUse 'exit' to quit properly.")
