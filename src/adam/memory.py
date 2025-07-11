@@ -29,6 +29,13 @@ from sentence_transformers import SentenceTransformer
 # For conversation state management
 from collections import deque
 
+# Memory configuration
+try:
+    from .memory_config import MemoryConfig
+except ImportError:
+    # Fallback if running standalone
+    from memory_config import MemoryConfig
+
 # Rich output for better visibility
 from rich.console import Console
 from rich.table import Table
@@ -189,7 +196,13 @@ class ADAMMemoryAdvanced:
         console.print("[yellow]🧠 Initializing Advanced Memory System...[/yellow]")
         
         # Core components
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.memory_config = MemoryConfig()
+        console.print(f"[cyan]📊 Using embedding model: {self.memory_config.embedding_model_name}[/cyan]")
+        console.print(f"[dim]   Provider: {self.memory_config.embedding_config.provider.value}[/dim]")
+        console.print(f"[dim]   Dimension: {self.memory_config.embedding_config.dimension}[/dim]")
+        
+        # Get embedding function from config
+        self.embedding_function = self.memory_config.get_embedding_function()
         self.worthiness_evaluator = MemoryWorthinessEvaluator()
         
         # Vector database with advanced settings
@@ -201,11 +214,28 @@ class ADAMMemoryAdvanced:
             )
         )
         
-        # Main memory collection
-        self.collection = self.chroma_client.get_or_create_collection(
-            name="adam_advanced_memory",
-            metadata={"description": "ADAM's intelligent memory with versioning"}
-        )
+        # Main memory collection with custom embedding function
+        collection_name = f"adam_memory_{self.memory_config.embedding_model_name.replace('-', '_')}"
+        
+        try:
+            # Try to get existing collection (without specifying embedding function)
+            self.collection = self.chroma_client.get_collection(
+                name=collection_name
+            )
+            console.print(f"[green]✅ Loaded existing collection: {collection_name}[/green]")
+        except:
+            # Create new collection with embedding function
+            self.collection = self.chroma_client.create_collection(
+                name=collection_name,
+                metadata={
+                    "description": "ADAM's intelligent memory with versioning",
+                    "embedding_model": self.memory_config.embedding_model_name,
+                    "embedding_dimension": self.memory_config.embedding_config.dimension,
+                    "created_at": datetime.now().isoformat()
+                },
+                embedding_function=self.embedding_function
+            )
+            console.print(f"[green]✅ Created new collection: {collection_name}[/green]")
         
         # Conversation state tracking
         self.conversation_states: Dict[str, ConversationState] = {}
