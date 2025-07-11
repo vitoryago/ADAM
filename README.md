@@ -30,9 +30,11 @@ ADAM (Analytics Data Assistant with Memory) is an intelligent AI assistant that 
 
 ### Advanced Memory System
 - **Conversation-Aware Memory**: Links conversations to memory storage seamlessly
-- **Memory Decay**: Old, unused memories naturally fade like human memory
+- **Memory Decay & Reinforcement**: Memories strengthen with use and fade when unused, like human memory
+- **Intelligent Compression**: Old memories are compressed to save space while preserving insights
 - **Reference Resolution**: Tracks relationships between memories with weighted connections
 - **Semantic Search**: Find relevant memories using natural language queries
+- **Lifecycle Management**: Automatic memory health monitoring and optimization
 
 ### Intelligent Query Routing
 - **Grok-3-mini**: Simple queries and basic questions ($0.4/M tokens)
