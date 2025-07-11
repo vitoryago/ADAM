@@ -49,6 +49,115 @@ async def apply_decay(memory_path: str):
         if len(compress_candidates) > 5:
             console.print(f"  ... and {len(compress_candidates) - 5} more")
 
+async def compress_memories(memory_path: str, force: bool = False):
+    """Compress eligible memories using LLM"""
+    console.print("\n[yellow]🗜️  Compressing eligible memories...[/yellow]")
+    
+    memory = ADAMMemoryAdvanced(memory_path)
+    
+    # Get all memories
+    all_data = memory.collection.get()
+    if not all_data['ids']:
+        console.print("[yellow]No memories found to compress.[/yellow]")
+        return
+    
+    # Find memories eligible for compression
+    compress_candidates = []
+    
+    for i, (mem_id, metadata) in enumerate(zip(all_data['ids'], all_data['metadatas'])):
+        # Skip already compressed unless force
+        if metadata.get('compressed') and not force:
+            continue
+            
+        # Check tier
+        tier = memory.lifecycle_manager.classify_memory_tier(mem_id, metadata)
+        if tier.startswith('compress') or (force and tier != 'landmark'):
+            content = all_data['documents'][i]
+            compress_candidates.append((mem_id, content, metadata, tier))
+    
+    if not compress_candidates:
+        console.print("[yellow]No memories need compression.[/yellow]")
+        return
+    
+    console.print(f"\n[cyan]Found {len(compress_candidates)} memories to compress[/cyan]")
+    
+    # Show what will be compressed
+    table = Table(title="Memories to Compress")
+    table.add_column("Memory ID", style="cyan")
+    table.add_column("Type", style="magenta")
+    table.add_column("Size", style="yellow")
+    table.add_column("Tier", style="green")
+    
+    total_size = 0
+    for mem_id, content, metadata, tier in compress_candidates[:10]:  # Show first 10
+        size = len(content)
+        total_size += size
+        table.add_row(
+            mem_id[:12] + "...",
+            metadata.get('memory_type', 'unknown'),
+            f"{size:,} chars",
+            tier
+        )
+    
+    if len(compress_candidates) > 10:
+        table.add_row("...", f"and {len(compress_candidates) - 10} more", "...", "...")
+    
+    console.print(table)
+    console.print(f"\n[yellow]Total size to compress: {total_size:,} characters[/yellow]")
+    
+    # Confirm
+    if not force:
+        confirm = console.input("\n[bold]Proceed with compression? [y/N]:[/bold] ")
+        if confirm.lower() != 'y':
+            console.print("[red]Compression cancelled.[/red]")
+            return
+    
+    # Perform compression
+    compressed_count = 0
+    bytes_saved = 0
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Compressing {len(compress_candidates)} memories...", total=len(compress_candidates))
+        
+        for mem_id, content, metadata, tier in compress_candidates:
+            try:
+                # Compress using lifecycle manager
+                compressed_content, updated_metadata = await memory.lifecycle_manager.compress_memory(
+                    mem_id, content, metadata, tier
+                )
+                
+                # Update in database
+                memory.collection.update(
+                    ids=[mem_id],
+                    documents=[compressed_content],
+                    metadatas=[updated_metadata]
+                )
+                
+                compressed_count += 1
+                bytes_saved += len(content) - len(compressed_content)
+                
+            except Exception as e:
+                console.print(f"[red]Failed to compress {mem_id}: {e}[/red]")
+            
+            progress.update(task, advance=1)
+    
+    # Show results
+    console.print(f"\n[green]✅ Compression complete![/green]")
+    console.print(f"  • Compressed: {compressed_count} memories")
+    console.print(f"  • Space saved: {bytes_saved:,} bytes ({bytes_saved / 1024:.1f} KB)")
+    console.print(f"  • Average compression: {(bytes_saved / total_size * 100):.1f}%")
+    
+    # Update lifecycle stats
+    stats = memory.lifecycle_manager.get_lifecycle_stats()
+    if stats.get('compression_stats'):
+        console.print(f"\n[cyan]Overall Compression Stats:[/cyan]")
+        console.print(f"  • Total compressed: {stats['compression_stats']['total_compressed']}")
+        console.print(f"  • Total saved: {stats['compression_stats']['storage_saved_bytes']:,} bytes")
+
 def show_memory_health(memory_path: str):
     """Display memory system health and statistics"""
     console.print("\n[bold cyan]Memory System Health Report[/bold cyan]\n")
@@ -247,6 +356,10 @@ def main():
     # Activity command
     activity_parser = subparsers.add_parser("activity", help="Show activity report")
     
+    # Compress command
+    compress_parser = subparsers.add_parser("compress", help="Compress eligible memories")
+    compress_parser.add_argument("--force", action="store_true", help="Force compression even if already compressed")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -262,6 +375,8 @@ def main():
             mark_landmark(args.path, args.memory_id)
         elif args.command == "activity":
             show_activity_report(args.path)
+        elif args.command == "compress":
+            asyncio.run(compress_memories(args.path, args.force))
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         import traceback
