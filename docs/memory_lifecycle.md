@@ -107,20 +107,58 @@ This prevents the situation where you return from vacation to find all your memo
 
 When memories are compressed (based on active days):
 
-1. **Moderate Compression** (7-30 active days):
-   - Keep key exchanges and important lines
-   - Remove redundant content
-   - Maintain 50%+ of original
+### 1. **Moderate Compression** (7-30 active days)
+- **Reduction**: ~20-30% size reduction
+- **Preserves**: All questions, answers, code snippets, errors, solutions
+- **Removes**: Pleasantries, redundant explanations, verbose descriptions
+- **Example**: Full SQL query examples kept, but lengthy explanations shortened
 
-2. **High Compression** (30-90 active days):
-   - Extract problem/solution pairs
-   - Keep only key insights
-   - Focus on actionable content
+### 2. **High Compression** (30-90 active days)
+- **Reduction**: ~50-60% size reduction  
+- **Format**: "Problem: X | Solution: Y | Key insight: Z"
+- **Preserves**: Core problem, final solution, critical code (max 3 lines)
+- **Removes**: Detailed explanations, intermediate steps, context
 
-3. **Ultra Compression** (90+ active days):
-   - Single paragraph summary
-   - Metadata-based description
-   - Minimal storage footprint
+### 3. **Ultra Compression** (90+ active days)
+- **Reduction**: ~90-95% size reduction
+- **Format**: Single sentence, maximum 20 words
+- **Preserves**: What was learned or solved
+- **Removes**: All details, code, explanations
+
+### LLM-Based Compression
+
+ADAM uses grok-3-mini to intelligently compress memories:
+
+```python
+# The system analyzes content and preserves based on type
+compressor = MemoryCompressor()
+result = await compressor.compress_memory(content, metadata, level)
+
+# Result includes:
+# - compressed_content: The compressed text
+# - compression_ratio: How much was saved (0.0-1.0)
+# - preserved_elements: What was kept
+# - tokens_saved: Estimated token reduction
+```
+
+### Compression Commands
+
+Manually compress eligible memories:
+```bash
+# Compress memories that need it
+./scripts/manage_memory_lifecycle.py compress
+
+# Force recompression of all non-landmark memories
+./scripts/manage_memory_lifecycle.py compress --force
+```
+
+### Compression Validation
+
+The system validates each compression to ensure:
+- Essential information is preserved
+- Compression actually reduces size
+- Format matches the compression level
+- Searchability is maintained
 
 ## Benefits
 
