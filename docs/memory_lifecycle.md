@@ -10,21 +10,25 @@ ADAM's memory lifecycle system implements intelligent memory management with dec
 
 Each memory has a "strength" value that:
 - Starts at 1.0 when created
-- Decays exponentially over time (0.95^days)
+- Decays exponentially over **active days** (0.95^active_days)
 - Gets reinforced when accessed (+0.1 boost)
 - Never falls below 0.01
 
+**Important**: Memory decay is based on "active days" not calendar days. If you don't use ADAM for a week, your memories won't decay during that time. Only days when you interact with ADAM count towards memory aging.
+
 ### 2. Memory Tiers
 
-Memories are classified into tiers based on strength and age:
+Memories are classified into tiers based on strength and **active age**:
 
-- **Active** (0-7 days): Full fidelity, quick access
-- **Archive** (7-30 days): Still accessible but lower priority
-- **Compress** (30+ days): Eligible for compression
+- **Active** (0-7 active days): Full fidelity, quick access
+- **Archive** (7-30 active days): Still accessible but lower priority
+- **Compress** (30+ active days): Eligible for compression
   - `compress_moderate`: Remove redundancy, keep substance
   - `compress_high`: Extract only key insights
   - `compress_ultra`: Single paragraph summary
 - **Landmark**: Never compressed, marked as permanently important
+
+Note: These are "active days" - days when you actually used ADAM, not calendar days.
 
 ### 3. Reinforcement
 
@@ -61,6 +65,14 @@ View memory system statistics:
 ./scripts/manage_memory_lifecycle.py health
 ```
 
+### View Activity Report
+
+See your usage patterns and active days:
+
+```bash
+./scripts/manage_memory_lifecycle.py activity
+```
+
 ### Mark Landmark Memories
 
 Prevent important memories from being compressed:
@@ -80,21 +92,32 @@ Importance is calculated based on multiple factors:
 - **Reference Count** (10%): How often referenced by other memories
 - **User Marked** (5%): Explicitly marked as landmark
 
+## Active Days System
+
+ADAM tracks "active days" to ensure memories only age when the system is being used:
+
+- **Active Day**: Any day where you have at least one interaction with ADAM
+- **Memory Age**: Calculated as number of active days since memory creation
+- **Vacation Safe**: If you don't use ADAM for weeks, memories won't decay
+- **Fair Aging**: All memories age at the same rate relative to actual usage
+
+This prevents the situation where you return from vacation to find all your memories compressed.
+
 ## Compression Strategy
 
-When memories are compressed:
+When memories are compressed (based on active days):
 
-1. **Moderate Compression** (7-30 days):
+1. **Moderate Compression** (7-30 active days):
    - Keep key exchanges and important lines
    - Remove redundant content
    - Maintain 50%+ of original
 
-2. **High Compression** (30-90 days):
+2. **High Compression** (30-90 active days):
    - Extract problem/solution pairs
    - Keep only key insights
    - Focus on actionable content
 
-3. **Ultra Compression** (90+ days):
+3. **Ultra Compression** (90+ active days):
    - Single paragraph summary
    - Metadata-based description
    - Minimal storage footprint
