@@ -32,9 +32,11 @@ from collections import deque
 # Memory configuration
 try:
     from .memory_config import MemoryConfig
+    from .memory_lifecycle import MemoryLifecycleManager
 except ImportError:
     # Fallback if running standalone
     from memory_config import MemoryConfig
+    from memory_lifecycle import MemoryLifecycleManager
 
 # Rich output for better visibility
 from rich.console import Console
@@ -249,6 +251,9 @@ class ADAMMemoryAdvanced:
         self.cost_log_path = self.persist_directory / "cost_savings.json"
         self.cost_savings = self._load_cost_savings()
         
+        # Memory lifecycle management
+        self.lifecycle_manager = MemoryLifecycleManager(self)
+        
         console.print("[green]✅ Advanced Memory System Ready![/green]")
     
     def _load_access_patterns(self) -> Dict[str, Any]:
@@ -416,7 +421,12 @@ class ADAMMemoryAdvanced:
             results['metadatas'][0], 
             results['distances'][0]
         )):
+            memory_id = results['ids'][0][i]
             similarity = 1 - distance
+            
+            # Apply decay and get current strength
+            strength = self.lifecycle_manager.get_memory_strength(memory_id, metadata)
+            current_strength = strength.calculate_decayed_strength()
             
             # Boost score for exact query matches
             if metadata.get('query_text', '').lower() == query.lower():
@@ -426,16 +436,20 @@ class ADAMMemoryAdvanced:
             if screen_context and metadata.get('memory_type') == 'screen_analysis':
                 similarity = min(1.0, similarity + 0.1)
             
+            # Factor in memory strength (decayed value)
+            similarity *= (0.7 + 0.3 * current_strength)  # 70% similarity, 30% strength
+            
             # Penalize failed solutions
             success_rate = metadata.get('success_rate', 1.0)
             similarity *= success_rate
             
             memory_dict = {
-                'id': results['ids'][0][i],
+                'id': memory_id,
                 'content': doc,
                 'metadata': metadata,
                 'similarity': similarity,
-                'distance': distance
+                'distance': distance,
+                'strength': current_strength
             }
             
             memories.append(memory_dict)
@@ -450,6 +464,25 @@ class ADAMMemoryAdvanced:
             avg_cost = np.mean([m['metadata'].get('generation_cost', 0.01) 
                               for m in top_memories])
             self.cost_savings["retrieval_savings"] += avg_cost
+            
+            # Reinforce accessed memories
+            for memory in top_memories:
+                # Reinforce with boost proportional to relevance
+                boost = 0.1 * memory['similarity']  # More relevant = stronger reinforcement
+                new_strength = self.lifecycle_manager.reinforce_memory(
+                    memory['id'], 
+                    memory['metadata'], 
+                    boost
+                )
+                
+                # Update metadata in database
+                self.collection.update(
+                    ids=[memory['id']],
+                    metadatas=[memory['metadata']]
+                )
+                
+                console.print(f"[dim]💪 Reinforced memory {memory['id'][:8]}... (strength: {new_strength:.2f})[/dim]")
+            
             self._save_metadata()
         
         return top_memories
