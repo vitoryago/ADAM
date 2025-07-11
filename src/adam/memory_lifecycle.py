@@ -11,11 +11,13 @@ import json
 from pathlib import Path
 import logging
 
-# Import activity tracker
+# Import activity tracker and compressor
 try:
     from .activity_tracker import ActivityTracker
+    from .memory_compressor import MemoryCompressor, CompressionResult
 except ImportError:
     from activity_tracker import ActivityTracker
+    from memory_compressor import MemoryCompressor, CompressionResult
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,9 @@ class MemoryLifecycleManager:
         # Initialize activity tracker
         persist_dir = getattr(memory_system, 'persist_directory', './adam_memory_advanced')
         self.activity_tracker = ActivityTracker(persist_dir)
+        
+        # Initialize memory compressor
+        self.compressor = MemoryCompressor()
         
     def get_memory_strength(self, memory_id: str, metadata: Dict) -> MemoryStrength:
         """Get or create memory strength tracker"""
@@ -237,97 +242,50 @@ class MemoryLifecycleManager:
     
     async def compress_memory(self, memory_id: str, content: str, metadata: Dict, compression_level: str) -> Tuple[str, Dict]:
         """Compress a memory based on its tier"""
-        original_length = len(content)
-        
-        if compression_level == 'compress_moderate':
-            # Keep key exchanges, remove fluff
-            compressed = await self._moderate_compression(content, metadata)
-        elif compression_level == 'compress_high':
-            # Extract only insights
-            compressed = await self._high_compression(content, metadata)
-        elif compression_level == 'compress_ultra':
-            # Single paragraph summary
-            compressed = await self._ultra_compression(content, metadata)
-        else:
+        try:
+            # Map tier names to compression levels
+            level_mapping = {
+                'compress_moderate': 'moderate',
+                'compress_high': 'high',
+                'compress_ultra': 'ultra'
+            }
+            
+            level = level_mapping.get(compression_level, 'moderate')
+            
+            # Use LLM-based compression
+            result = await self.compressor.compress_memory(content, metadata, level)
+            
+            # Update metadata with compression info
+            metadata['compressed'] = True
+            metadata['compression_level'] = compression_level
+            metadata['compression_ratio'] = result.compression_ratio
+            metadata['original_length'] = len(content)
+            metadata['compressed_length'] = len(result.compressed_content)
+            metadata['compressed_at'] = datetime.now().isoformat()
+            metadata['preserved_elements'] = result.preserved_elements
+            metadata['removed_elements'] = result.removed_elements
+            metadata['tokens_saved'] = result.tokens_saved
+            
+            # Update stats
+            self.compression_stats['total_compressed'] += 1
+            self.compression_stats['storage_saved_bytes'] += (len(content) - len(result.compressed_content))
+            self.compression_stats['compression_ratio'] = (
+                self.compression_stats['storage_saved_bytes'] / 
+                (self.compression_stats['storage_saved_bytes'] + len(result.compressed_content))
+                if self.compression_stats['total_compressed'] > 0 else 0
+            )
+            
+            logger.info(f"Compressed memory {memory_id}: {result.compression_ratio:.1%} reduction")
+            logger.info(f"  Preserved: {', '.join(result.preserved_elements)}")
+            logger.info(f"  Tokens saved: {result.tokens_saved}")
+            
+            return result.compressed_content, metadata
+            
+        except Exception as e:
+            logger.error(f"Failed to compress memory {memory_id}: {e}")
+            # Return original on failure
             return content, metadata
-        
-        # Update metadata
-        compressed_length = len(compressed)
-        compression_ratio = 1 - (compressed_length / original_length)
-        
-        metadata['compressed'] = True
-        metadata['compression_level'] = compression_level
-        metadata['compression_ratio'] = compression_ratio
-        metadata['original_length'] = original_length
-        metadata['compressed_at'] = datetime.now().isoformat()
-        
-        # Update stats
-        self.compression_stats['total_compressed'] += 1
-        self.compression_stats['storage_saved_bytes'] += (original_length - compressed_length)
-        
-        logger.info(f"Compressed memory {memory_id}: {compression_ratio:.1%} reduction")
-        
-        return compressed, metadata
     
-    async def _moderate_compression(self, content: str, metadata: Dict) -> str:
-        """Remove redundancy, keep substance"""
-        # For now, simple implementation - can be enhanced with LLM
-        lines = content.split('\n')
-        
-        # Keep lines with key indicators
-        key_indicators = ['error', 'solution', 'fixed', 'query', 'result', 'code', 'def', 'class']
-        important_lines = []
-        
-        for line in lines:
-            line_lower = line.lower()
-            if any(indicator in line_lower for indicator in key_indicators):
-                important_lines.append(line)
-        
-        # If too aggressive, keep at least 50% of content
-        if len(important_lines) < len(lines) * 0.5:
-            important_lines = lines[::2]  # Keep every other line
-        
-        return '\n'.join(important_lines)
-    
-    async def _high_compression(self, content: str, metadata: Dict) -> str:
-        """Extract key insights only"""
-        # Extract problem/solution pairs
-        insights = []
-        
-        # Simple pattern matching - enhance with LLM later
-        if metadata.get('query_text'):
-            insights.append(f"Q: {metadata['query_text']}")
-        
-        # Look for solution patterns
-        lines = content.split('\n')
-        for i, line in enumerate(lines):
-            if any(word in line.lower() for word in ['solution:', 'answer:', 'fixed:', 'result:']):
-                insights.append(line)
-                # Include next 2 lines for context
-                if i + 1 < len(lines):
-                    insights.append(lines[i + 1])
-                if i + 2 < len(lines):
-                    insights.append(lines[i + 2])
-        
-        return '\n'.join(insights) if insights else f"Memory from {metadata.get('timestamp', 'unknown time')}"
-    
-    async def _ultra_compression(self, content: str, metadata: Dict) -> str:
-        """Create single paragraph summary"""
-        # Ultra simple for now - just metadata summary
-        summary_parts = []
-        
-        if metadata.get('query_text'):
-            summary_parts.append(f"Query: {metadata['query_text'][:50]}...")
-        
-        if metadata.get('memory_type'):
-            summary_parts.append(f"Type: {metadata['memory_type']}")
-        
-        if metadata.get('topics'):
-            summary_parts.append(f"Topics: {', '.join(metadata['topics'][:3])}")
-        
-        summary_parts.append(f"Original length: {metadata.get('original_length', len(content))} chars")
-        
-        return ' | '.join(summary_parts)
     
     def get_lifecycle_stats(self) -> Dict:
         """Get statistics about memory lifecycle"""
