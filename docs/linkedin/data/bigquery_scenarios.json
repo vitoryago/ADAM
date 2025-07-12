@@ -1,0 +1,67 @@
+{
+  "scenarios": [
+    {
+      "id": "bq_001",
+      "title": "Slow JOIN on Large Tables",
+      "query": "SELECT c.customer_id, c.name, COUNT(o.order_id) as order_count, SUM(o.total_amount) as total_spent FROM `project.dataset.customers` c LEFT JOIN `project.dataset.orders` o ON c.customer_id = o.customer_id WHERE o.order_date >= '2023-01-01' GROUP BY c.customer_id, c.name",
+      "issue": "Query takes 45 seconds on 10M customer records and 100M order records",
+      "metrics": {
+        "original_runtime": 45,
+        "data_processed_gb": 125,
+        "slot_time_ms": 450000
+      }
+    },
+    {
+      "id": "bq_002",
+      "title": "Inefficient Window Functions",
+      "query": "SELECT user_id, event_time, event_type, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY event_time DESC) as rn, LEAD(event_type) OVER (PARTITION BY user_id ORDER BY event_time) as next_event FROM `project.dataset.user_events` WHERE DATE(event_time) >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)",
+      "issue": "Window functions causing memory pressure and slot exhaustion",
+      "metrics": {
+        "original_runtime": 120,
+        "data_processed_gb": 250,
+        "slot_time_ms": 1200000
+      }
+    },
+    {
+      "id": "bq_003",
+      "title": "Repeated CTE Calculations",
+      "query": "WITH daily_stats AS (SELECT DATE(timestamp) as date, COUNT(*) as events FROM `project.dataset.events` GROUP BY date), weekly_stats AS (SELECT DATE_TRUNC(date, WEEK) as week, SUM(events) as weekly_events FROM daily_stats GROUP BY week) SELECT * FROM weekly_stats WHERE week >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)",
+      "issue": "CTE is materialized multiple times causing redundant computation",
+      "metrics": {
+        "original_runtime": 30,
+        "data_processed_gb": 80,
+        "slot_time_ms": 300000
+      }
+    },
+    {
+      "id": "bq_004",
+      "title": "Unoptimized Aggregations",
+      "query": "SELECT product_category, DATE_TRUNC(order_date, MONTH) as month, COUNT(DISTINCT customer_id) as unique_customers, SUM(quantity * unit_price) as revenue FROM `project.dataset.order_items` oi JOIN `project.dataset.orders` o ON oi.order_id = o.order_id GROUP BY product_category, month ORDER BY month DESC, revenue DESC",
+      "issue": "Multiple aggregations without proper partitioning strategy",
+      "metrics": {
+        "original_runtime": 60,
+        "data_processed_gb": 150,
+        "slot_time_ms": 600000
+      }
+    },
+    {
+      "id": "bq_005",
+      "title": "Suboptimal String Operations",
+      "query": "SELECT user_id, email, REGEXP_EXTRACT(email, r'@(.+)') as domain, CASE WHEN email LIKE '%gmail%' THEN 'Gmail' WHEN email LIKE '%yahoo%' THEN 'Yahoo' ELSE 'Other' END as provider FROM `project.dataset.users` WHERE LENGTH(email) > 5 AND email LIKE '%@%'",
+      "issue": "Multiple string operations on large text fields",
+      "metrics": {
+        "original_runtime": 25,
+        "data_processed_gb": 40,
+        "slot_time_ms": 250000
+      }
+    }
+  ],
+  "optimization_patterns": {
+    "partitioning": "Use table partitioning on date columns to reduce data scanned",
+    "clustering": "Cluster tables by frequently filtered columns",
+    "materialized_views": "Pre-compute expensive aggregations",
+    "approximate_aggregation": "Use APPROX functions for large-scale counts",
+    "query_cache": "Leverage BigQuery's result caching",
+    "denormalization": "Strategic denormalization for frequently joined data"
+  }
+}
