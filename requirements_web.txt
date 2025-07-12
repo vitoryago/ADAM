@@ -1,0 +1,8 @@
+# Web interface requirements
+streamlit>=1.28.0
+streamlit-chat>=0.1.1
+pillow>=10.0.0  # For image handling
+watchdog>=3.0.0  # For file watching in development
+
+# Include all base requirements
+-r requirements.txt
