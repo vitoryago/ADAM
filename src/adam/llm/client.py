@@ -28,6 +28,7 @@ except ImportError:
     print("Warning: openai not installed. Run: pip install openai")
 
 from .config import LLMConfig, ModelProvider, ModelConfig
+from .query_analyzer import QueryAnalyzer, QueryComplexity
 
 @dataclass
 class LLMResponse:
@@ -49,6 +50,7 @@ class UnifiedLLMClient:
     def __init__(self, config: Optional[LLMConfig] = None):
         self.config = config or LLMConfig()
         self.clients = {}
+        self.query_analyzer = QueryAnalyzer()
         self._initialize_clients()
         
     def _initialize_clients(self):
@@ -94,6 +96,11 @@ class UnifiedLLMClient:
         # Auto-select model if not specified
         if not model:
             model = self._auto_select_model(prompt, reasoning_effort)
+            
+            # If no explicit reasoning effort, determine from query analysis
+            if not reasoning_effort and model:
+                complexity, _ = self.query_analyzer.analyze_query(prompt)
+                reasoning_effort = self.query_analyzer.get_reasoning_effort(complexity)
         
         if not model:
             raise ValueError("No available models. Please set API keys.")
@@ -139,8 +146,9 @@ class UnifiedLLMClient:
         # Add reasoning effort for models that support it
         if reasoning_effort and model_config.reasoning_param:
             # Map our unified effort levels to Grok's
-            effort_map = {"low": "low", "medium": "low", "high": "high"}
-            chat_params[model_config.reasoning_param] = effort_map.get(reasoning_effort, "low")
+            # Grok supports: low, medium, high
+            effort_map = {"low": "low", "medium": "medium", "high": "high"}
+            chat_params[model_config.reasoning_param] = effort_map.get(reasoning_effort, "medium")
         
         chat = client.chat.create(**chat_params)
         
@@ -279,36 +287,55 @@ class UnifiedLLMClient:
                 )
     
     def _auto_select_model(self, prompt: str, reasoning_effort: Optional[str]) -> Optional[str]:
-        """Auto-select best model based on prompt and requirements"""
-        prompt_lower = prompt.lower()
+        """Auto-select best model based on prompt and requirements using intelligent analysis"""
+        available_models = self.config.get_available_models()
+        if not available_models:
+            return None
         
-        # If reasoning is requested, prefer reasoning models
+        # Analyze query complexity
+        complexity, analysis = self.query_analyzer.analyze_query(prompt)
+        
+        # Override with explicit reasoning effort if provided
         if reasoning_effort:
-            # For high effort, prefer o4-mini
             if reasoning_effort == "high":
-                if "o4-mini-high" in self.config.get_available_models():
-                    return "o4-mini-high"
-            # For low effort, prefer grok-3-mini
+                complexity = QueryComplexity.HIGH
             elif reasoning_effort == "low":
-                if "grok-3-mini" in self.config.get_available_models():
-                    return "grok-3-mini"
+                complexity = QueryComplexity.LOW
         
-        # Check for SQL/analytics keywords
-        sql_keywords = ["sql", "query", "database", "dbt", "snowflake", "optimize"]
-        if any(keyword in prompt_lower for keyword in sql_keywords):
-            # Prefer grok-4 for complex SQL analysis
-            if "grok-4" in self.config.get_available_models():
-                return "grok-4"
+        # Get recommended model
+        recommended_model = self.query_analyzer.recommend_model(complexity, available_models)
         
-        # Check for reasoning indicators
-        reasoning_keywords = ["analyze", "explain", "debug", "why", "how does"]
-        if any(keyword in prompt_lower for keyword in reasoning_keywords):
-            if "o4-mini-high" in self.config.get_available_models():
-                return "o4-mini-high"
+        # Log the decision for transparency
+        logger.debug(f"Query complexity: {complexity.value}")
+        logger.debug(f"Analysis confidence: {analysis['confidence']:.2f}")
+        logger.debug(f"Selected model: {recommended_model}")
+        logger.debug(f"Reasoning: {analysis['reasoning'][:2]}")
         
-        # Default to any available model
-        available = self.config.get_available_models()
-        return available[0] if available else None
+        return recommended_model
+    
+    def analyze_query(self, query: str) -> Dict:
+        """
+        Analyze a query and return detailed analysis including model recommendation
+        
+        Args:
+            query: The query to analyze
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        available_models = self.config.get_available_models()
+        complexity, analysis = self.query_analyzer.analyze_query(query)
+        recommended_model = self.query_analyzer.recommend_model(complexity, available_models)
+        
+        return {
+            'complexity': complexity.value,
+            'recommended_model': recommended_model,
+            'reasoning_effort': self.query_analyzer.get_reasoning_effort(complexity),
+            'confidence': analysis['confidence'],
+            'indicators': analysis['indicators_found'],
+            'reasoning': analysis['reasoning'],
+            'available_models': available_models
+        }
     
     def _calculate_cost(self, model_config: ModelConfig, response) -> float:
         """Calculate cost for Grok models"""

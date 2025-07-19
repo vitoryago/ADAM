@@ -48,6 +48,21 @@ class LLMConfig:
         
         # Model configurations
         self.models = {
+            "grok-4-reasoning": ModelConfig(
+                name="grok-4-reasoning",
+                provider=ModelProvider.GROK,
+                api_name="grok-4",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,  # grok-4 doesn't have reasoning_effort param
+                reasoning_param=None,  # Use as high-power model without param
+                max_tokens=8192,
+                supports_streaming=True
+            ),
+            
             "grok-4": ModelConfig(
                 name="grok-4",
                 provider=ModelProvider.GROK,
@@ -58,13 +73,13 @@ class LLMConfig:
                     ModelCapability.CODE_GENERATION
                 ],
                 supports_reasoning=True,
-                reasoning_param=None,  # grok-4 doesn't support reasoning_effort
+                reasoning_param=None,  # grok-4 standard mode
                 max_tokens=4096,
                 supports_streaming=True
             ),
             
-            "grok-3-mini": ModelConfig(
-                name="grok-3-mini",
+            "grok-3-mini-high": ModelConfig(
+                name="grok-3-mini-high",
                 provider=ModelProvider.GROK,
                 api_name="grok-3-mini",
                 capabilities=[
@@ -129,9 +144,10 @@ class LLMConfig:
         
         # Default model selection rules
         self.default_models = {
-            "fast": "grok-3-mini",
-            "smart": "grok-4",
-            "reasoning": "o4-mini-high"
+            "complex": "grok-4-reasoning",    # For code generation, deep analysis
+            "medium": "grok-4",               # For standard queries
+            "fast": "grok-3-mini-high",       # For memory recaps, simple queries
+            "reasoning": "grok-4-reasoning"   # Explicit reasoning tasks
         }
     
     def get_api_key(self, provider: ModelProvider) -> Optional[str]:
