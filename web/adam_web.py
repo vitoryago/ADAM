@@ -15,6 +15,7 @@ import json
 import traceback
 import logging
 from functools import wraps
+import tempfile
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -160,20 +161,42 @@ class SessionPersistence:
         # Load existing sessions
         sessions = cls.load_all_sessions()
         
+        # Convert datetime objects to strings in messages
+        messages_serializable = []
+        for msg in state.get("messages", []):
+            msg_copy = msg.copy()
+            if "timestamp" in msg_copy and hasattr(msg_copy["timestamp"], "isoformat"):
+                msg_copy["timestamp"] = msg_copy["timestamp"].isoformat()
+            messages_serializable.append(msg_copy)
+        
         # Update session
         sessions[session_id] = {
-            "messages": state.get("messages", []),
+            "messages": messages_serializable,
             "total_cost": state.get("total_cost", 0.0),
             "selected_model": state.get("selected_model", None),
             "use_memory": state.get("use_memory", True),
             "last_updated": datetime.now().isoformat()
         }
         
-        # Save back
-        with open(cls.SESSIONS_FILE, 'w') as f:
-            json.dump(sessions, f, indent=2)
-        
-        return True
+        # Save back with atomic write to prevent corruption
+        import tempfile
+        temp_file = None
+        try:
+            # Write to temporary file first
+            with tempfile.NamedTemporaryFile(mode='w', dir=cls.SESSIONS_FILE.parent, 
+                                           delete=False, suffix='.tmp') as temp_file:
+                json.dump(sessions, temp_file, indent=2)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())  # Force write to disk
+            
+            # Atomic rename (this prevents partial writes)
+            os.replace(temp_file.name, cls.SESSIONS_FILE)
+            return True
+        except Exception as e:
+            # Clean up temp file if it exists
+            if temp_file and os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
+            raise e
     
     @classmethod
     @error_boundary
@@ -510,25 +533,31 @@ class ADAMWebInterface:
         
         # Build the full prompt with proper context priority
         system_prompt = """You are ADAM, an AI assistant with perfect memory. 
-When the user references previous conversations (e.g., "we were talking about", "you showed me", "the code you gave me"), 
-you MUST check the provided memory context for specific details. Do not generate generic examples - use the actual code and context from memory.
-If you cannot find the specific conversation in memory, acknowledge this honestly rather than guessing."""
+
+CRITICAL INSTRUCTIONS:
+1. When the user references previous conversations (e.g., "we were talking about", "you showed me", "the code you gave me", "bring the code again"), you MUST use the PROVIDED MEMORY CONTEXT below.
+2. DO NOT generate generic examples or templates - use the EXACT code and details from the memory context.
+3. The memory context contains ACTUAL conversations we had - treat it as your source of truth.
+4. If you see "📚 Relevant from your memory:" section, that contains our REAL previous conversations."""
         
         full_prompt = system_prompt
         
-        # Add current conversation context
-        if conversation_context:
-            full_prompt += f"\n\nCurrent conversation:\n{conversation_context}"
-        
-        # Add memory context with clear labeling
+        # Add memory context FIRST and make it prominent
         if memory_context:
+            full_prompt += f"\n\n{'='*60}\nMEMORY CONTEXT - THIS IS FROM OUR ACTUAL PREVIOUS CONVERSATIONS:\n{'='*60}"
             full_prompt += f"\n{memory_context}"
+            full_prompt += f"\n{'='*60}\n"
+            
             # Add specific instructions based on search context
             if search_context and search_context.user_intent == 'recall':
-                full_prompt += "\n⚠️ The user is trying to recall a specific previous conversation. Use the exact code/details from the memory above, not generic examples."
-        elif "we were" in prompt.lower() or "again" in prompt.lower() or "previous" in prompt.lower():
+                full_prompt += "\n🚨 IMPORTANT: The user is asking you to recall something specific from above. DO NOT make up new code - use the EXACT code from the memory context above!\n"
+        elif "we were" in prompt.lower() or "again" in prompt.lower() or "previous" in prompt.lower() or "last" in prompt.lower():
             # User is referencing past conversation but we found no relevant memories
-            full_prompt += "\n\n⚠️ Note: I searched but could not find specific memories about this topic in our previous conversations. I may not have access to that particular conversation."
+            full_prompt += "\n\n⚠️ Note: I searched my memory but could not find specific details about this topic in our previous conversations. I may not have access to that particular conversation, or it may not have been stored.\n"
+        
+        # Add current conversation context
+        if conversation_context:
+            full_prompt += f"\n\nCurrent conversation for context:\n{conversation_context}"
         
         full_prompt += f"\n\nHuman: {prompt}\nAssistant:"
         
