@@ -19,7 +19,7 @@ ADAM (Analytics Data Assistant with Memory) is an intelligent AI assistant that 
 ### Key Capabilities
 
 - **🧠 Perfect Memory**: Remembers all conversations and builds connections between related topics
-- **💬 Multi-Model Support**: Intelligently routes queries to the most appropriate AI model (Ollama, OpenAI, Anthropic, X.AI)
+- **💬 Intelligent Model Routing**: Automatically selects the best AI model based on query complexity
 - **💰 Cost Optimization**: Reduces API costs by 63-89% through smart routing and caching
 - **🎙️ Voice Interface**: Natural voice conversations with speech recognition and synthesis
 - **👁️ Vision Processing**: Analyzes images and screenshots for visual understanding
@@ -37,9 +37,12 @@ ADAM (Analytics Data Assistant with Memory) is an intelligent AI assistant that 
 - **Lifecycle Management**: Automatic memory health monitoring and optimization
 
 ### Intelligent Query Routing
-- **Grok-3-mini**: Simple queries and basic questions ($0.4/M tokens)
-- **O3**: Complex analysis and reasoning ($5/M tokens)
-- **Claude Opus 4**: Advanced coding and technical tasks ($45/M tokens)
+ADAM automatically analyzes each query and selects the optimal model:
+- **grok-4-reasoning**: Complex tasks requiring deep thinking (code generation, system design)
+- **grok-4**: Standard analysis and technical queries
+- **grok-3-mini-high**: Simple questions, memory recaps, quick lookups
+
+The system considers query complexity, length, and context to minimize costs while maximizing performance.
 
 ### Cost Management
 - Dynamic model selection based on query complexity
@@ -65,12 +68,15 @@ pip install -e .
 
 ### Basic Usage
 
-```python
-# Simple chat interface
-python src/adam_v1_basic.py
+```bash
+# Command-line chat interface
+python cli/adam_chat.py
 
-# Advanced interface with full memory capabilities
-python src/adam_v2_memory.py
+# Web interface (ChatGPT-style with image support) - MUST use streamlit run
+streamlit run web/adam_web.py
+
+# Complete interface with full transparency
+python cli/adam_complete.py
 ```
 
 ### Programmatic Usage
@@ -93,6 +99,7 @@ print(response)
 ## Documentation
 
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get up and running in minutes
+- **[Intelligent Routing](docs/INTELLIGENT_ROUTING.md)** - How ADAM selects the best model
 - **[Architecture Overview](docs/architecture/)** - Deep dive into system design
 - **[API Reference](docs/api/)** - Complete API documentation
 - **[Security Guide](docs/SECURITY.md)** - Security best practices

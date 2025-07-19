@@ -12,10 +12,13 @@ This document is your complete guide to understanding every aspect of ADAM - fro
 4. [Agent Architecture - From Reactive to Proactive](#4-agent-architecture---from-reactive-to-proactive)
 5. [Vector Databases and Embeddings](#5-vector-databases-and-embeddings)
 6. [Graph Theory and Knowledge Networks](#6-graph-theory-and-knowledge-networks)
-7. [LLM Integration and Prompt Engineering](#7-llm-integration-and-prompt-engineering)
-8. [System Design and Architecture](#8-system-design-and-architecture)
-9. [Performance and Scalability](#9-performance-and-scalability)
-10. [Production Engineering](#10-production-engineering)
+7. [LLM Integration and Intelligent Routing](#7-llm-integration-and-intelligent-routing)
+8. [SQL Analysis and Optimization Tools](#8-sql-analysis-and-optimization-tools)
+9. [Web and CLI Interfaces](#9-web-and-cli-interfaces)
+10. [System Design and Architecture](#10-system-design-and-architecture)
+11. [Performance and Scalability](#11-performance-and-scalability)
+12. [Memory Lifecycle and Decay Systems](#12-memory-lifecycle-and-decay-systems)
+13. [Production Engineering](#13-production-engineering)
 
 ---
 
@@ -26,6 +29,8 @@ The psychology-inspired design of ADAM's memory system teaches fundamental conce
 
 ### Key Files to Study
 - `src/adam/memory.py` - The core memory implementation
+- `src/adam/memory_network.py` - Graph-based memory connections
+- `src/adam/memory_lifecycle.py` - Decay and reinforcement
 - `tests/test_memory_network.py` - How memories connect
 - `docs/daily_logs/day_002.md` - The journey of building it
 
@@ -106,6 +111,19 @@ The three-stage retrieval system teaches you why simple vector search isn't enou
 - `examples/test_rag_comparison.py` - See it in action
 - `docs/daily_logs/day_007.md` - The theory and motivation
 
+### The BM25 ZeroDivisionError Fix
+One of the recent challenges was handling empty corpus initialization:
+
+```python
+# Problem: BM25Okapi crashes with empty corpus
+# Solution: Check before initialization
+if tokenized_corpus and len(tokenized_corpus) > 0:
+    self.bm25 = BM25Okapi(tokenized_corpus, k1=self.k1, b=self.b)
+else:
+    self.bm25 = None
+    console.print("[yellow]No documents to index for BM25[/yellow]")
+```
+
 ### Questions You Should Be Able to Answer
 
 1. **Why does vector search miss 40% of relevant results?**
@@ -173,43 +191,10 @@ for neighbor_id in self.memory_network.memory_graph.successors(node_id):
 - Weight propagation
 - Network effects in knowledge
 
-#### Reciprocal Rank Fusion Deep Dive
-```python
-def _reciprocal_rank_fusion(self, result_lists, k=60):
-    # RRF formula: score = Σ(1 / (k + rank))
-    for rank, result in enumerate(results):
-        rrf_score = weight / (fusion_k + rank + 1)
-        rrf_scores[result.memory_id] += rrf_score
-```
-
-**What This Teaches**:
-- Ensemble methods in ML
-- Score calibration across methods
-- Rank aggregation theory
-- Why simple averaging fails
-
-### Practical Exercises
-
-1. **Implement Learned Sparse Retrieval**
-   - Add SPLADE or ColBERT
-   - Compare with BM25
-   - Understand neural IR
-
-2. **Build Query Expansion**
-   - Automatically expand queries with synonyms
-   - Learn about pseudo-relevance feedback
-   - Implement Rocchio algorithm
-
-3. **Create Hybrid Embeddings**
-   - Combine dense and sparse representations
-   - Learn about late interaction
-   - Understand multi-vector representations
-
-### AI Concepts You'll Master
-- **Information Retrieval Theory**: From Boolean to neural
-- **Embedding Spaces**: How meaning becomes geometry
-- **Graph Theory**: Connections as first-class citizens
-- **Ensemble Methods**: When 1+1+1 > 3
+### Research Papers
+- "Dense Passage Retrieval for Open-Domain Question Answering" (Karpukhin et al., 2020)
+- "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks" (Lewis et al., 2020)
+- "REALM: Retrieval-Augmented Language Model Pre-Training" (Guu et al., 2020)
 
 ---
 
@@ -221,7 +206,20 @@ How to build systems that truly understand conversational context, not just proc
 ### Key Files to Study
 - `src/adam/conversation_system.py` - Session management
 - `src/adam/conversation_aware_memory.py` - Context integration
-- `src/adam/langgraph_conversation.py` - State machines for dialogue
+- `web/adam_web.py` - Fixed context handling implementation
+
+### Recent Improvements
+We recently fixed the context handling in the web interface:
+
+```python
+# Build conversation context from current session
+conversation_context = ""
+if st.session_state.messages:
+    recent_messages = st.session_state.messages[-6:]  # Last 3 exchanges
+    for msg in recent_messages:
+        role = "Human" if msg["role"] == "user" else "Assistant"
+        conversation_context += f"{role}: {msg['content'][:200]}...\n"
+```
 
 ### Questions You Should Be Able to Answer
 
@@ -248,42 +246,10 @@ def start_session(self, title: Optional[str] = None) -> str:
     session = ConversationSession(
         session_id=session_id,
         title=title or f"Session {timestamp}",
-        started_at=datetime.now(),
-        status=SessionStatus.ACTIVE
+        start_time=datetime.now(),  # Note: not started_at
+        state="active"  # Note: string, not enum
     )
 ```
-
-**What This Teaches**:
-- State machine design
-- Session persistence
-- Distributed session management
-- Fault tolerance
-
-#### Context Window Management
-```python
-def get_conversation_context(self, lookback_exchanges: int = 5):
-    # Sliding window over conversation
-    recent_exchanges = self.current_session.exchanges[-lookback_exchanges:]
-    return self._format_context(recent_exchanges)
-```
-
-**What This Teaches**:
-- Attention mechanisms
-- Context window optimization
-- Memory-compute tradeoffs
-- Recency bias in AI
-
-### Practical Exercises
-
-1. **Implement Multi-Party Conversations**
-   - Handle multiple users
-   - Track speaker changes
-   - Manage turn allocation
-
-2. **Build Conversation Summarization**
-   - Compress long conversations
-   - Preserve key information
-   - Learn abstractive summarization
 
 ### AI Concepts You'll Master
 - **Dialogue State Tracking**: Managing conversational flow
@@ -299,8 +265,8 @@ def get_conversation_context(self, lookback_exchanges: int = 5):
 The transition from Q&A systems to goal-oriented agents that plan, execute, and learn.
 
 ### Key Files to Study
-- `src/adam/agent_system.py` - Complete agent implementation
-- `src/adam/agent_tools.py` - Tool suite for agents
+- `archive/advanced_features/agent_system.py` - Agent implementation
+- `archive/advanced_features/agent_tools.py` - Tool suite for agents
 - `examples/agent_demo.py` - See agents in action
 
 ### Questions You Should Be Able to Answer
@@ -315,67 +281,10 @@ The transition from Q&A systems to goal-oriented agents that plan, execute, and 
    - Understand dependency graphs
    - Learn about planning algorithms
 
-3. **How do agents learn from failure?**
-   - Analyze the reflection mechanism
-   - Understand credit assignment
-   - Learn about online learning
-
-### Deep Dive Topics
-
-#### ReAct Agent - Reasoning and Acting
-```python
-class ReActAgent:
-    def think_and_act(self, observation):
-        thought = self.reason_about(observation)
-        action = self.decide_action(thought)
-        result = self.execute(action)
-        return self.observe(result)
-```
-
-**What This Teaches**:
-- Chain-of-thought reasoning
-- Action selection strategies
-- Observation-action loops
-- Emergent behavior
-
-#### Goal Decomposition
-```python
-def decompose_goal(self, goal: Goal) -> List[Task]:
-    # Break complex goals into manageable tasks
-    tasks = []
-    dependencies = self.analyze_dependencies(goal)
-    for sub_goal in self.identify_subgoals(goal):
-        task = Task(
-            description=sub_goal,
-            dependencies=dependencies[sub_goal]
-        )
-        tasks.append(task)
-    return self.topological_sort(tasks)
-```
-
-**What This Teaches**:
-- Hierarchical planning
-- Dependency resolution
-- Graph algorithms
-- Task scheduling
-
-### Practical Exercises
-
-1. **Implement Multi-Agent Collaboration**
-   - Agents with different specialties
-   - Communication protocols
-   - Consensus mechanisms
-
-2. **Build Adaptive Planning**
-   - Plans that change based on outcomes
-   - Dynamic replanning
-   - Uncertainty handling
-
-### AI Concepts You'll Master
-- **Agent Architectures**: From simple to sophisticated
-- **Planning Algorithms**: Classical and modern approaches
-- **Reinforcement Learning**: Learning from experience
-- **Tool Use in AI**: Augmenting capabilities
+### Research Papers
+- "ReAct: Synergizing Reasoning and Acting in Language Models" (Yao et al., 2023)
+- "Reflexion: Language Agents with Verbal Reinforcement Learning" (Shinn et al., 2023)
+- "Plan-and-Solve Prompting" (Wang et al., 2023)
 
 ---
 
@@ -387,7 +296,13 @@ The mathematics and engineering behind semantic search and high-dimensional data
 ### Key Files to Study
 - `src/adam/memory.py` - ChromaDB integration
 - `src/adam/advanced_rag.py` - Embedding usage
-- Vector space operations throughout
+- `src/adam/memory_config.py` - Embedding configuration
+
+### Recent Updates
+ADAM now supports multiple embedding models:
+- all-mpnet-base-v2 (default)
+- text-embedding-ada-002
+- Custom models via configuration
 
 ### Questions You Should Be Able to Answer
 
@@ -401,44 +316,9 @@ The mathematics and engineering behind semantic search and high-dimensional data
    - Understand approximate nearest neighbors
    - Learn about indexing strategies
 
-3. **What are the limitations of embeddings?**
-   - Analyze the anisotropy problem
-   - Understand semantic drift
-   - Learn about out-of-distribution queries
-
-### Deep Dive Topics
-
-#### Embedding Space Geometry
-```python
-# Different distance metrics tell different stories
-cosine_similarity = np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
-euclidean_distance = np.linalg.norm(vec1 - vec2)
-manhattan_distance = np.sum(np.abs(vec1 - vec2))
-```
-
-**What This Teaches**:
-- Linear algebra in ML
-- Metric spaces
-- Curse of dimensionality
-- Similarity vs. distance
-
-### Practical Exercises
-
-1. **Implement Custom Embeddings**
-   - Domain-specific embeddings
-   - Multi-modal embeddings
-   - Embedding fine-tuning
-
-2. **Build Embedding Visualization**
-   - Reduce dimensions with t-SNE/UMAP
-   - Cluster analysis
-   - Outlier detection
-
-### AI Concepts You'll Master
-- **Representation Learning**: How to encode meaning
-- **High-Dimensional Geometry**: Counterintuitive properties
-- **Approximate Algorithms**: Trading accuracy for speed
-- **Vector Quantization**: Compression techniques
+### Research Papers
+- "Efficient and Robust Approximate Nearest Neighbor Search Using HNSW" (Malkov & Yashunin, 2020)
+- "Billion-scale similarity search with GPUs" (Johnson et al., 2019)
 
 ---
 
@@ -450,7 +330,7 @@ How relationships between information create intelligence beyond isolated facts.
 ### Key Files to Study
 - `src/adam/memory_network.py` - Graph-based memory
 - `tests/test_memory_network.py` - Network operations
-- NetworkX usage throughout
+- `examples/visualize_memory_network.py` - Visualization tools
 
 ### Questions You Should Be Able to Answer
 
@@ -464,17 +344,11 @@ How relationships between information create intelligence beyond isolated facts.
    - Understand community detection
    - Learn path-finding algorithms
 
-3. **How do you prevent graph explosion?**
-   - Analyze pruning strategies
-   - Understand sparsity
-   - Learn about graph compression
-
 ### Deep Dive Topics
 
 #### Automatic Reference Discovery
 ```python
 def _calculate_reference_weight(self, new_memory, existing_memory):
-    # Multiple factors determine connection strength
     content_similarity = self.calculate_similarity(new_memory, existing_memory)
     temporal_proximity = self.calculate_temporal_factor(new_memory, existing_memory)
     topic_overlap = self.calculate_topic_overlap(new_memory, existing_memory)
@@ -482,439 +356,145 @@ def _calculate_reference_weight(self, new_memory, existing_memory):
     return self.combine_factors(content_similarity, temporal_proximity, topic_overlap)
 ```
 
-**What This Teaches**:
-- Multi-factor decision making
-- Weight aggregation
-- Feature engineering
-- Graph construction
-
-### Practical Exercises
-
-1. **Implement Knowledge Graph Embeddings**
-   - Learn TransE, RotatE
-   - Reason over graphs
-   - Link prediction
-
-2. **Build Graph Visualization**
-   - Force-directed layouts
-   - Community visualization
-   - Interactive exploration
-
-### AI Concepts You'll Master
-- **Graph Neural Networks**: Learning on graphs
-- **Knowledge Representation**: Structured knowledge
-- **Network Analysis**: Centrality, communities, paths
-- **Relational Reasoning**: Multi-hop inference
-
 ---
 
-## 7. LLM Integration and Prompt Engineering
+## 7. LLM Integration and Intelligent Routing
 
 ### What You'll Learn
-How to effectively integrate and control large language models in production systems. ADAM now has a complete LLM configuration system supporting multiple providers.
+How to effectively integrate and control large language models in production systems with intelligent routing.
 
 ### Key Files to Study
-- `src/adam/llm/config.py` - Model configurations and selection
-- `src/adam/llm/client.py` - Unified client for multiple providers
-- `test_llm_setup.py` - Testing and verification
-- `docs/llm_setup_guide.md` - Setup instructions
+- `src/adam/llm/config.py` - Model configurations
+- `src/adam/llm/client.py` - Unified client
+- `src/adam/llm/query_analyzer.py` - Intelligent routing
+- `docs/INTELLIGENT_ROUTING.md` - Complete guide
+
+### Recent Implementation: Intelligent Model Routing
+
+ADAM now automatically selects the best model based on query complexity:
+
+```python
+class QueryAnalyzer:
+    def analyze_query(self, query: str) -> Tuple[QueryComplexity, Dict[str, any]]:
+        complexity_score = 0
+        
+        # Check for complexity indicators
+        if any(indicator in query_lower for indicator in self.HIGH_COMPLEXITY_INDICATORS):
+            complexity_score += 3
+        
+        # Long queries tend to be complex
+        if len(query) > 500:
+            complexity_score += 2
+            
+        # Map to complexity level
+        if complexity_score >= 3:
+            return QueryComplexity.HIGH
+```
+
+### Model Hierarchy
+- **grok-4-reasoning**: Complex tasks (code generation, deep analysis)
+- **grok-4**: Standard technical queries
+- **grok-3-mini-high**: Simple queries, memory recaps
 
 ### Questions You Should Be Able to Answer
 
-1. **How do you design robust prompts?**
-   - Understand prompt injection defense
-   - Learn about few-shot prompting
-   - Grasp chain-of-thought techniques
+1. **How does intelligent routing reduce costs?**
+   - Understand query complexity analysis
+   - Learn about model capability mapping
+   - Calculate cost savings (63-89% reduction)
 
-2. **When should you use which model?**
-   - Study model capabilities (grok-4 vs grok-3-mini vs o4-mini-high)
-   - Understand cost-performance tradeoffs
-   - Learn routing strategies
+2. **When should you override automatic selection?**
+   - Study edge cases
+   - Understand model limitations
+   - Learn manual override patterns
 
-3. **How do you handle LLM failures?**
-   - Analyze failure modes
-   - Understand retry strategies
-   - Learn validation techniques
-
-### Deep Dive Topics
-
-#### Intelligent Model Routing (Implemented in ADAM)
-```python
-def _auto_select_model(self, prompt: str, reasoning_effort: Optional[str]) -> Optional[str]:
-    prompt_lower = prompt.lower()
-    
-    # If reasoning is requested, prefer reasoning models
-    if reasoning_effort:
-        if reasoning_effort == "high":
-            if "o4-mini-high" in self.config.get_available_models():
-                return "o4-mini-high"
-        elif reasoning_effort == "low":
-            if "grok-3-mini" in self.config.get_available_models():
-                return "grok-3-mini"
-    
-    # Check for SQL/analytics keywords
-    sql_keywords = ["sql", "query", "database", "dbt", "snowflake", "optimize"]
-    if any(keyword in prompt_lower for keyword in sql_keywords):
-        if "grok-4" in self.config.get_available_models():
-            return "grok-4"
-```
-
-**What This Teaches**:
-- Model selection criteria
-- Performance optimization
-- Cost management
-- Domain-specific routing
-
-#### Multi-Provider Integration
-```python
-# ADAM supports multiple providers with different APIs
-class UnifiedLLMClient:
-    async def _complete_grok(self, ...):
-        # xAI API with reasoning_effort parameter
-        
-    async def _complete_openai(self, ...):
-        # OpenAI responses API with effort parameter
-```
-
-**What This Teaches**:
-- API abstraction patterns
-- Provider-specific handling
-- Unified interfaces
-- Error resilience
-
-### Practical Exercises
-
-1. **Build Analytics-Specific Prompts**
-   - SQL optimization prompts
-   - dbt error analysis prompts
-   - Data quality check prompts
-
-2. **Implement Cost Tracking**
-   - Monitor token usage
-   - Track costs per query type
-   - Optimize model selection
-
-### AI Concepts You'll Master
-- **Prompt Engineering**: The new programming paradigm
-- **In-Context Learning**: How LLMs adapt
-- **Token Economics**: Cost optimization with real pricing
-- **Model Capabilities**: Understanding grok-4, grok-3-mini, o4-mini-high
-- **Reasoning Models**: How effort parameters affect output
+### Research Papers
+- "Language Models are Few-Shot Learners" (Brown et al., 2020)
+- "Constitutional AI: Harmlessness from AI Feedback" (Bai et al., 2022)
 
 ---
 
 ## 8. SQL Analysis and Optimization Tools
 
 ### What You'll Learn
-How ADAM helps analytics engineers optimize SQL queries, identify performance issues, and maintain code quality standards. This is Week 1 of the roadmap implementation.
+How ADAM helps analytics engineers optimize SQL queries and maintain code quality.
 
 ### Key Files to Study
-- `src/adam/tools/sql_tools.py` - Complete SQL analysis implementation
-- `tests/test_sql_tools.py` - Comprehensive test suite
-- `examples/sql_tools_demo.py` - Real-world usage examples
+- `src/adam/tools/sql_tools.py` - Complete implementation
+- `tests/test_sql_tools.py` - Comprehensive tests
+- `examples/sql_tools_demo.py` - Usage examples
+
+### Key Features
+
+#### Pattern-Based Issue Detection
+```python
+def _check_select_star(self, query: str) -> List[SQLIssue]:
+    if re.search(r'SELECT\s+\*', query, re.IGNORECASE):
+        return [SQLIssue(
+            line_number=self._get_line_number(query, 'SELECT'),
+            issue_type=IssueType.PERFORMANCE,
+            message="SELECT * can be inefficient",
+            suggestion="Specify only needed columns"
+        )]
+```
+
+#### Complexity Scoring
+```python
+complexity_score = min(10, max(1, (
+    (line_count // 30) +
+    (cte_count) +
+    (join_count) +
+    (subquery_count)
+)))
+```
 
 ### Questions You Should Be Able to Answer
 
 1. **How does ADAM detect SQL anti-patterns?**
-   - Understand pattern matching techniques
-   - Learn about query parsing strategies
-   - Grasp performance impact estimation
+   - Pattern matching techniques
+   - Performance impact estimation
+   - Platform-specific optimizations
 
-2. **What makes a query "complex"?**
-   - Study the complexity scoring algorithm
-   - Understand CTE and join impact
-   - Learn about query metrics
-
-3. **How does dialect-specific optimization work?**
-   - Analyze Snowflake vs BigQuery patterns
-   - Understand clustering key detection
-   - Learn platform-specific features
-
-### Deep Dive Topics
-
-#### SQL Issue Detection
-```python
-class SQLAnalyzer:
-    def analyze_query(self, query: str) -> Tuple[List[SQLIssue], QueryMetrics]:
-        issues = []
-        # Pattern-based detection
-        issues.extend(self._check_select_star(query))
-        issues.extend(self._check_expensive_operations(query))
-        issues.extend(self._check_subquery_issues(query))
-        # Dialect-specific checks
-        if self.dialect == "snowflake":
-            issues.extend(self._check_snowflake_specific(query))
-```
-
-**What This Teaches**:
-- Regular expression patterns for SQL
-- Static analysis techniques
-- Performance heuristics
-- Domain-specific knowledge encoding
-
-#### Complexity Metrics
-```python
-def _calculate_metrics(self, query: str) -> QueryMetrics:
-    # Accurate CTE counting
-    cte_pattern = r'\b\w+\s+AS\s*\('
-    cte_count = len([m for m in matches if 'WITH' in query[:query.find(m)]])
-    
-    # Complexity scoring
-    complexity_score = min(10, max(1, (
-        (line_count // 30) +
-        (cte_count) +
-        (join_count) +
-        (subquery_count)
-    )))
-```
-
-**What This Teaches**:
-- Code complexity measurement
-- Heuristic-based scoring
-- Pattern recognition
-- Metric aggregation
-
-#### AI-Powered Optimization
-```python
-async def suggest_optimizations(self, query: str, issues: List[SQLIssue]) -> str:
-    client = await self._get_llm_client()
-    
-    prompt = f"""As an expert in SQL optimization, help optimize this {self.dialect} query...
-    Issues found: {issue_summary}
-    Original query: {query}
-    Provide an optimized version..."""
-    
-    response = await client.complete(prompt, model="grok-4")
-```
-
-**What This Teaches**:
-- Prompt engineering for technical tasks
-- LLM integration patterns
-- Context building from analysis
-- Model selection strategies
-
-### Practical Exercises
-
-1. **Add New SQL Anti-Pattern Detection**
-   - Detect missing indexes on JOIN columns
-   - Find UNION vs UNION ALL misuse
-   - Identify missing partition filters
-
-2. **Implement Query Cost Estimation**
-   - Parse execution plans
-   - Estimate row counts
-   - Calculate approximate costs
-
-3. **Build SQL Migration Tools**
-   - Convert between SQL dialects
-   - Update deprecated syntax
-   - Modernize legacy queries
-
-### Real-World Applications
-
-#### Example: Snowflake Query Optimization
-```python
-# Before ADAM
-slow_query = """
-SELECT DISTINCT *
-FROM orders o, customers c
-WHERE o.customer_id = c.id
-AND o.amount NOT IN (SELECT amount FROM cancelled_orders)
-"""
-
-# ADAM detects:
-# - SELECT * anti-pattern
-# - Implicit cross join
-# - NOT IN with subquery (NULL issues)
-# - Missing clustering key usage
-
-# After ADAM optimization:
-optimized = """
-SELECT DISTINCT
-    o.order_id,
-    o.customer_id,
-    c.customer_name
-FROM orders o
-JOIN customers c ON o.customer_id = c.id
-WHERE NOT EXISTS (
-    SELECT 1 FROM cancelled_orders co 
-    WHERE co.amount = o.amount
-)
--- Consider clustering on customer_id for better performance
-"""
-```
-
-### Testing Strategies
-
-The SQL tools include comprehensive tests demonstrating:
-- **Pattern Detection**: How to test regex-based analysis
-- **Edge Cases**: Handling complex nested queries
-- **Mocking LLMs**: Testing AI features without API calls
-- **Dialect Variations**: Platform-specific test cases
-
-### AI Concepts You'll Master
-- **Static Code Analysis**: Pattern-based detection
-- **Heuristic Algorithms**: Complexity scoring
-- **Domain-Specific Languages**: SQL parsing techniques
-- **Hybrid AI Systems**: Combining rules and LLMs
+2. **What makes SQL analysis different from general code analysis?**
+   - Declarative vs imperative
+   - Query plan considerations
+   - Data volume impacts
 
 ---
 
-## 9. Interactive ADAM System
+## 9. Web and CLI Interfaces
 
 ### What You'll Learn
-How to interact with ADAM as a complete system, understanding model selection, memory usage, and the full AI assistant experience.
+How to build effective user interfaces for AI systems, from command-line to web.
 
 ### Key Files to Study
-- `adam_complete.py` - Full-featured interactive interface
-- `adam_simple_chat.py` - Lightweight chat interface  
-- `adam_chat.py` - Memory-focused chat system
-- `docs/how_to_run_adam.md` - Complete usage guide
+- `cli/adam_chat.py` - Main chat interface
+- `cli/adam_complete.py` - Full transparency mode
+- `web/adam_web.py` - Streamlit web interface
 
-### Questions You Should Be Able to Answer
+### Recent Fixes
 
-1. **How does ADAM select which LLM model to use?**
-   - Understand content-based routing
-   - Learn cost-performance tradeoffs
-   - Grasp fallback strategies
-
-2. **How do all components work together?**
-   - Memory search → Context building → LLM generation
-   - Conversation tracking and session management
-   - Tool integration (SQL analysis)
-
-3. **What makes ADAM different from ChatGPT?**
-   - Specialized for analytics engineering
-   - Memory system for long-term learning
-   - Transparent model selection
-   - Integrated SQL analysis tools
-
-### Deep Dive Topics
-
-#### Model Selection Logic
+#### Session Attribute Error
 ```python
-def _get_model_selection_reason(self, text: str) -> str:
-    text_lower = text.lower()
-    
-    if any(word in text_lower for word in ['sql', 'query', 'database']):
-        return "SQL/Database content - grok-4 preferred for analytics"
-    elif any(word in text_lower for word in ['explain', 'why', 'debug']):
-        return "Reasoning task - Complex model preferred"
-    else:
-        return "General query - Balanced model selection"
+# Fixed: ConversationSession uses 'start_time' not 'started_at'
+date = session.start_time.date()
 ```
 
-**What This Teaches**:
-- Content-aware routing
-- Domain-specific optimization
-- Fallback strategies
-- Cost-performance balance
-
-#### Complete System Flow
+#### Context Handling
 ```python
-async def process_input(self, user_input: str):
-    # 1. Check if SQL query
-    if self._is_sql_query(user_input):
-        return self._analyze_sql(user_input)
-    
-    # 2. Search memory
-    search_results = self.rag.retrieve(user_input, k=5)
-    
-    # 3. Build context
-    context = self._build_context(search_results)
-    
-    # 4. Select model
-    model = self._auto_select_model(user_input)
-    
-    # 5. Generate response
-    response = await self.llm_client.complete(prompt, model)
-    
-    # 6. Store if valuable
-    self.memory.remember_if_worthy(user_input, response)
-    
-    # 7. Track conversation
-    self.conversations.record_exchange(user_input, response)
+# Prioritize current conversation over memory search
+if conversation_context:
+    full_prompt += f"\n\n{conversation_context}"
+if memory_context and len(conversation_context) < 500:
+    full_prompt += f"{memory_context}"
 ```
 
-**What This Teaches**:
-- System orchestration
-- Component integration
-- Data flow patterns
-- State management
+### Interface Design Principles
 
-### Practical Exercises
-
-1. **Add Custom Model Selection Rules**
-   - Detect dbt-specific queries
-   - Route data quality questions
-   - Implement cost caps
-
-2. **Enhance Memory Display**
-   - Show memory connections
-   - Visualize retrieval paths
-   - Add memory search commands
-
-3. **Build Conversation Analytics**
-   - Track topic trends
-   - Measure response quality
-   - Analyze model performance
-
-### Real-World Usage Patterns
-
-#### Pattern 1: SQL Development Workflow
-```
-You: Here's my query that's running slow
-[Paste SQL]
-
-ADAM: [Analyzes query, finds issues]
-
-You: optimize
-
-ADAM: [Provides optimized version]
-
-You: Why did you change the JOIN order?
-
-ADAM: [Explains optimization reasoning]
-```
-
-#### Pattern 2: Debugging Session
-```
-You: My dbt model fails with "column not found"
-
-ADAM: [Asks for error details, suggests checks]
-
-You: Here's the full error: [paste]
-
-ADAM: [Identifies issue, provides solution]
-```
-
-### Interface Features
-
-The complete interface provides:
-
-1. **Transparency Mode**
-   - See memory search results
-   - Watch model selection process
-   - Track costs in real-time
-   - Understand retrieval methods
-
-2. **Session Management**
-   - Conversations are saved
-   - Memories persist between sessions
-   - Statistics tracking
-   - Cost monitoring
-
-3. **Interactive Commands**
-   - `help` - Command list
-   - `stats` - Usage statistics
-   - `models` - Model details
-   - `memory` - Memory inspection
-
-### AI Concepts You'll Master
-- **Multi-Model Systems**: Routing queries to appropriate models
-- **Context Management**: Building effective prompts from memory
-- **Session State**: Maintaining conversation continuity
-- **Hybrid Systems**: Combining rule-based (SQL analysis) with AI
+1. **Transparency**: Show what the AI is doing
+2. **Control**: Let users choose models and features
+3. **Performance**: Optimize for responsiveness
+4. **Context**: Maintain conversation flow
 
 ---
 
@@ -923,718 +503,295 @@ The complete interface provides:
 ### What You'll Learn
 How to build production-grade AI systems that scale, perform, and maintain.
 
+### Project Organization
+Recent reorganization for better maintainability:
+
+```
+ADAM/
+├── cli/                    # Command-line interfaces
+├── web/                    # Web interfaces
+├── src/adam/              # Core modules
+├── tests/                  # Test suite
+├── examples/               # Demo scripts
+├── docs/                   # Documentation
+└── scripts/                # Utility scripts
+```
+
 ### Key Architecture Patterns
-- Event-driven architecture
-- Microservices vs. monolith
-- State management
-- Data flow design
-
-### Questions You Should Be Able to Answer
-
-1. **Why separate memory, conversation, and agents?**
-   - Understand separation of concerns
-   - Learn about loose coupling
-   - Grasp interface design
-
-2. **How do you handle concurrent requests?**
-   - Study async patterns
-   - Understand race conditions
-   - Learn about locks and queues
-
-3. **What makes a system "production-ready"?**
-   - Analyze reliability requirements
-   - Understand monitoring needs
-   - Learn about deployment strategies
-
-### Deep Dive Topics
-
-#### Component Architecture
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Memory    │────▶│     RAG      │────▶│   Agent     │
-│   System    │     │   System     │     │   System    │
-└─────────────┘     └──────────────┘     └─────────────┘
-       │                    │                     │
-       └────────────────────┴─────────────────────┘
-                            │
-                   ┌────────────────┐
-                   │  Conversation  │
-                   │    System      │
-                   └────────────────┘
-```
-
-**What This Teaches**:
-- System decomposition
-- Interface boundaries
-- Data flow patterns
-- Dependency management
-
-### Practical Exercises
-
-1. **Design for 10x Scale**
-   - Identify bottlenecks
-   - Plan sharding strategy
-   - Design caching layers
-
-2. **Implement Circuit Breakers**
-   - Failure isolation
-   - Graceful degradation
-   - Recovery mechanisms
-
-### AI Concepts You'll Master
-- **Distributed AI Systems**: Scaling intelligence
-- **Event-Driven AI**: Reactive architectures
-- **State Management**: Consistency in AI
-- **System Reliability**: Building trustworthy AI
+- **Separation of Concerns**: Memory, conversation, and agents are independent
+- **Plugin Architecture**: Easy to add new LLM providers
+- **Event-Driven**: Activity tracking and memory lifecycle
+- **Cost-Aware**: Every operation tracks costs
 
 ---
 
-## 9. Performance and Scalability
+## 11. Performance and Scalability
 
 ### What You'll Learn
-How to make AI systems fast, efficient, and capable of handling massive scale.
+Making AI systems fast and efficient at scale.
 
-### Key Performance Areas
-- Query latency optimization
-- Memory usage reduction
-- Throughput maximization
-- Cost optimization
+### Performance Optimizations
+
+#### Memory Search
+- Reduced default search results from 5 to 3
+- Added optional memory search toggle
+- Implemented context size limits
+
+#### Model Selection
+- Automatic routing avoids expensive models
+- Streaming responses for perceived speed
+- Caching for repeated queries
 
 ### Questions You Should Be Able to Answer
 
 1. **Where are the bottlenecks in RAG systems?**
-   - Profile embedding generation
-   - Analyze vector search
-   - Understand I/O patterns
+   - Embedding generation
+   - Vector search
+   - LLM inference
 
-2. **How do you cache effectively in AI?**
-   - Learn semantic caching
-   - Understand cache invalidation
-   - Study hit rate optimization
-
-3. **What's the latency budget for each component?**
-   - Analyze user experience needs
-   - Understand pipeline latency
-   - Learn about parallelization
-
-### Deep Dive Topics
-
-#### Performance Profiling
-```python
-import cProfile
-import pstats
-
-def profile_retrieval():
-    profiler = cProfile.Profile()
-    profiler.enable()
-    
-    # Run retrieval
-    results = rag_system.retrieve(query, k=10)
-    
-    profiler.disable()
-    stats = pstats.Stats(profiler)
-    stats.sort_stats('cumulative')
-    stats.print_stats(10)  # Top 10 time consumers
-```
-
-**What This Teaches**:
-- Performance analysis
-- Bottleneck identification
-- Optimization strategies
-- Measurement techniques
-
-### Practical Exercises
-
-1. **Optimize Embedding Generation**
+2. **How do you optimize for cost vs performance?**
+   - Model routing strategies
+   - Caching policies
    - Batch processing
-   - GPU utilization
-   - Model quantization
-
-2. **Implement Distributed Search**
-   - Shard vector database
-   - Parallel query execution
-   - Result aggregation
-
-### AI Concepts You'll Master
-- **AI Performance Engineering**: Speed at scale
-- **Caching Strategies**: Semantic and exact
-- **Parallel Processing**: Concurrent AI
-- **Resource Optimization**: Doing more with less
 
 ---
 
-## 10. Production Engineering
+## 12. Memory Lifecycle and Decay Systems
 
 ### What You'll Learn
-The difference between a demo and a system that serves real users reliably.
+Psychology-inspired memory management with decay, reinforcement, and compression.
 
-### Production Requirements
-- Monitoring and observability
-- Error handling and recovery
-- Security and privacy
-- Deployment and operations
+### Key Files to Study
+- `src/adam/memory_lifecycle.py` - Complete implementation
+- `src/adam/activity_tracker.py` - Activity-based aging
+- `scripts/manage_memory_lifecycle.py` - Management tools
 
-### Questions You Should Be Able to Answer
+### Core Concepts
 
-1. **How do you monitor AI system health?**
-   - Understand key metrics
-   - Learn about alerting
-   - Grasp anomaly detection
-
-2. **What security concerns exist?**
-   - Study prompt injection
-   - Understand data privacy
-   - Learn about access control
-
-3. **How do you deploy updates safely?**
-   - Analyze rollout strategies
-   - Understand rollback procedures
-   - Learn about feature flags
-
-### Deep Dive Topics
-
-#### Observability Stack
+#### Exponential Decay
 ```python
-from opentelemetry import trace, metrics
-
-tracer = trace.get_tracer(__name__)
-meter = metrics.get_meter(__name__)
-
-retrieval_latency = meter.create_histogram(
-    name="retrieval_latency_ms",
-    description="Time to retrieve memories"
-)
-
-@tracer.start_as_current_span("retrieve_memories")
-def retrieve(query):
-    start_time = time.time()
-    results = self._retrieve_internal(query)
-    
-    latency = (time.time() - start_time) * 1000
-    retrieval_latency.record(latency, {"method": "combined"})
-    
-    return results
+strength = initial_strength * (decay_rate ** active_days)
 ```
 
-**What This Teaches**:
-- Distributed tracing
-- Metrics collection
-- Performance monitoring
-- Debugging production issues
+#### Activity-Based Aging
+```python
+# Only age memories on days the system is used
+if today not in self.activity_data["daily_activity"]:
+    self.activity_data["active_days"].append(today)
+```
 
-### Practical Exercises
+#### Multi-Tier Compression
+```python
+TIER_FULL = 7        # Full fidelity
+TIER_MODERATE = 30   # Important exchanges only
+TIER_HIGH = 90       # Key insights only
+```
 
-1. **Build a Monitoring Dashboard**
-   - Key metrics visualization
-   - Alert configuration
-   - SLO tracking
+### Research Foundations
+- Ebbinghaus Forgetting Curve
+- Spaced Repetition (SM-2 algorithm)
+- Hebbian Learning Theory
 
-2. **Implement Chaos Engineering**
-   - Failure injection
-   - Recovery testing
-   - Resilience verification
+---
 
-### AI Concepts You'll Master
-- **MLOps/LLMOps**: Operating AI systems
-- **A/B Testing**: Experimentation in production
-- **Drift Detection**: When models degrade
-- **Privacy-Preserving AI**: Protecting user data
+## 13. Production Engineering
+
+### What You'll Learn
+Building reliable, secure, and observable AI systems.
+
+### Key Considerations
+
+#### Error Handling
+- Graceful degradation when models fail
+- Retry strategies with exponential backoff
+- Fallback to simpler models
+
+#### Security
+- API key management
+- Prompt injection defense
+- Data privacy compliance
+
+#### Monitoring
+- Token usage tracking
+- Cost monitoring
+- Performance metrics
+- Error rates
+
+### Best Practices
+
+1. **Always use environment variables for secrets**
+2. **Implement circuit breakers for external APIs**
+3. **Log everything but sanitize sensitive data**
+4. **Version your prompts and configurations**
 
 ---
 
 ## Current Development Status (January 2025)
 
 ### ✅ Completed Components
-1. **Memory System** - Advanced worthiness evaluation, versioning, cost tracking
-2. **RAG System** - Three-stage retrieval (BM25 + Vector + Graph)
-3. **Conversation System** - Session management with context awareness
-4. **Memory Network** - Graph-based connections between memories
-5. **Test Infrastructure** - Comprehensive test suite and documentation
-6. **LLM Configuration** - Multi-provider support (xAI Grok, OpenAI o4)
+1. **Memory System** - Advanced worthiness evaluation, versioning, lifecycle
+2. **RAG System** - Three-stage retrieval with BM25 fix
+3. **Conversation System** - Session management with proper context
+4. **Memory Network** - Graph-based connections
+5. **LLM Integration** - Multi-provider with intelligent routing
+6. **SQL Tools** - Analysis and optimization
+7. **Web/CLI Interfaces** - Multiple interaction modes
+8. **File Organization** - Clean project structure
 
-### 🚧 In Progress (Week 1 of Roadmap)
-1. **LLM Integration** ✅ - Completed configuration for grok-4, grok-3-mini, gpt-4, gpt-3.5-turbo
-2. **SQL Tools** ✅ - Completed SQL analyzer, formatter, and AI-powered optimizer
-3. **dbt Integration** - Next up: Error parser and model analyzer
+### 🚧 Recent Fixes
+1. **BM25 Empty Corpus** - Handle initialization with no documents
+2. **Session Attributes** - Fixed start_time vs started_at
+3. **Web Context** - Prioritize conversation over memory search
+4. **CSS Issues** - Fixed white-on-white text in advanced UI
 
 ### 📋 Next Steps
-- Run ADAM: `python adam_complete.py` (see docs/how_to_run_adam.md)
-- Begin dbt integration (Week 1 continues)
-- Implement memory integration with SQL tools
-- Add more SQL dialect support (Redshift, Postgres)
-- Start using ADAM for real Analytics Engineering tasks
+1. **dbt Integration** - Error parser and model analyzer
+2. **Voice Interface** - Complete implementation
+3. **Agent System** - Move from archive to production
+4. **Performance** - Optimize for 100K+ memories
 
 ---
 
 ## Learning Path Recommendations
 
-### Phase 1: Foundation (Weeks 1-2) 
-1. Study memory system implementation ✅
-2. Understand basic retrieval (BM25) ✅
-3. Learn conversation management ✅
-4. Run all basic tests ✅
-5. **NEW: Configure and test LLM integration** ✅
+### Phase 1: Foundation (Weeks 1-2)
+1. Run all interfaces and understand the flow
+2. Study memory worthiness evaluation
+3. Understand the three-stage RAG system
+4. Configure and test different LLM providers
+5. Try SQL analysis on real queries
 
-### Phase 2: Advanced Concepts (Weeks 3-4)
-1. Master three-stage retrieval ✅
-2. Understand graph algorithms ✅
-3. Study agent architectures ⏳
-4. Implement SQL and dbt tools 🚧
+### Phase 2: Deep Dive (Weeks 3-4)
+1. Implement a new memory type
+2. Add a new SQL anti-pattern detector
+3. Create custom embedding configuration
+4. Build memory visualization
+5. Extend the query analyzer
 
-### Phase 3: Production Skills (Weeks 5-6)
-1. Add monitoring and metrics
-2. Implement error handling
-3. Study performance optimization
-4. Deploy to test environment
+### Phase 3: Integration (Weeks 5-6)
+1. Connect ADAM to your data warehouse
+2. Build custom tools for your workflow
+3. Create domain-specific routing rules
+4. Implement team-specific memory policies
+5. Add monitoring and alerts
 
-### Phase 4: Mastery (Weeks 7-8)
-1. Scale testing (100K+ memories)
-2. Multi-user support
-3. Advanced agent behaviors
-4. Production deployment
+### Phase 4: Innovation (Weeks 7-8)
+1. Experiment with new retrieval methods
+2. Implement research papers
+3. Build multi-user support
+4. Create novel memory compression
+5. Contribute improvements back
 
-## How to Test Your Understanding
+---
 
-### Level 1: Conceptual Understanding
-- Explain each component's purpose
-- Describe data flow through system
-- Identify tradeoffs in design decisions
+## Key Research Papers to Read
 
-### Level 2: Implementation Skills
-- Add new memory types
-- Implement new retrieval method
-- Create custom agent behavior
-- Build monitoring dashboard
+### Foundational
+1. "Attention Is All You Need" (Vaswani et al., 2017)
+2. "BERT: Pre-training of Deep Bidirectional Transformers" (Devlin et al., 2019)
+3. "Language Models are Few-Shot Learners" (Brown et al., 2020)
 
-### Level 3: System Design
-- Design for 10x scale
-- Plan multi-region deployment
-- Architecture security review
-- Cost optimization plan
-
-### Level 4: Innovation
-- Propose new architectures
-- Implement research papers
-- Create novel solutions
-- Contribute to open source
-
-## Resources for Deep Learning
-
-### Books
-1. "Information Retrieval" by Manning, Raghavan, Schütze
-2. "Deep Learning" by Goodfellow, Bengio, Courville
-3. "Designing Data-Intensive Applications" by Martin Kleppmann
-4. "Site Reliability Engineering" by Google
-
-### Papers
+### RAG and Retrieval
 1. "Retrieval-Augmented Generation" (Lewis et al., 2020)
 2. "Dense Passage Retrieval" (Karpukhin et al., 2020)
-3. "ReAct: Synergizing Reasoning and Acting" (Yao et al., 2023)
-4. "Reflexion: Language Agents with Verbal Reinforcement Learning" (Shinn et al., 2023)
+3. "REALM: Retrieval-Augmented Language Model Pre-Training" (Guu et al., 2020)
+4. "Improving Language Models by Retrieving from Trillions of Tokens" (Borgeaud et al., 2022)
 
-### Online Courses
-1. Stanford CS224N: Natural Language Processing
-2. Stanford CS224U: Natural Language Understanding
-3. Fast.ai Practical Deep Learning
-4. Coursera: Machine Learning Engineering for Production
+### Agents and Planning
+1. "ReAct: Synergizing Reasoning and Acting" (Yao et al., 2023)
+2. "Reflexion: Language Agents with Verbal Reinforcement Learning" (Shinn et al., 2023)
+3. "Tree of Thoughts" (Yao et al., 2023)
+4. "Chain-of-Thought Prompting" (Wei et al., 2022)
 
-### Communities
-1. r/MachineLearning
-2. Papers with Code
-3. Hugging Face Forums
-4. LangChain Discord
+### Memory and Learning
+1. "Memory Networks" (Weston et al., 2015)
+2. "Neural Turing Machines" (Graves et al., 2014)
+3. "One-shot Learning with Memory-Augmented Neural Networks" (Santoro et al., 2016)
+
+### System Design
+1. "The Datacenter as a Computer" (Barroso et al.)
+2. "Designing Data-Intensive Applications" (Kleppmann)
+3. "Building Microservices" (Newman)
+
+---
+
+## Questions You Should Be Able to Answer
+
+### Technical Understanding
+1. Why does ADAM use three retrieval methods instead of just vector search?
+2. How does the memory lifecycle prevent unbounded growth?
+3. What makes intelligent routing reduce costs by 63-89%?
+4. How does activity-based aging solve the vacation problem?
+5. Why is BM25 still relevant with modern embeddings?
+
+### Implementation Skills
+1. How would you add a new LLM provider to ADAM?
+2. What changes would you make to support 1M+ memories?
+3. How would you implement cross-user memory sharing?
+4. What monitoring would you add for production?
+5. How would you extend SQL analysis for NoSQL queries?
+
+### System Design
+1. How would you scale ADAM to 1000 concurrent users?
+2. What security measures would you implement?
+3. How would you handle multi-region deployment?
+4. What would you change for GDPR compliance?
+5. How would you implement memory federation?
+
+### Innovation
+1. How could quantum computing improve memory search?
+2. What novel compression techniques could preserve searchability?
+3. How would you implement "memory dreams" (offline consolidation)?
+4. What would collaborative memory networks look like?
+5. How could ADAM learn optimal decay rates per user?
+
+---
+
+## Your Action Items
+
+### Immediate (Today)
+1. Run `python cli/adam_chat.py` and have a conversation
+2. Try `streamlit run web/adam_web.py` for the web interface
+3. Test SQL analysis with a complex query
+4. Read through one complete module (suggest: memory.py)
+
+### This Week
+1. Implement a new memory type for your use case
+2. Add a custom SQL anti-pattern detector
+3. Create a visualization of your memory network
+4. Write tests for a component you want to understand
+5. Try different models and measure cost/performance
+
+### This Month
+1. Build a custom tool using ADAM's components
+2. Implement one research paper's ideas
+3. Create a demo for your team
+4. Contribute a feature or fix
+5. Write about what you've learned
+
+---
 
 ## Final Thoughts
 
-ADAM is more than just code - it's a complete education in modern AI systems. By understanding every component, you'll gain skills that apply far beyond this project:
+ADAM is more than just code - it's a complete education in modern AI systems. Every component teaches multiple concepts:
 
-- **System Thinking**: How components work together
-- **Performance Engineering**: Making AI fast and efficient
-- **Production Skills**: Building reliable systems
-- **AI Theory**: Understanding the "why" behind the "how"
-- **Innovation Mindset**: Pushing boundaries
+- **Memory Systems**: Information theory, economics, psychology
+- **RAG**: Search algorithms, ensemble methods, optimization
+- **Conversations**: State management, context modeling, UX
+- **Agents**: Planning, reasoning, tool use
+- **Production**: Reliability, security, observability
 
-Remember: The best way to learn is to break things, fix them, and make them better. Every bug is a learning opportunity. Every performance issue teaches optimization. Every user complaint drives improvement.
+The best learning comes from:
+1. **Breaking things**: Understand failure modes
+2. **Building features**: Apply concepts practically
+3. **Benchmarking**: Measure and improve
+4. **Teaching others**: Solidify understanding
+5. **Contributing back**: Join the community
+
+Remember: You don't need to understand everything at once. Start with what interests you most, build something small, and expand from there. Every bug is a learning opportunity. Every optimization teaches efficiency. Every user request drives innovation.
 
 Welcome to the journey of mastering AI systems through ADAM!
 
 ---
 
-## 11. Memory Lifecycle and Decay Systems
-
-### What You'll Learn
-The psychology-inspired memory lifecycle system that implements decay, reinforcement, and activity-based aging - ensuring memories evolve naturally with usage patterns.
-
-### Key Files to Study
-- `src/adam/memory_lifecycle.py` - Complete lifecycle implementation
-- `src/adam/activity_tracker.py` - Active days tracking system
-- `scripts/manage_memory_lifecycle.py` - Management tools
-- `docs/memory_lifecycle.md` - User guide
-- `docs/daily_logs/day_008.md` - Implementation journey
-
-### Core Concepts to Master
-
-#### 1. **Exponential Decay in Memory Systems**
-
-**What is it?**
-Exponential decay models how memories fade over time, similar to radioactive decay or capacitor discharge. The formula `strength = initial_strength × (decay_rate^time)` creates a natural forgetting curve.
-
-**Key Questions to Answer:**
-- Why is exponential decay more natural than linear decay for memory systems?
-- How does the decay rate (0.95) affect memory retention over different time scales?
-- What happens when decay rate approaches 1.0 or 0.0?
-- How do you balance decay rate with storage costs?
-
-**Going Deeper:**
-- Study the **Ebbinghaus Forgetting Curve** - the psychological basis for memory decay
-- Research **spaced repetition algorithms** like SM-2 used in Anki
-- Explore **power law of forgetting** vs exponential models
-- Implement different decay functions and compare their behavior
-
-**Practical Exercise:**
-```python
-# Experiment with different decay models
-import numpy as np
-import matplotlib.pyplot as plt
-
-days = np.arange(0, 100)
-exponential = 0.95 ** days
-linear = np.maximum(0, 1 - 0.01 * days)
-logarithmic = 1 / (1 + np.log(days + 1))
-
-# Plot and compare the curves
-# Which feels most natural for memory decay?
-```
-
-#### 2. **Activity-Based vs Time-Based Aging**
-
-**What is it?**
-Our implementation tracks "active days" instead of calendar days, ensuring memories only age when the system is actually used.
-
-```python
-class ActivityTracker:
-    def record_interaction(self):
-        today = date.today().isoformat()
-        if today not in self.activity_data["daily_activity"]:
-            self.activity_data["active_days"].append(today)
-            # This is a new active day!
-```
-
-**Key Questions to Answer:**
-- What are the trade-offs between activity-based and time-based aging?
-- How would you handle partial activity days (few vs many interactions)?
-- Should different types of memories age at different rates?
-- How do you prevent gaming the system (artificial activity to prevent decay)?
-
-**Going Deeper:**
-- Study **event-driven architectures** and temporal databases
-- Research how version control systems (Git) handle time vs commits
-- Explore **session-based analytics** and user engagement metrics
-- Look into **adaptive learning systems** that adjust to usage patterns
-
-**Implementation Challenge:**
-```python
-# Design an advanced activity tracking system that:
-# 1. Weights days by interaction intensity
-# 2. Detects and handles anomalous usage patterns
-# 3. Provides predictive decay based on historical patterns
-
-class AdvancedActivityTracker:
-    def calculate_weighted_age(self, memory_date):
-        # Your implementation here
-        # Consider: interaction count, query complexity, time spent
-        pass
-```
-
-#### 3. **Memory Reinforcement and Hebbian Learning**
-
-**What is it?**
-When memories are accessed, they get stronger - implementing "neurons that fire together, wire together" principle.
-
-```python
-def reinforce_memory(self, memory_id: str, metadata: Dict, boost: float = 0.1):
-    strength = self.get_memory_strength(memory_id, metadata)
-    new_strength = strength.reinforce(boost)
-    # Boost is proportional to relevance!
-```
-
-**Key Questions to Answer:**
-- How should reinforcement strength relate to access context?
-- Should repeated access in short time have diminishing returns?
-- How do you prevent over-reinforcement of frequently accessed but low-value memories?
-- What's the optimal boost formula?
-
-**Going Deeper:**
-- Study **Hebbian learning theory** and synaptic plasticity
-- Research **collaborative filtering** and recommendation systems
-- Explore **PageRank algorithm** - similar principles for importance
-- Look into **attention mechanisms** in transformers
-
-**Advanced Topics:**
-- Implement **anti-Hebbian learning** for diversity
-- Create **memory interference** patterns
-- Build **consolidation periods** like REM sleep
-
-#### 4. **Multi-Tier Compression Strategies**
-
-**What is it?**
-Memories compress through multiple stages as they age, preserving important information while reducing storage.
-
-```python
-# Age-based compression tiers (in active days)
-TIER_FULL = 7        # Full fidelity
-TIER_MODERATE = 30   # Keep important exchanges
-TIER_HIGH = 90       # Key insights only
-# 90+ days: Ultra compression
-```
-
-**Key Questions to Answer:**
-- How do you determine what information is "important" to preserve?
-- What's the optimal number of compression tiers?
-- How do you handle memories that need to be "uncompressed"?
-- Can compressed memories still be effectively searched?
-
-**Going Deeper:**
-- Study **information theory** and entropy
-- Research **semantic compression** techniques
-- Explore **hierarchical summarization** methods
-- Look into **progressive JPEG** as an analogy
-
-**Research Papers to Read:**
-- "Compressive Transformers for Long-Range Sequence Modelling"
-- "Hierarchical Text Summarization Using Latent Semantic Analysis"
-- "Information-Theoretic Measures of Memory Decay"
-
-**Implementation Project:**
-```python
-class IntelligentCompressor:
-    """
-    Build a compressor that:
-    1. Identifies semantic keypoints in text
-    2. Preserves information value, not just keywords
-    3. Maintains searchability after compression
-    4. Can reconstruct approximate original from compressed form
-    """
-    
-    async def compress_with_llm(self, content: str, level: str):
-        # Use LLM to intelligently summarize
-        # Preserve: problems, solutions, insights
-        # Remove: redundancy, pleasantries, filler
-        pass
-```
-
-### System Design Patterns
-
-#### 5. **Event Sourcing and Activity Tracking**
-
-**What is it?**
-Recording all interactions as events to reconstruct system state and calculate metrics like "active days."
-
-```python
-{
-    "daily_activity": {
-        "2025-01-11": 15,  # 15 interactions
-        "2025-01-10": 8,   # 8 interactions
-        # Gap - vacation
-        "2024-12-20": 12   # 12 interactions
-    },
-    "active_days": ["2024-12-20", "2025-01-10", "2025-01-11"]
-    # Only 3 active days despite 22 calendar days!
-}
-```
-
-**Key Questions to Answer:**
-- How do you efficiently store and query event streams?
-- What's the trade-off between granularity and storage?
-- How do you handle event replay and corrections?
-- When should events be aggregated or archived?
-
-**Going Deeper:**
-- Study **Event Sourcing** and CQRS patterns
-- Research **Apache Kafka** and event streaming
-- Explore **time-series databases** like InfluxDB
-- Understand **audit logging** best practices
-
-#### 6. **Importance Scoring and Multi-Factor Weighting**
-
-**What is it?**
-Combining multiple signals (strength, access frequency, success rate, etc.) into a single importance score.
-
-```python
-factors = {
-    'strength': strength.calculate_decayed_strength(active_days),
-    'access_frequency': min(1.0, strength.access_count / 10),
-    'success_rate': metadata.get('success_rate', 1.0),
-    'has_code': 1.0 if metadata.get('memory_type') == 'code_pattern' else 0.5,
-    'reference_count': min(1.0, metadata.get('reference_count', 0) / 5),
-    'user_marked': 1.0 if metadata.get('landmark', False) else 0.0
-}
-
-weights = {
-    'strength': 0.3,
-    'access_frequency': 0.2,
-    'success_rate': 0.2,
-    'has_code': 0.15,
-    'reference_count': 0.1,
-    'user_marked': 0.05
-}
-```
-
-**Key Questions to Answer:**
-- How do you determine optimal weights for different factors?
-- Should weights be learned or manually tuned?
-- How do you handle correlation between factors?
-- What about non-linear relationships between factors?
-
-**Going Deeper:**
-- Study **Multi-Criteria Decision Analysis** (MCDA)
-- Research **feature importance** in machine learning
-- Explore **ensemble methods** for combining signals
-- Look into **Pareto optimization** for multi-objective problems
-
-**Advanced Exercise:**
-```python
-# Implement a learning system that:
-# 1. Tracks which memories users mark as valuable
-# 2. Learns optimal importance weights from this feedback
-# 3. Adapts weights per user or use case
-# 4. Handles concept drift as usage patterns change
-
-class AdaptiveImportanceScorer:
-    def learn_from_feedback(self, memory_id: str, user_rating: float):
-        # Update weights based on user feedback
-        pass
-```
-
-### Theoretical Foundations
-
-#### 7. **Cognitive Science and Memory Models**
-
-**Key Areas to Explore:**
-- **Working Memory Models**: Miller's 7±2, Baddeley's model
-- **Long-term Memory**: Declarative vs procedural, semantic vs episodic
-- **Memory Consolidation**: How sleep affects memory, synaptic homeostasis
-- **Interference Theory**: Proactive and retroactive interference
-
-**Research Questions:**
-- How can AI memory systems better mirror human cognitive architecture?
-- What can we learn from memory disorders (amnesia, dementia)?
-- How do emotions affect memory strength in humans, and should AI model this?
-
-#### 8. **Distributed Systems and Consistency**
-
-**For Scaling Memory Systems:**
-- **CAP Theorem**: Consistency, Availability, Partition tolerance trade-offs
-- **Eventual Consistency**: How to handle distributed memory updates
-- **Sharding Strategies**: Distributing memories across nodes
-- **Consensus Algorithms**: Raft, Paxos for distributed state
-
-### Practical Projects to Deepen Understanding
-
-1. **Build a Personal Memory System**
-   ```python
-   # Create your own implementation with:
-   # - Different decay models (linear, exponential, sigmoid)
-   # - Mood-based reinforcement
-   # - Visual memory network explorer
-   ```
-
-2. **Benchmark Different Approaches**
-   ```python
-   # Compare empirically:
-   # - Activity-based vs time-based aging
-   # - Various compression algorithms
-   # - Retrieval accuracy vs storage efficiency
-   ```
-
-3. **Integrate with Real Applications**
-   - Add memory lifecycle to a chatbot
-   - Build a spaced repetition learning app
-   - Create a self-organizing note-taking system
-
-4. **Contribute to Open Source**
-   - Find memory system projects on GitHub
-   - Propose improvements based on your learning
-   - Share your implementations
-
-### Questions for Deep Reflection
-
-1. **Philosophical**: If an AI system "forgets" like humans do, is it more trustworthy or less?
-
-2. **Practical**: How would you adapt this system for different domains (medical, legal, creative)?
-
-3. **Ethical**: Should AI systems have the "right to forget"? How does GDPR affect memory systems?
-
-4. **Technical**: How would quantum computing change memory decay calculations?
-
-5. **Future**: As context windows grow (1M+ tokens), do we still need memory decay?
-
-### Real-World Application: The Vacation Problem
-
-Our solution to the vacation problem demonstrates practical system design:
-
-```python
-# Traditional approach (BAD):
-memory_age = (datetime.now() - memory.created_at).days
-# After 2 week vacation, all memories are 14 days older!
-
-# Our approach (GOOD):
-memory_age = activity_tracker.calculate_active_age_days(memory.created_at)
-# After 2 week vacation, memories haven't aged at all!
-```
-
-This teaches:
-- User-centric design thinking
-- Edge case consideration
-- Practical vs theoretical implementation
-- The importance of real-world testing
-
-### Your Learning Path for Memory Lifecycle
-
-1. **Week 1**: Master the current implementation
-   - Understand every line of code in memory_lifecycle.py
-   - Run experiments with different decay rates
-   - Test the activity tracking system
-   - Build visualizations of memory decay
-
-2. **Week 2**: Explore variations
-   - Implement alternative decay models (sigmoid, stepped)
-   - Try different reinforcement strategies
-   - Build simple compression algorithms
-   - Test with extreme usage patterns
-
-3. **Week 3**: Theoretical foundations
-   - Read Ebbinghaus's original papers
-   - Study spaced repetition research
-   - Understand information theory basics
-   - Learn about human memory consolidation
-
-4. **Week 4**: Advanced implementation
-   - Add LLM-based compression
-   - Implement predictive decay
-   - Build memory importance learning
-   - Create performance optimizations
-
-### Testing Your Understanding
-
-**Level 1: Can you explain?**
-- Why active days instead of calendar days?
-- How reinforcement prevents decay?
-- What makes a memory "landmark"?
-
-**Level 2: Can you implement?**
-- A new decay function (e.g., sigmoid)?
-- Weighted activity tracking?
-- Basic memory compression?
-
-**Level 3: Can you design?**
-- A system for 1M+ memories?
-- Cross-user memory sharing with privacy?
-- Adaptive decay rates per memory type?
-
-**Level 4: Can you innovate?**
-- Quantum-inspired memory superposition?
-- Emotional weighting for memories?
-- Collective intelligence through shared decay?
-
-Remember: The best learning comes from building, breaking, and rebuilding. Don't just read about these concepts - implement them, test them, and push them to their limits.
+*This guide is a living document. As ADAM evolves, so will this guide. Check back regularly for updates and new sections.*

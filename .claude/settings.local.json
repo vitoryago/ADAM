@@ -15,7 +15,9 @@
       "Bash(env)",
       "Bash(curl:*)",
       "Bash(pkill:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(bash:*)",
+      "Bash(/usr/bin/python3:*)"
     ],
     "deny": []
   }
