@@ -635,20 +635,54 @@ Building reliable, secure, and observable AI systems.
 4. **Memory Network** - Graph-based connections
 5. **LLM Integration** - Multi-provider with intelligent routing
 6. **SQL Tools** - Analysis and optimization
-7. **Web/CLI Interfaces** - Multiple interaction modes
+7. **Web/CLI Interfaces** - Multiple interaction modes with error boundaries
 8. **File Organization** - Clean project structure
+9. **Enhanced Memory Search** - Intent-aware retrieval with technical term extraction
+10. **Session Persistence** - Auto-save conversations to disk
 
-### 🚧 Recent Fixes
+### 🚧 Recent Fixes and Improvements (Today's Session)
 1. **BM25 Empty Corpus** - Handle initialization with no documents
-2. **Session Attributes** - Fixed start_time vs started_at
-3. **Web Context** - Prioritize conversation over memory search
-4. **CSS Issues** - Fixed white-on-white text in advanced UI
+   ```python
+   if tokenized_corpus and len(tokenized_corpus) > 0:
+       self.bm25 = BM25Okapi(tokenized_corpus, k1=self.k1, b=self.b)
+   else:
+       self.bm25 = None  # Graceful handling
+   ```
+
+2. **Web Interface Error Boundaries** - Comprehensive error handling
+   ```python
+   @error_boundary
+   def process_message(self, prompt: str, image_data: Optional[bytes] = None):
+       """Process with automatic error recovery"""
+   ```
+
+3. **Session Persistence** - Never lose conversations again
+   ```python
+   class SessionPersistence:
+       """Auto-saves to data/web_sessions.json"""
+   ```
+
+4. **Memory Retrieval Enhancement** - Fixed "bring the code again" issue
+   ```python
+   class MemorySearchEnhancer:
+       """Detects user intent and extracts technical terms"""
+       RECALL_PATTERNS = [
+           r"we (?:were|was) (?:talking|discussing|working)",
+           r"(?:bring|show|give) (?:me|the) (?:code|example|dag) again",
+       ]
+   ```
+
+5. **Health Monitoring** - System status indicators
+   - Memory system status
+   - LLM availability
+   - Error count tracking
 
 ### 📋 Next Steps
 1. **dbt Integration** - Error parser and model analyzer
 2. **Voice Interface** - Complete implementation
 3. **Agent System** - Move from archive to production
 4. **Performance** - Optimize for 100K+ memories
+5. **Memory Visualization** - Interactive graph display
 
 ---
 
@@ -724,6 +758,32 @@ Building reliable, secure, and observable AI systems.
 4. How does activity-based aging solve the vacation problem?
 5. Why is BM25 still relevant with modern embeddings?
 
+### Recent Improvements Understanding
+1. **Why did BM25 fail with empty corpus and how was it fixed?**
+   - Understand ZeroDivisionError in BM25Okapi
+   - Learn about graceful initialization handling
+   - Know when to rebuild vs initialize indexes
+
+2. **How does the error boundary pattern improve web interface reliability?**
+   - Understand decorator patterns in Python
+   - Learn about error isolation and recovery
+   - Know the difference between fail-fast and graceful degradation
+
+3. **Why was memory search failing to find specific conversations?**
+   - Understand the difference between semantic and intent-based search
+   - Learn about query enhancement techniques
+   - Know how technical term extraction improves retrieval
+
+4. **How does session persistence work and why is it important?**
+   - Understand state management in web applications
+   - Learn about JSON serialization patterns
+   - Know the tradeoffs of client vs server storage
+
+5. **What is user intent detection and how does it improve memory retrieval?**
+   - Understand regex pattern matching for intent
+   - Learn about contextual query enhancement
+   - Know when to prioritize recall vs precision
+
 ### Implementation Skills
 1. How would you add a new LLM provider to ADAM?
 2. What changes would you make to support 1M+ memories?
@@ -731,12 +791,83 @@ Building reliable, secure, and observable AI systems.
 4. What monitoring would you add for production?
 5. How would you extend SQL analysis for NoSQL queries?
 
+### Debugging Skills (From Today's Session)
+1. **How do you debug memory retrieval issues?**
+   - Check if memory search is enabled
+   - Verify query enhancement is working
+   - Test with known memory content
+   - Check relevance scoring logic
+
+2. **What are the signs of poor context handling?**
+   - Generic responses when specific info exists
+   - Ignoring conversation history
+   - Not using retrieved memories
+   - Hallucinating instead of searching
+
+3. **How do you implement graceful error recovery?**
+   - Use try-except with specific handlers
+   - Log errors with full context
+   - Provide user-friendly messages
+   - Maintain system state consistency
+
 ### System Design
 1. How would you scale ADAM to 1000 concurrent users?
 2. What security measures would you implement?
 3. How would you handle multi-region deployment?
 4. What would you change for GDPR compliance?
 5. How would you implement memory federation?
+
+### AI Agent Architecture Questions
+1. **What's the difference between reactive and proactive agents?**
+   - Reactive: Responds to queries (current ADAM)
+   - Proactive: Initiates actions based on goals
+   - Hybrid: Can do both based on context
+
+2. **How do tool-using agents decide which tool to use?**
+   - Function descriptions and signatures
+   - Context-based selection
+   - Learning from success/failure
+
+3. **What are the key components of a production AI agent?**
+   - Perception (input processing)
+   - Memory (state management)
+   - Planning (action selection)
+   - Execution (tool use)
+   - Learning (improvement over time)
+
+### LLM Engineering Questions
+1. **Why is prompt engineering both an art and a science?**
+   - Science: Measurable improvements, A/B testing
+   - Art: Understanding model psychology, creative solutions
+   - Balance: Systematic experimentation with intuition
+
+2. **What are the tradeoffs in few-shot vs zero-shot prompting?**
+   - Few-shot: Better accuracy, higher token cost
+   - Zero-shot: Lower cost, more general
+   - Choice depends on task complexity and budget
+
+3. **How do you handle prompt injection attacks?**
+   - Input validation and sanitization
+   - System prompt isolation
+   - Output filtering
+   - Continuous monitoring
+
+### RAG System Questions
+1. **When should you use hybrid search vs pure vector search?**
+   - Hybrid: Technical content, specific terms matter
+   - Pure vector: General knowledge, concepts matter
+   - Consider: Domain, query types, user needs
+
+2. **How do you evaluate RAG system performance?**
+   - Retrieval metrics: Precision, Recall, MRR
+   - End-to-end metrics: Answer quality, user satisfaction
+   - Cost metrics: Tokens used, latency
+
+3. **What are the scaling challenges for RAG systems?**
+   - Index size and update frequency
+   - Query latency at scale
+   - Consistency across distributed systems
+   - Cost optimization
 
 ### Innovation
 1. How could quantum computing improve memory search?
@@ -768,6 +899,102 @@ Building reliable, secure, and observable AI systems.
 3. Create a demo for your team
 4. Contribute a feature or fix
 5. Write about what you've learned
+
+---
+
+## Case Study: Today's Memory Retrieval Fix
+
+### The Problem
+A user asked ADAM: "Can you bring the code again?" referring to a specific DAG implementation from a previous conversation. Instead of retrieving the actual code, ADAM provided generic Airflow examples.
+
+### Root Cause Analysis
+1. **Memory search was disabled by default** (`use_memory: False`)
+2. **No conversation context in search** - Only searched with "bring the code again"
+3. **No intent recognition** - Couldn't detect user was recalling
+4. **Poor prompt engineering** - LLM wasn't told to use retrieved memories
+
+### The Solution Architecture
+
+#### 1. Enhanced Memory Search (`memory_search_enhanced.py`)
+```python
+class MemorySearchEnhancer:
+    # Detect when users are recalling
+    RECALL_PATTERNS = [
+        r"we (?:were|was) (?:talking|discussing|working)",
+        r"(?:bring|show|give) (?:me|the) (?:code|example|dag) again",
+    ]
+    
+    def analyze_user_intent(self, query: str) -> str:
+        if self.recall_regex.search(query):
+            return 'recall'  # User wants specific past info
+```
+
+#### 2. Technical Term Extraction
+```python
+TECH_PATTERNS = {
+    'dag': r'\b(?:dag|dags|directed acyclic graph)\b',
+    'dbt': r'\b(?:dbt|data build tool)\b',
+    'airflow': r'\b(?:airflow|apache airflow)\b',
+}
+```
+
+#### 3. Relevance Scoring Enhancement
+```python
+def score_memory_relevance(self, memory: Dict, context: SearchContext) -> float:
+    score = memory.get('similarity', 0.5)
+    
+    # Boost for technical term matches
+    for term in context.technical_terms:
+        if term in content:
+            score *= 1.2
+    
+    # Boost for code content when recalling
+    if context.user_intent == 'recall' and '```' in content:
+        score *= 1.5
+```
+
+### Lessons for AI Engineers
+
+1. **Context is Everything**
+   - Don't just search with the current query
+   - Include conversation history in retrieval
+   - Extract and use domain-specific terms
+
+2. **Intent Matters More Than Semantics**
+   - "bring the code again" semantically != specific DAG code
+   - But intent is clear: retrieve previous code
+   - Design systems that understand user goals
+
+3. **Fail Gracefully, Not Silently**
+   - If can't find memories, say so explicitly
+   - Don't generate plausible but wrong content
+   - Guide the LLM with clear instructions
+
+4. **Default Settings Matter**
+   - Memory search should be on by default
+   - Users expect continuity in conversations
+   - Make the smart choice the default choice
+
+5. **Layer Your Defenses**
+   - Primary: Enhanced search with intent
+   - Secondary: Fallback to simple search
+   - Tertiary: Explicit "not found" messages
+
+### Testing Your Understanding
+
+1. **Why did vector search alone fail?**
+   - "bring the code again" doesn't embed near "DAG implementation"
+   - Semantic similarity != intent similarity
+
+2. **How does intent detection change retrieval?**
+   - Different scoring weights
+   - Different content formatting
+   - Different prompt instructions
+
+3. **What makes this solution robust?**
+   - Multiple retrieval strategies
+   - Graceful fallbacks
+   - Clear error messages
 
 ---
 
