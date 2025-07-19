@@ -199,15 +199,19 @@ class AdvancedRAGSystem:
             
             # Tokenize with our custom tokenizer
             tokens = self._tokenize_for_bm25(full_text)
-            tokenized_corpus.append(tokens)
-            self._bm25_doc_ids.append(memory_id)
+            
+            # Only add non-empty token lists
+            if tokens:
+                tokenized_corpus.append(tokens)
+                self._bm25_doc_ids.append(memory_id)
             
             # Cache the document for later use
             self._doc_cache[memory_id] = memory_data
         
         # Initialize BM25 with our corpus
         # BM25Okapi is the most common variant of BM25
-        if tokenized_corpus:
+        # BM25 cannot handle empty corpus, so we check first
+        if tokenized_corpus and len(tokenized_corpus) > 0:
             self.bm25 = BM25Okapi(
                 tokenized_corpus,
                 k1=self.k1,
@@ -215,9 +219,9 @@ class AdvancedRAGSystem:
             )
             console.print(f"[green]BM25 index built with {len(tokenized_corpus)} documents[/green]")
         else:
-            # Handle empty corpus case
+            # Handle empty corpus case - BM25 will be None until we have documents
             self.bm25 = None
-            console.print("[yellow]No documents to index for BM25[/yellow]")
+            console.print("[yellow]No documents to index for BM25 - will be initialized when memories are added[/yellow]")
     
     def _tokenize_for_bm25(self, text: str) -> List[str]:
         """
