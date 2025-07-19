@@ -103,6 +103,13 @@ class MemorySearchEnhancer:
             if term in content:
                 score *= 1.2
         
+        # Additional boost for specific terms mentioned in query
+        query_lower = context.current_query.lower()
+        if 'new_fee_repricing' in query_lower and 'new_fee_repricing' in content:
+            score *= 2.0  # Strong boost for exact match
+        if 'marketing_analytics' in query_lower and 'MARKETING_ANALYTICS' in content:
+            score *= 2.0  # Strong boost for exact match
+        
         # Boost for recall intent with matching context
         if context.user_intent == 'recall':
             # Check if memory contains code blocks
@@ -129,11 +136,11 @@ class MemorySearchEnhancer:
                         
                         # Boost recent memories significantly
                         if hours_ago < 1:  # Within last hour
-                            score *= 3.0
+                            score *= 5.0  # Increased from 3.0
                         elif hours_ago < 24:  # Within last day
-                            score *= 2.0
+                            score *= 3.0  # Increased from 2.0
                         elif hours_ago < 168:  # Within last week
-                            score *= 1.5
+                            score *= 2.0  # Increased from 1.5
                     except:
                         pass
         
