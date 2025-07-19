@@ -28,6 +28,7 @@ from src.adam.memory import ADAMMemoryAdvanced
 from src.adam.conversation_system import ConversationSystem
 from src.adam.llm.client import UnifiedLLMClient
 from src.adam.llm.config import LLMConfig
+from src.adam.memory_search_enhanced import MemorySearchEnhancer, format_memory_for_prompt
 
 # Configure Streamlit page
 st.set_page_config(
@@ -213,6 +214,7 @@ class ADAMWebInterface:
                     st.session_state.conversation = ConversationSystem()
                     st.session_state.llm_config = LLMConfig()
                     st.session_state.llm_client = UnifiedLLMClient(st.session_state.llm_config)
+                    st.session_state.memory_enhancer = MemorySearchEnhancer()
                     
                     # Get available models
                     st.session_state.available_models = st.session_state.llm_config.get_available_models()
@@ -460,31 +462,75 @@ class ADAMWebInterface:
         
         # Search memory for additional context only if enabled
         memory_context = ""
-        if st.session_state.get('use_memory', False):
-            memories = st.session_state.memory.recall_with_context(
-                query=prompt,
-                n_results=3  # Reduced from 5
-            )
-            
-            # Build memory context
-            if memories and len(memories) > 0:
-                # Only include if highly relevant (you could add a relevance threshold here)
-                memory_context = "\nPossibly relevant from long-term memory:\n"
-                for memory in memories[:2]:  # Only top 2
-                    content = memory.get('content', '')
-                    if 'Response:' in content:
-                        response_part = content.split('Response:')[1].strip()
-                        memory_context += f"- {response_part[:200]}...\n"
+        search_context = None
+        
+        if st.session_state.get('use_memory', True):  # Default to True
+            # Use enhanced memory search
+            try:
+                # First, get raw memories with enhanced query
+                enhanced_query = prompt
+                if conversation_context:
+                    enhanced_query = f"{prompt} {conversation_context[:500]}"
+                
+                # Get initial memories
+                raw_memories = st.session_state.memory.recall_with_context(
+                    query=enhanced_query,
+                    n_results=10  # Get more candidates for filtering
+                )
+                
+                # Enhance and filter memories
+                if raw_memories:
+                    enhanced_memories, search_context = st.session_state.memory_enhancer.enhance_memory_search(
+                        query=prompt,
+                        conversation_history=st.session_state.messages,
+                        raw_memories=raw_memories
+                    )
+                    
+                    # Build memory context
+                    if enhanced_memories:
+                        memory_context = "\n📚 Relevant from your memory:\n"
+                        for memory in enhanced_memories[:3]:  # Top 3 most relevant
+                            formatted = format_memory_for_prompt(memory, search_context)
+                            memory_context += f"\n{formatted}\n"
+                            memory_context += "-" * 50 + "\n"
+                
+            except Exception as e:
+                logger.error(f"Error in enhanced memory search: {e}")
+                # Fallback to simple search
+                memories = st.session_state.memory.recall_with_context(
+                    query=prompt,
+                    n_results=3
+                )
+                if memories:
+                    memory_context = "\nFrom memory:\n"
+                    for memory in memories:
+                        content = memory.get('content', '')
+                        if content:
+                            memory_context += f"- {content[:200]}...\n"
         
         # Build the full prompt with proper context priority
-        system_prompt = "You are ADAM, an AI assistant. Focus on the current conversation context first. Only reference long-term memories if they're directly relevant to the current discussion."
+        system_prompt = """You are ADAM, an AI assistant with perfect memory. 
+When the user references previous conversations (e.g., "we were talking about", "you showed me", "the code you gave me"), 
+you MUST check the provided memory context for specific details. Do not generate generic examples - use the actual code and context from memory.
+If you cannot find the specific conversation in memory, acknowledge this honestly rather than guessing."""
         
         full_prompt = system_prompt
+        
+        # Add current conversation context
         if conversation_context:
-            full_prompt += f"\n\n{conversation_context}"
-        if memory_context and len(conversation_context) < 500:  # Only add memory if not too much context
-            full_prompt += f"{memory_context}"
-        full_prompt += f"\nHuman: {prompt}\nAssistant:"
+            full_prompt += f"\n\nCurrent conversation:\n{conversation_context}"
+        
+        # Add memory context with clear labeling
+        if memory_context:
+            full_prompt += f"\n{memory_context}"
+            # Add specific instructions based on search context
+            if search_context and search_context.user_intent == 'recall':
+                full_prompt += "\n⚠️ The user is trying to recall a specific previous conversation. Use the exact code/details from the memory above, not generic examples."
+        elif "we were" in prompt.lower() or "again" in prompt.lower() or "previous" in prompt.lower():
+            # User is referencing past conversation but we found no relevant memories
+            full_prompt += "\n\n⚠️ Note: I searched but could not find specific memories about this topic in our previous conversations. I may not have access to that particular conversation."
+        
+        full_prompt += f"\n\nHuman: {prompt}\nAssistant:"
         
         # Handle image if provided
         if image_data:
