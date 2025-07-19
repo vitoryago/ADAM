@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""
+Enhanced Memory Search for ADAM
+===============================
+
+This module provides improved memory search capabilities that better handle
+conversation context and user intent when retrieving past conversations.
+"""
+
+import re
+from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SearchContext:
+    """Context for enhanced memory search"""
+    current_query: str
+    conversation_history: List[Dict[str, str]]
+    technical_terms: List[str]
+    user_intent: str  # 'recall', 'continue', 'reference', 'general'
+
+
+class MemorySearchEnhancer:
+    """Enhances memory search queries for better retrieval"""
+    
+    # Patterns that indicate user is referencing past conversations
+    RECALL_PATTERNS = [
+        r"we (?:were|was) (?:talking|discussing|working)",
+        r"(?:remember|recall) (?:when|that)",
+        r"(?:the|that) (?:code|example|dag|model) (?:you|we)",
+        r"(?:bring|show|give) (?:me|the) (?:code|example|dag) again",
+        r"(?:previous|earlier|last) (?:conversation|discussion|code)",
+        r"continue (?:our|the) (?:conversation|discussion)",
+        r"back to (?:our|the|that)",
+    ]
+    
+    # Technical term extraction patterns
+    TECH_PATTERNS = {
+        'dag': r'\b(?:dag|dags|directed acyclic graph)\b',
+        'dbt': r'\b(?:dbt|data build tool)\b',
+        'airflow': r'\b(?:airflow|apache airflow)\b',
+        'model': r'\b(?:model|models|modeling)\b',
+        'operator': r'\b(?:operator|operators|bashoperator|pythonoperator)\b',
+        'task': r'\b(?:task|tasks|task_id)\b',
+        'schedule': r'\b(?:schedule|schedule_interval|cron)\b',
+    }
+    
+    def __init__(self):
+        self.recall_regex = re.compile('|'.join(self.RECALL_PATTERNS), re.IGNORECASE)
+        self.tech_regex = {k: re.compile(v, re.IGNORECASE) for k, v in self.TECH_PATTERNS.items()}
+    
+    def analyze_user_intent(self, query: str) -> str:
+        """Determine if user is trying to recall past conversation"""
+        if self.recall_regex.search(query):
+            return 'recall'
+        elif 'continue' in query.lower() or 'go on' in query.lower():
+            return 'continue'
+        elif 'that' in query.lower() or 'the code' in query.lower():
+            return 'reference'
+        else:
+            return 'general'
+    
+    def extract_technical_terms(self, text: str) -> List[str]:
+        """Extract technical terms from text"""
+        terms = []
+        for term, pattern in self.tech_regex.items():
+            if pattern.search(text):
+                terms.append(term)
+        return terms
+    
+    def build_enhanced_query(self, context: SearchContext) -> str:
+        """Build an enhanced search query based on context"""
+        enhanced_parts = [context.current_query]
+        
+        # If user is recalling, emphasize conversation continuity
+        if context.user_intent in ['recall', 'continue', 'reference']:
+            # Add conversation context
+            for msg in context.conversation_history[-4:]:  # Last 2 exchanges
+                if msg['role'] == 'user':
+                    enhanced_parts.append(f"previous question: {msg['content'][:100]}")
+            
+            # Emphasize technical terms from conversation
+            if context.technical_terms:
+                enhanced_parts.append(f"technical context: {' '.join(context.technical_terms)}")
+        
+        # Add specific search hints based on patterns
+        if 'dag' in context.technical_terms and 'dbt' in context.technical_terms:
+            enhanced_parts.append("airflow dag dbt model bashoperator schedule")
+        
+        return ' '.join(enhanced_parts)
+    
+    def score_memory_relevance(self, memory: Dict[str, Any], context: SearchContext) -> float:
+        """Score how relevant a memory is to the current context"""
+        score = memory.get('similarity', 0.5)
+        content = memory.get('content', '').lower()
+        
+        # Boost score for exact technical term matches
+        for term in context.technical_terms:
+            if term in content:
+                score *= 1.2
+        
+        # Boost for recall intent with matching context
+        if context.user_intent == 'recall':
+            # Check if memory contains code blocks
+            if '```' in content or 'def ' in content or 'class ' in content:
+                score *= 1.5
+            
+            # Check for specific patterns the user might be recalling
+            if 'bashoperator' in content and 'dag' in context.current_query.lower():
+                score *= 1.3
+        
+        # Penalize very old memories unless specifically requested
+        memory_age_days = memory.get('active_days', 0)
+        if memory_age_days > 30 and context.user_intent != 'recall':
+            score *= 0.7
+        
+        return min(score, 1.0)  # Cap at 1.0
+    
+    def filter_and_rank_memories(self, memories: List[Dict[str, Any]], context: SearchContext) -> List[Dict[str, Any]]:
+        """Filter and rank memories based on relevance"""
+        # Score all memories
+        scored_memories = []
+        for memory in memories:
+            relevance_score = self.score_memory_relevance(memory, context)
+            memory['relevance_score'] = relevance_score
+            scored_memories.append(memory)
+        
+        # Sort by relevance
+        scored_memories.sort(key=lambda m: m['relevance_score'], reverse=True)
+        
+        # Filter based on intent
+        if context.user_intent == 'recall':
+            # For recall, prefer memories with code or detailed responses
+            filtered = [m for m in scored_memories if len(m.get('content', '')) > 200]
+            if not filtered:
+                filtered = scored_memories
+        else:
+            filtered = scored_memories
+        
+        return filtered[:5]  # Return top 5
+    
+    def enhance_memory_search(self, query: str, conversation_history: List[Dict[str, str]], 
+                            raw_memories: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], SearchContext]:
+        """Main method to enhance memory search"""
+        # Extract technical terms from query and recent conversation
+        all_text = query + ' '.join(msg['content'] for msg in conversation_history[-4:])
+        technical_terms = self.extract_technical_terms(all_text)
+        
+        # Analyze user intent
+        user_intent = self.analyze_user_intent(query)
+        
+        # Build context
+        context = SearchContext(
+            current_query=query,
+            conversation_history=conversation_history,
+            technical_terms=technical_terms,
+            user_intent=user_intent
+        )
+        
+        # Filter and rank memories
+        enhanced_memories = self.filter_and_rank_memories(raw_memories, context)
+        
+        logger.info(f"Enhanced memory search: intent={user_intent}, terms={technical_terms}, "
+                   f"found {len(enhanced_memories)} relevant memories")
+        
+        return enhanced_memories, context
+
+
+def format_memory_for_prompt(memory: Dict[str, Any], context: SearchContext) -> str:
+    """Format a memory for inclusion in the prompt"""
+    content = memory.get('content', '')
+    
+    # Extract query and response parts
+    if 'Query:' in content and 'Response:' in content:
+        parts = content.split('Response:', 1)
+        query_part = parts[0].replace('Query:', '').strip()
+        response_part = parts[1].strip() if len(parts) > 1 else ''
+        
+        # For recall intent, include more of the response
+        if context.user_intent == 'recall':
+            # Include full code blocks if present
+            if '```' in response_part:
+                # Extract code blocks
+                code_blocks = re.findall(r'```[\s\S]*?```', response_part)
+                if code_blocks:
+                    return f"Previous conversation:\nQ: {query_part}\nA: {response_part}"
+            
+            return f"Q: {query_part[:150]}...\nA: {response_part[:500]}..."
+        else:
+            return f"Q: {query_part[:100]}...\nA: {response_part[:200]}..."
+    
+    return f"Memory: {content[:300]}..."
