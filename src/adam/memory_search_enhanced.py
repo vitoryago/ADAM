@@ -112,6 +112,30 @@ class MemorySearchEnhancer:
             # Check for specific patterns the user might be recalling
             if 'bashoperator' in content and 'dag' in context.current_query.lower():
                 score *= 1.3
+            
+            # MAJOR boost for "last" or "recent" queries based on timestamp
+            if any(word in context.current_query.lower() for word in ['last', 'latest', 'recent', 'newest']):
+                # Get timestamp from metadata
+                metadata = memory.get('metadata', {})
+                timestamp_str = metadata.get('timestamp', '')
+                if timestamp_str:
+                    try:
+                        from datetime import datetime
+                        memory_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                        now = datetime.now(memory_time.tzinfo) if memory_time.tzinfo else datetime.now()
+                        
+                        # Calculate hours ago
+                        hours_ago = (now - memory_time).total_seconds() / 3600
+                        
+                        # Boost recent memories significantly
+                        if hours_ago < 1:  # Within last hour
+                            score *= 3.0
+                        elif hours_ago < 24:  # Within last day
+                            score *= 2.0
+                        elif hours_ago < 168:  # Within last week
+                            score *= 1.5
+                    except:
+                        pass
         
         # Penalize very old memories unless specifically requested
         memory_age_days = memory.get('active_days', 0)
@@ -180,17 +204,17 @@ def format_memory_for_prompt(memory: Dict[str, Any], context: SearchContext) -> 
         query_part = parts[0].replace('Query:', '').strip()
         response_part = parts[1].strip() if len(parts) > 1 else ''
         
-        # For recall intent, include more of the response
+        # For recall intent, include FULL response especially code
         if context.user_intent == 'recall':
-            # Include full code blocks if present
-            if '```' in response_part:
-                # Extract code blocks
-                code_blocks = re.findall(r'```[\s\S]*?```', response_part)
-                if code_blocks:
-                    return f"Previous conversation:\nQ: {query_part}\nA: {response_part}"
+            # Check if this is about DAG/code
+            if any(term in query_part.lower() for term in ['dag', 'code', 'create', 'model']):
+                # Include the FULL response for code-related recalls
+                return f"=== PREVIOUS CONVERSATION ===\nUser asked: {query_part}\n\nYour response was:\n{response_part}\n"
             
-            return f"Q: {query_part[:150]}...\nA: {response_part[:500]}..."
+            # For other recalls, still include substantial content
+            return f"Previous conversation:\nUser: {query_part}\nYou: {response_part[:1500]}..."
         else:
-            return f"Q: {query_part[:100]}...\nA: {response_part[:200]}..."
+            # For non-recall, shorter summaries
+            return f"Q: {query_part[:150]}...\nA: {response_part[:300]}..."
     
-    return f"Memory: {content[:300]}..."
+    return f"Memory: {content[:500]}..."
