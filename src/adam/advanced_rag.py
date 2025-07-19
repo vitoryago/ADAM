@@ -221,6 +221,8 @@ class AdvancedRAGSystem:
         else:
             # Handle empty corpus case - BM25 will be None until we have documents
             self.bm25 = None
+            # Store empty tokenized corpus for consistency
+            self._tokenized_corpus = []
             console.print("[yellow]No documents to index for BM25 - will be initialized when memories are added[/yellow]")
     
     def _tokenize_for_bm25(self, text: str) -> List[str]:
@@ -385,24 +387,33 @@ class AdvancedRAGSystem:
         - Vector search might return general Python errors
         - BM25 finds the EXACT error message and its solution
         """
-        # Check if BM25 index exists
-        if self.bm25 is None:
-            logger.info("BM25 index not available, returning empty results")
+        # Check if BM25 index exists or if we have no documents
+        if self.bm25 is None or not hasattr(self, '_bm25_doc_ids') or len(self._bm25_doc_ids) == 0:
+            logger.info("BM25 index not available or empty, returning empty results")
             return []
             
         # Tokenize query using same method as corpus
         query_tokens = self._tokenize_for_bm25(query)
         
+        # If query has no valid tokens, return empty results
+        if not query_tokens:
+            logger.info("Query has no valid tokens for BM25 search")
+            return []
+        
         # Get BM25 scores for all documents
         # BM25 returns scores where higher = more relevant
-        scores = self.bm25.get_scores(query_tokens)
+        try:
+            scores = self.bm25.get_scores(query_tokens)
+        except Exception as e:
+            logger.error(f"Error getting BM25 scores: {e}")
+            return []
         
         # Get top-k indices
         top_indices = np.argsort(scores)[::-1][:k]
         
         results = []
         for idx in top_indices:
-            if scores[idx] > 0:  # Only include documents with positive scores
+            if idx < len(self._bm25_doc_ids) and scores[idx] > 0:  # Only include documents with positive scores
                 memory_id = self._bm25_doc_ids[idx]
                 memory_data = self._doc_cache.get(memory_id, {})
                 
@@ -760,6 +771,57 @@ class AdvancedRAGSystem:
             explanation += "- This indicates high relevance from different perspectives\n"
         
         return explanation
+    
+    def update_bm25_index(self, memory_id: str, memory_data: Dict):
+        """
+        Update BM25 index when a new memory is added
+        
+        This method allows the BM25 index to stay current as new memories
+        are added to the system without rebuilding the entire index.
+        """
+        # Extract text from memory data
+        full_text = f"{memory_data.get('query', '')} {memory_data.get('response', '')}"
+        tokens = self._tokenize_for_bm25(full_text)
+        
+        if not tokens:
+            return
+        
+        # If this is the first document, initialize BM25
+        if self.bm25 is None:
+            self._bm25_doc_ids = [memory_id]
+            tokenized_corpus = [tokens]
+            self.bm25 = BM25Okapi(
+                tokenized_corpus,
+                k1=self.k1,
+                b=self.b
+            )
+            console.print("[green]BM25 index initialized with first document[/green]")
+        else:
+            # For existing index, we need to rebuild it
+            # BM25 doesn't support incremental updates efficiently
+            # So we rebuild with all documents including the new one
+            self._bm25_doc_ids.append(memory_id)
+            
+            # Rebuild tokenized corpus
+            tokenized_corpus = []
+            for doc_id in self._bm25_doc_ids:
+                doc_data = self._doc_cache.get(doc_id, memory_data if doc_id == memory_id else {})
+                doc_text = f"{doc_data.get('query', '')} {doc_data.get('response', '')}"
+                doc_tokens = self._tokenize_for_bm25(doc_text)
+                if doc_tokens:
+                    tokenized_corpus.append(doc_tokens)
+            
+            # Rebuild BM25 index
+            if tokenized_corpus:
+                self.bm25 = BM25Okapi(
+                    tokenized_corpus,
+                    k1=self.k1,
+                    b=self.b
+                )
+        
+        # Update cache
+        self._doc_cache[memory_id] = memory_data
+        logger.info(f"Updated BM25 index with memory {memory_id}")
     
     def analyze_retrieval_patterns(self) -> Dict[str, Any]:
         """

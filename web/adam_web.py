@@ -10,8 +10,15 @@ import base64
 from pathlib import Path
 import sys
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import json
+import traceback
+import logging
+from functools import wraps
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -95,36 +102,172 @@ st.markdown("""
         text-align: right;
         margin-top: 0.5rem;
     }
+    /* Error messages */
+    .error-message {
+        background-color: #ffebee;
+        border: 1px solid #ef5350;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+        color: #c62828;
+    }
+    
+    /* Success messages */
+    .success-message {
+        background-color: #e8f5e9;
+        border: 1px solid #66bb6a;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+        color: #2e7d32;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+
+def error_boundary(func):
+    """Decorator to handle errors gracefully"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in {func.__name__}: {str(e)}", exc_info=True)
+            st.error(f"An error occurred: {str(e)}")
+            if st.checkbox("Show error details", key=f"error_{func.__name__}_{datetime.now().timestamp()}"):
+                st.code(traceback.format_exc())
+            return None
+    return wrapper
+
+
+class SessionPersistence:
+    """Handle session persistence to disk"""
+    
+    SESSIONS_FILE = Path("data/web_sessions.json")
+    
+    @classmethod
+    def ensure_data_dir(cls):
+        """Ensure data directory exists"""
+        cls.SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    
+    @classmethod
+    @error_boundary
+    def save_session_state(cls, session_id: str, state: Dict[str, Any]):
+        """Save session state to disk"""
+        cls.ensure_data_dir()
+        
+        # Load existing sessions
+        sessions = cls.load_all_sessions()
+        
+        # Update session
+        sessions[session_id] = {
+            "messages": state.get("messages", []),
+            "total_cost": state.get("total_cost", 0.0),
+            "selected_model": state.get("selected_model", None),
+            "use_memory": state.get("use_memory", True),
+            "last_updated": datetime.now().isoformat()
+        }
+        
+        # Save back
+        with open(cls.SESSIONS_FILE, 'w') as f:
+            json.dump(sessions, f, indent=2)
+        
+        return True
+    
+    @classmethod
+    @error_boundary
+    def load_session_state(cls, session_id: str) -> Optional[Dict[str, Any]]:
+        """Load session state from disk"""
+        sessions = cls.load_all_sessions()
+        return sessions.get(session_id)
+    
+    @classmethod
+    def load_all_sessions(cls) -> Dict[str, Dict[str, Any]]:
+        """Load all sessions from disk"""
+        cls.ensure_data_dir()
+        
+        if cls.SESSIONS_FILE.exists():
+            try:
+                with open(cls.SESSIONS_FILE, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading sessions: {e}")
+        
+        return {}
 
 class ADAMWebInterface:
     """Web interface for ADAM using Streamlit"""
     
     def __init__(self):
-        """Initialize ADAM components"""
+        """Initialize ADAM components with error handling"""
+        self.initialize_session_state()
+    
+    @error_boundary
+    def initialize_session_state(self):
+        """Initialize session state with error handling"""
         if 'initialized' not in st.session_state:
             with st.spinner("🧠 Initializing ADAM..."):
-                # Initialize core components
-                st.session_state.memory = ADAMMemoryAdvanced()
-                st.session_state.conversation = ConversationSystem()
-                st.session_state.llm_config = LLMConfig()
-                st.session_state.llm_client = UnifiedLLMClient(st.session_state.llm_config)
-                
-                # Get available models
-                st.session_state.available_models = st.session_state.llm_config.get_available_models()
-                
-                # Initialize session tracking
-                st.session_state.current_session_id = None
-                st.session_state.messages = []
-                st.session_state.total_cost = 0.0
-                st.session_state.initialized = True
+                try:
+                    # Initialize core components
+                    st.session_state.memory = ADAMMemoryAdvanced()
+                    st.session_state.conversation = ConversationSystem()
+                    st.session_state.llm_config = LLMConfig()
+                    st.session_state.llm_client = UnifiedLLMClient(st.session_state.llm_config)
+                    
+                    # Get available models
+                    st.session_state.available_models = st.session_state.llm_config.get_available_models()
+                    
+                    # Initialize session tracking
+                    st.session_state.current_session_id = None
+                    st.session_state.messages = []
+                    st.session_state.total_cost = 0.0
+                    st.session_state.initialized = True
+                    st.session_state.error_count = 0
+                    st.session_state.use_memory = True
+                    st.session_state.auto_save = True
+                    
+                except Exception as e:
+                    st.error(f"Failed to initialize ADAM: {str(e)}")
+                    st.stop()
+    
+    def render_health_status(self):
+        """Show system health status"""
+        col1, col2, col3 = st.columns(3)
+        
+        # Memory system status
+        with col1:
+            try:
+                _ = st.session_state.memory.get_memory_analytics()
+                st.success("Memory ✓")
+            except:
+                st.error("Memory ✗")
+        
+        # LLM status
+        with col2:
+            try:
+                if st.session_state.available_models:
+                    st.success("LLM ✓")
+                else:
+                    st.warning("LLM ⚠")
+            except:
+                st.error("LLM ✗")
+        
+        # Error count
+        with col3:
+            error_count = st.session_state.get('error_count', 0)
+            if error_count == 0:
+                st.success("Errors: 0")
+            else:
+                st.error(f"Errors: {error_count}")
     
     def render_sidebar(self):
         """Render the sidebar with session management"""
         with st.sidebar:
             st.title("🧠 ADAM")
             st.caption("Advanced Data Analytics Model")
+            
+            # System health indicator
+            self.render_health_status()
             
             # New conversation button
             if st.button("➕ New Conversation", use_container_width=True):
@@ -159,8 +302,12 @@ class ADAMWebInterface:
                     # Session button with status indicator
                     status_icon = "🟢" if session.state == "active" else "⚪"
                     
+                    # Add persistence indicator
+                    persisted = SessionPersistence.load_session_state(session.session_id) is not None
+                    persist_icon = "💾" if persisted else ""
+                    
                     if st.button(
-                        f"{status_icon} {title}",
+                        f"{status_icon} {title} {persist_icon}",
                         key=f"session_{session.session_id}",
                         use_container_width=True,
                         disabled=is_active
@@ -197,13 +344,17 @@ class ADAMWebInterface:
             st.subheader("Conversation")
             
             # Add toggle for memory usage
-            if 'use_memory' not in st.session_state:
-                st.session_state.use_memory = False
-            
             st.session_state.use_memory = st.checkbox(
                 "Search long-term memory",
-                value=st.session_state.use_memory,
+                value=st.session_state.get('use_memory', True),
                 help="Enable to search through past conversations. Disable for faster, more focused chat."
+            )
+            
+            # Auto-save toggle
+            st.session_state.auto_save = st.checkbox(
+                "Auto-save conversations",
+                value=st.session_state.get('auto_save', True),
+                help="Automatically save conversation state to disk"
             )
             
             # Memory stats
@@ -221,8 +372,13 @@ class ADAMWebInterface:
                 st.divider()
                 st.metric("Session Cost", f"${st.session_state.total_cost:.4f}")
     
+    @error_boundary
     def start_new_session(self):
         """Start a new conversation session"""
+        # Save current session if exists
+        if st.session_state.current_session_id and st.session_state.get('auto_save', True):
+            self.save_current_session()
+        
         # End current session if exists
         if st.session_state.current_session_id:
             st.session_state.conversation.end_session()
@@ -234,19 +390,47 @@ class ADAMWebInterface:
         st.session_state.total_cost = 0.0
         st.rerun()
     
+    @error_boundary
+    def save_current_session(self):
+        """Save current session state to disk"""
+        if st.session_state.current_session_id:
+            SessionPersistence.save_session_state(
+                st.session_state.current_session_id,
+                {
+                    "messages": st.session_state.messages,
+                    "total_cost": st.session_state.total_cost,
+                    "selected_model": st.session_state.get('selected_model'),
+                    "use_memory": st.session_state.get('use_memory', True)
+                }
+            )
+            st.toast("Session saved", icon="💾")
+    
+    @error_boundary
     def load_session(self, session_id: str):
         """Load an existing session"""
+        # Save current session first
+        if st.session_state.current_session_id and st.session_state.get('auto_save', True):
+            self.save_current_session()
+        
         # Resume the session
         st.session_state.conversation.resume_session(session_id)
         st.session_state.current_session_id = session_id
         
-        # Load conversation history
-        session = st.session_state.conversation.sessions.get(session_id)
-        if session:
-            st.session_state.messages = []
-            for exchange in session.exchanges:
-                st.session_state.messages.append({
-                    "role": "user",
+        # Try to load persisted state first
+        persisted_state = SessionPersistence.load_session_state(session_id)
+        if persisted_state:
+            st.session_state.messages = persisted_state.get("messages", [])
+            st.session_state.total_cost = persisted_state.get("total_cost", 0.0)
+            st.session_state.selected_model = persisted_state.get("selected_model", st.session_state.available_models[0] if st.session_state.available_models else None)
+            st.session_state.use_memory = persisted_state.get("use_memory", True)
+        else:
+            # Load conversation history from memory
+            session = st.session_state.conversation.sessions.get(session_id)
+            if session:
+                st.session_state.messages = []
+                for exchange in session.exchanges:
+                    st.session_state.messages.append({
+                        "role": "user",
                     "content": exchange.query,
                     "timestamp": exchange.timestamp
                 })
@@ -259,8 +443,9 @@ class ADAMWebInterface:
         
         st.rerun()
     
+    @error_boundary
     async def process_message(self, prompt: str, image_data: Optional[bytes] = None):
-        """Process user message through ADAM"""
+        """Process user message through ADAM with error handling"""
         # Build conversation context from current session
         conversation_context = ""
         if st.session_state.messages:
@@ -349,9 +534,15 @@ class ADAMWebInterface:
                     model_used=st.session_state.selected_model
                 )
             
+            # Auto-save if enabled
+            if st.session_state.get('auto_save', True):
+                self.save_current_session()
+            
             return full_response, cost
             
         except Exception as e:
+            logger.error(f"Error in process_message: {str(e)}", exc_info=True)
+            st.session_state.error_count = st.session_state.get('error_count', 0) + 1
             st.error(f"Error: {str(e)}")
             return None, 0
     
