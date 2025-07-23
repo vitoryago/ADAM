@@ -526,7 +526,8 @@ class ADAMWebInterface:
                 # For generic queries, we want fewer but more relevant results
                 n_results = 10 if is_generic_recall else 20
                 
-                raw_memories = st.session_state.memory.recall_with_context(
+                # Use Advanced RAG with temporal scoring for better retrieval
+                raw_memories = st.session_state.memory.recall_with_advanced_rag(
                     query=enhanced_query,
                     n_results=n_results
                 )
@@ -569,8 +570,8 @@ class ADAMWebInterface:
                 
             except Exception as e:
                 logger.error(f"Error in enhanced memory search: {e}")
-                # Fallback to simple search
-                memories = st.session_state.memory.recall_with_context(
+                # Fallback to simple search with advanced RAG
+                memories = st.session_state.memory.recall_with_advanced_rag(
                     query=prompt,
                     n_results=3
                 )
