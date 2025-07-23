@@ -344,5 +344,100 @@
     "selected_model": "grok-3-mini-high",
     "use_memory": true,
     "last_updated": "2025-07-23T18:01:35.263205"
+  },
+  "session_20250710_174850_124da9a4": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hi adam i have this table here create or replace TRANSIENT TABLE ANALYTICS_DB.USR_VCARVALHO_EXT.FCT_DAILY_PERFORMANCE_MARKETING_KEYWORD_LEVEL cluster by (ad_platform, date)(\tKEYWORD_PERFORMANCE_ID VARCHAR(32),\tDATE DATE,\tWEEK DATE,\tMONTH DATE,\tAD_PLATFORM VARCHAR(6),\tCAMPAIGN_ID VARCHAR(16777216),\tCAMPAIGN_NAME VARCHAR(16777216),\tKEYWORD_ID VARCHAR(16777216),\tMATCH_TYPE VARCHAR(16777216),\tADSET_ID VARCHAR(16777216),\tADSET_NAME VARCHAR(16777216),\tKEYWORD_NAME VARCHAR(16777216),\tAD_NAME VARCHAR(16777216),\tKEYWORD_COST FLOAT,\tKEYWORD_CLICKS NUMBER(38,0),\tKEYWORD_IMPRESSIONS NUMBER(38,0),\tINSTALLS NUMBER(30,0),\tSU_LITE NUMBER(30,0),\tSU_CORE NUMBER(30,0),\tFFA_IC NUMBER(30,0),\tFFA_RM NUMBER(30,0),\tFFA_WOW NUMBER(30,0),\tFFA_CBP NUMBER(30,0),\tFFA_WEALTH NUMBER(30,0),\tCUSTOMER NUMBER(30,0),\tFFA NUMBER(30,0),\tRM_FUNDED NUMBER(30,0),\tIC_TAKEN NUMBER(30,0),\tCBP_LOAN_TAKEN NUMBER(30,0),\tMARKETPLACE_CONVERTED NUMBER(30,0),\tMARKETPLACE_REVENUE FLOAT,\tGAMES_ENTERED NUMBER(30,0),\tHAD_GAMES_PAYOUT NUMBER(30,0),\tN_GAMES_PAYOUTS NUMBER(38,0),\tVOY_PREDICTION_VALUE FLOAT,\t_LOADED_AT TIMESTAMP_LTZ(9),\t_INVOCATION_ID VARCHAR(36));\\",
+        "timestamp": "2025-07-10T17:49:25.688858"
+      },
+      {
+        "role": "user",
+        "content": "i want you to create a query for me briging the last 30 days best performance keywords for apple",
+        "timestamp": "2025-07-10T17:50:02.330291"
+      }
+    ],
+    "total_cost": 0.0,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T18:51:45.859595"
+  },
+  "session_20250710_175203_218b87b5": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "hi adam, can you bring our last conversation?",
+        "timestamp": "2025-07-10T17:52:22.839889"
+      },
+      {
+        "role": "user",
+        "content": "can you recreate the query? remember to use upper or lower in some cases you are trying to filter text, that's a best practice",
+        "timestamp": "2025-07-10T17:53:57.356149"
+      },
+      {
+        "role": "user",
+        "content": "let's talk now about what kind of analysis we can create with this table? what do you think we should analyze?",
+        "timestamp": "2025-07-10T17:56:04.338903"
+      }
+    ],
+    "total_cost": 0.0,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T18:51:46.800048"
+  },
+  "session_20250710_172059_76a28c99": {
+    "messages": [],
+    "total_cost": 0.0,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T18:51:47.923579"
+  },
+  "session_20250710_172316_b8be66b9": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "hi adam can you bring to me the last conversation we had? what was that about?",
+        "timestamp": "2025-07-10T17:23:45.262691"
+      }
+    ],
+    "total_cost": 0.0,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T18:51:50.147955"
+  },
+  "session_20250710_174556_c5dc7cda": {
+    "messages": [],
+    "total_cost": 0.0,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T18:51:51.061911"
+  },
+  "session_20250710_174850_daba2947": {
+    "messages": [],
+    "total_cost": 0.0,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T18:51:52.799117"
+  },
+  "session_20250710_175203_2a137c6f": {
+    "messages": [],
+    "total_cost": 0.0,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T18:51:53.761387"
+  },
+  "session_20250710_172059_c5382744": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "hi adam, can you help me? i have this table, and i need to bring the last 30 days best keyword performance but just for apple can you help me? create or replace TRANSIENT TABLE ANALYTICS_DB.USR_VCARVALHO_EXT.FCT_DAILY_PERFORMANCE_MARKETING_KEYWORD_LEVEL cluster by (ad_platform, date)(\tKEYWORD_PERFORMANCE_ID VARCHAR(32),\tDATE DATE,\tWEEK DATE,\tMONTH DATE,\tAD_PLATFORM VARCHAR(6),\tCAMPAIGN_ID VARCHAR(16777216),\tCAMPAIGN_NAME VARCHAR(16777216),\tKEYWORD_ID VARCHAR(16777216),\tMATCH_TYPE VARCHAR(16777216),\tADSET_ID VARCHAR(16777216),\tADSET_NAME VARCHAR(16777216),\tKEYWORD_NAME VARCHAR(16777216),\tAD_NAME VARCHAR(16777216),\tKEYWORD_COST FLOAT,\tKEYWORD_CLICKS NUMBER(38,0),\tKEYWORD_IMPRESSIONS NUMBER(38,0),\tINSTALLS NUMBER(30,0),\tSU_LITE NUMBER(30,0),\tSU_CORE NUMBER(30,0),\tFFA_IC NUMBER(30,0),\tFFA_RM NUMBER(30,0),\tFFA_WOW NUMBER(30,0),\tFFA_CBP NUMBER(30,0),\tFFA_WEALTH NUMBER(30,0),\tCUSTOMER NUMBER(30,0),\tFFA NUMBER(30,0),\tRM_FUNDED NUMBER(30,0),\tIC_TAKEN NUMBER(30,0),\tCBP_LOAN_TAKEN NUMBER(30,0),\tMARKETPLACE_CONVERTED NUMBER(30,0),\tMARKETPLACE_REVENUE FLOAT,\tGAMES_ENTERED NUMBER(30,0),\tHAD_GAMES_PAYOUT NUMBER(30,0),\tN_GAMES_PAYOUTS NUMBER(38,0),\tVOY_PREDICTION_VALUE FLOAT,\t_LOADED_AT TIMESTAMP_LTZ(9),\t_INVOCATION_ID VARCHAR(36));",
+        "timestamp": "2025-07-10T17:22:43.689273"
+      }
+    ],
+    "total_cost": 0.0,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T18:51:56.823152"
   }
 }
