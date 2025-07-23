@@ -76,7 +76,8 @@ class UnifiedLLMClient:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         reasoning_effort: Optional[str] = None,  # 'low', 'medium', 'high'
-        stream: bool = False
+        stream: bool = False,
+        image_data: Optional[bytes] = None
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """
         Get completion from any configured model
@@ -89,6 +90,7 @@ class UnifiedLLMClient:
             max_tokens: Maximum response length
             reasoning_effort: How hard to think ('low', 'medium', 'high')
             stream: Whether to stream response
+            image_data: Optional image bytes for vision models
             
         Returns:
             LLMResponse object or async generator if streaming
@@ -114,12 +116,12 @@ class UnifiedLLMClient:
         if model_config.provider == ModelProvider.GROK:
             return await self._complete_grok(
                 prompt, model_config, system_prompt, temperature, 
-                max_tokens, reasoning_effort, stream
+                max_tokens, reasoning_effort, stream, image_data
             )
         elif model_config.provider == ModelProvider.OPENAI:
             return await self._complete_openai(
                 prompt, model_config, system_prompt, temperature,
-                max_tokens, reasoning_effort, stream
+                max_tokens, reasoning_effort, stream, image_data
             )
         else:
             raise ValueError(f"Unsupported provider: {model_config.provider}")
@@ -132,7 +134,8 @@ class UnifiedLLMClient:
         temperature: float,
         max_tokens: Optional[int],
         reasoning_effort: Optional[str],
-        stream: bool
+        stream: bool,
+        image_data: Optional[bytes] = None
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """Handle Grok model completion"""
         client = self.clients[ModelProvider.GROK]
@@ -155,6 +158,11 @@ class UnifiedLLMClient:
         # Add messages
         if system_prompt:
             chat.append(system(system_prompt))
+        
+        # TODO: Add image support for Grok when available
+        if image_data:
+            logger.warning("Image support not yet implemented for Grok models")
+        
         chat.append(user(prompt))
         
         # Get response
@@ -201,7 +209,8 @@ class UnifiedLLMClient:
         temperature: float,
         max_tokens: Optional[int],
         reasoning_effort: Optional[str],
-        stream: bool
+        stream: bool,
+        image_data: Optional[bytes] = None
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """Handle OpenAI model completion"""
         client = self.clients[ModelProvider.OPENAI]
@@ -260,7 +269,26 @@ class UnifiedLLMClient:
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
+            
+            # Handle image data for vision models
+            if image_data and "gpt-4" in model_config.api_name:
+                # For GPT-4 vision, format message with image
+                import base64
+                image_base64 = base64.b64encode(image_data).decode('utf-8')
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            }
+                        }
+                    ]
+                })
+            else:
+                messages.append({"role": "user", "content": prompt})
             
             response = await client.chat.completions.create(
                 model=model_config.api_name,

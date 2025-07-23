@@ -273,5 +273,18 @@
     "selected_model": "grok-4-reasoning",
     "use_memory": true,
     "last_updated": "2025-07-23T16:33:03.451406"
+  },
+  "session_20250723_164155_9086361e": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "ADAM can you bring me back the DAG related to the new_fee_repricing_user model?",
+        "timestamp": "2025-07-23T16:42:30.503956"
+      }
+    ],
+    "total_cost": 0.016024,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T16:43:14.596804"
   }
 }

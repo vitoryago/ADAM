@@ -344,28 +344,10 @@ class ADAMWebInterface:
             # Settings section
             st.subheader("Settings")
             
-            # Model selection
-            selected_model = st.selectbox(
-                "Model",
-                options=st.session_state.available_models,
-                index=0
-            )
-            st.session_state.selected_model = selected_model
-            
-            # Show model info
-            model_info = {
-                "grok-4-reasoning": "Deep reasoning for complex tasks",
-                "grok-4": "Most capable, best for complex tasks",
-                "grok-3-mini-high": "Fast and efficient for simple queries",
-                "o4-mini-high": "High reasoning capability",
-                "gpt-4": "OpenAI's most capable model",
-                "gpt-3.5-turbo": "Fast and cost-effective"
-            }
-            if selected_model in model_info:
-                st.caption(model_info[selected_model])
+            # Model selection moved to top of chat interface
+            # (keeping this section for other settings)
             
             # Conversation settings
-            st.divider()
             st.subheader("Conversation")
             
             # Add toggle for memory usage
@@ -583,15 +565,26 @@ class ADAMWebInterface:
                             memory_context += f"- {content[:200]}...\n"
         
         # Build the full prompt with proper context priority
-        system_prompt = """You are ADAM, an AI assistant with perfect memory. 
+        # Count messages in current conversation
+        user_messages = [msg for msg in st.session_state.messages if msg["role"] == "user"]
+        message_number = len(user_messages) + 1  # +1 for the current message
+        
+        system_prompt = f"""You are ADAM, a helpful AI coworker. This is message #{message_number} in our current conversation.
 
-CRITICAL INSTRUCTIONS:
-1. When the user references previous conversations (e.g., "we were talking about", "you showed me", "the code you gave me", "bring the code again"), you MUST use the PROVIDED MEMORY CONTEXT below.
-2. DO NOT generate generic examples or templates - use the EXACT code and details from the memory context.
-3. The memory context contains ACTUAL conversations we had - treat it as your source of truth.
-4. If you see "📚 Relevant from your memory:" section, that contains our REAL previous conversations.
-5. When users use generic references like "any", "some", or "that thing we discussed", they usually mean the MOST RECENT conversation about that topic.
-6. Always prioritize recent conversations unless the user specifically asks for older examples or mentions specific details."""
+IMPORTANT BEHAVIORAL RULES:
+- DO NOT introduce yourself or greet the user (no "Hi!", "I'm ADAM", etc.)
+- DO NOT use emojis unless specifically requested
+- Be direct and conversational, like a coworker sitting next to them
+- Only introduce yourself if explicitly asked "who are you?" or similar
+- For message #2 and beyond, continue the conversation naturally without greetings
+
+MEMORY INSTRUCTIONS:
+1. When the user references previous conversations, use the PROVIDED MEMORY CONTEXT below.
+2. DO NOT generate generic examples - use EXACT code and details from memory.
+3. The memory context contains ACTUAL conversations - treat it as truth.
+4. "📚 Relevant from your memory:" contains REAL previous conversations.
+5. Generic references ("any", "some", "that thing") usually mean MOST RECENT.
+6. Prioritize recent conversations unless user asks for older examples."""
         
         full_prompt = system_prompt
         
@@ -614,18 +607,13 @@ CRITICAL INSTRUCTIONS:
         
         full_prompt += f"\n\nHuman: {prompt}\nAssistant:"
         
-        # Handle image if provided
-        if image_data:
-            # For now, we'll add a note about image handling
-            # In production, this would encode the image for the model
-            full_prompt = f"[User provided an image]\n\n{full_prompt}"
-        
         # Get response from LLM
         try:
             response = await st.session_state.llm_client.complete(
                 prompt=full_prompt,
                 model=st.session_state.selected_model,
-                stream=True
+                stream=True,
+                image_data=image_data  # Pass image data to LLM
             )
             
             # Stream response
@@ -636,8 +624,11 @@ CRITICAL INSTRUCTIONS:
                 full_response += chunk
                 response_placeholder.markdown(full_response)
             
-            # Calculate cost (estimate)
-            cost = len(full_prompt + full_response) / 1000 * 0.001
+            # Calculate cost (estimate with image handling)
+            # Images cost more: roughly 0.01 per image for GPT-4V
+            text_cost = len(full_prompt + full_response) / 1000 * 0.001
+            image_cost = 0.01 if image_data else 0
+            cost = text_cost + image_cost
             st.session_state.total_cost += cost
             
             # Record in conversation
@@ -676,8 +667,37 @@ CRITICAL INSTRUCTIONS:
     
     def render_chat(self):
         """Render the main chat interface"""
-        # Header
-        st.title("ADAM Chat")
+        # Header with model selector
+        col1, col2, col3 = st.columns([3, 2, 1])
+        
+        with col1:
+            st.title("ADAM Chat")
+        
+        with col2:
+            # Model selector at the top
+            model_info = {
+                "grok-4-reasoning": "Deep reasoning",
+                "grok-4": "Most capable",
+                "grok-3-mini-high": "Fast & efficient",
+                "o4-mini-high": "High reasoning",
+                "gpt-4": "OpenAI GPT-4",
+                "gpt-3.5-turbo": "Fast & cheap"
+            }
+            
+            selected_model = st.selectbox(
+                "Model",
+                options=st.session_state.available_models,
+                index=st.session_state.available_models.index(st.session_state.get('selected_model', st.session_state.available_models[0])),
+                key="top_model_selector",
+                label_visibility="collapsed"
+            )
+            st.session_state.selected_model = selected_model
+            st.caption(model_info.get(selected_model, ""))
+        
+        with col3:
+            # Session cost
+            if st.session_state.total_cost > 0:
+                st.metric("Cost", f"${st.session_state.total_cost:.4f}")
         
         # Check if we have a session
         if not st.session_state.current_session_id:
@@ -688,6 +708,10 @@ CRITICAL INSTRUCTIONS:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
+                
+                # Show image if user message had one
+                if message["role"] == "user" and message.get("has_image"):
+                    st.caption("📎 Image was attached to this message")
                 
                 # Show metadata for assistant messages
                 if message["role"] == "assistant" and "metadata" in message:
@@ -706,23 +730,24 @@ CRITICAL INSTRUCTIONS:
         )
         
         if prompt:
-            # Add user message to chat
+            # Get image data if uploaded
+            image_data = None
+            if uploaded_file:
+                image_data = uploaded_file.read()
+            
+            # Add user message to chat (with image indicator if present)
             st.session_state.messages.append({
                 "role": "user",
                 "content": prompt,
-                "timestamp": datetime.now()
+                "timestamp": datetime.now(),
+                "has_image": image_data is not None
             })
             
             # Display user message
             with st.chat_message("user"):
                 st.markdown(prompt)
-            
-            # Get image data if uploaded
-            image_data = None
-            if uploaded_file:
-                image_data = uploaded_file.read()
-                # Display the image
-                st.image(image_data, caption="Uploaded image", use_column_width=True)
+                if image_data:
+                    st.image(image_data, caption="Attached image", use_column_width=True)
             
             # Process with ADAM
             with st.chat_message("assistant"):
