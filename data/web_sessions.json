@@ -231,5 +231,47 @@
     "selected_model": "grok-3-mini-high",
     "use_memory": true,
     "last_updated": "2025-07-23T15:24:38.974878"
+  },
+  "session_20250723_161757_9997582c": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Can you bring me back that DAG related to a private model? new_fee_repricing_user, something like that",
+        "timestamp": "2025-07-23T16:18:32.982450"
+      }
+    ],
+    "total_cost": 0.011899,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T16:33:01.641253"
+  },
+  "session_20250723_163049_f0622fa0": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "can you bring me back the DAG that is related to a private model called new_fee_repricing_user?",
+        "timestamp": "2025-07-23T16:31:18.242357"
+      },
+      {
+        "role": "assistant",
+        "content": "### Response from ADAM\n\nHi! I'm ADAM, your AI assistant with perfect memory. Thanks for reaching out\u2014I'm happy to help recall that DAG related to the private DBT model called `new_fee_repricing_user`. Based on our previous conversations (pulling directly from our shared history), the most relevant one matching your description is the DAG we put together specifically for running this model. From our most recent exchange on this topic\u2014where you provided the DBT model SQL, YAML, PR link, and details about using columns as user traits in Iterable\u2014here's the exact code we created. I've copied it verbatim for accuracy.\n\nTo recap briefly (as we discussed), this DAG uses Apache Airflow with a `DbtOperator` to orchestrate the private DBT model run in the marketing project, targeting the private schema. It's set up for daily runs, includes Slack alerts, and handles PII sensitively.\n\n```python\nfrom pathlib import Path\nfrom datetime import datetime, timedelta\n\nfrom airflow import DAG\n\nfrom slack_operator import task_fail_slack_alert\n\nfrom operators.dbt.dbtoperator import DbtOperator\n\nfrom airflow_constants.pods import MARKETING_ANALYTICS\nfrom airflow_constants.utils import get_slack_attn\nfrom amundsenutil.models.table_mapping_ext import GenericTableMapping\n\n\nDOC_MD = \"\"\"\n#### DAG Summary\n- This DAG runs the new_fee_repricing_user dbt model which contains private user data for the new fee repricing program for InstaCash.\n- The model is an incremental table that includes users with user_segment = 'EXISTING', joined with email from user_private.user.\n- Contains PII data including user_id, email, and other sensitive fields. The goal is to use some of these columns as user traits in Iterable for new campaigns about Instacash for the repricing model.\n\n#### Documentation\n- See [de-dbt-analytics PR][1] for more details.\n- Model path: marketing/models/private/tables/new_fee_repricing_user/new_fee_repricing_user.sql\n\n#### Mission Critical\n- No\n\n#### On Failure Actions\n- Rerun DAG? Yes\n\n#### Notes to DE\n- This table contains PII data (e.g., email) and must be handled with appropriate security measures. It's stored in the private schema due to sensitive user information.\n- The model uses incremental strategy with unique_key='id' and on_schema_change='fail'.\n- Sources data from cashadvance.new_fee_repricing_user and user_private.user.\n- Tags: ['cashadvance_private_table', 'sensitive']\n\n#### References\n[1]: https://github.com/MoneyLion/de-dbt-analytics/pull/3471\n\"\"\"\n\nDAG_ID = Path(__file__).stem\nDAG_SCHEDULE = \"0 5 * * *\"  # Daily at 5 AM UTC\nDAG_START_DATE = datetime(2025, 7, 8, 0, 0)\nDAG_CONFIG = {\n    \"default_args\": {\n        \"owner\": MARKETING_ANALYTICS.pod_name,\n        \"start_date\": DAG_START_DATE,\n        \"on_failure_callback\": task_fail_slack_alert,\n        \"params\": {\n            \"slack_default_channel_flag\": False,\n            \"slack_channel\": [MARKETING_ANALYTICS.slack_channel],\n            \"slack_attn\": get_slack_attn(MARKETING_ANALYTICS),\n        },\n        \"retry_delay\": timedelta(minutes=5),\n        \"depends_on_past\": False,\n        \"email_on_failure\": False,\n        \"email_on_retry\": False,\n        \"retries\": 1,\n        \"max_active_tis_per_dag\": 1,\n    },\n    \"start_date\": DAG_START_DATE,\n    \"schedule\": DAG_SCHEDULE,\n    \"max_active_runs\": 1,\n    \"max_active_tasks\": 1,\n    \"catchup\": False,\n    \"tags\": [\"dbt_analytics\", \"kubernetes_pod_operator\", \"private_data\"],\n}\n\nDBT_PROJECT = \"marketing\"\nDBT_TARGET = \"private\"\nTABLE_NAME = \"new_fee_repricing_user\"\n\nWAREHOUSE_SCHEMA_NAME = \"dbt_marketing_private\"\n\n\nwith DAG(dag_id=DAG_ID, **DAG_CONFIG, doc_md=DOC_MD) as dag:\n    dbt_run = DbtOperator(\n        task_id=TABLE_NAME,\n        dbt_command=f\"dbt run --select {TABLE_NAME}\",\n        project=DBT_PROJECT,\n        target=DBT_TARGET,\n        slack_channels=DAG_CONFIG[\"default_args\"][\"params\"].get(\"slack_channel\"),\n        execution_timeout=timedelta(hours=2),\n    )\n\n# table mapping for destination database is snowflake\nGenericTableMapping(\n    destination_schema=WAREHOUSE_SCHEMA_NAME,\n    destination_table=TABLE_NAME,\n    dag=dag,\n    task_id=TABLE_NAME,\n)\n```\n\nIf this isn't the precise DAG you had in mind (maybe the more generic BashOperator-based one from our other discussions, where we cloned a repo and ran `dbt run --models your_private_model`, with a note to update for `new_fee_repricing_user`), provide more details, and I'll pull up the right one from our history. What would you like to do next? \ud83d\ude0a",
+        "timestamp": "2025-07-23T16:32:01.346555",
+        "metadata": {
+          "model": "grok-4-reasoning",
+          "cost": 0.032502
+        }
+      }
+    ],
+    "total_cost": 0.032502,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T16:32:53.420097"
+  },
+  "session_20250723_163253_8d964cbf": {
+    "messages": [],
+    "total_cost": 0.0,
+    "selected_model": "grok-4-reasoning",
+    "use_memory": true,
+    "last_updated": "2025-07-23T16:33:03.451406"
   }
 }

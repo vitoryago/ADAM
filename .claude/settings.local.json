@@ -17,7 +17,9 @@
       "Bash(pkill:*)",
       "Bash(cat:*)",
       "Bash(bash:*)",
-      "Bash(/usr/bin/python3:*)"
+      "Bash(/usr/bin/python3:*)",
+      "Bash(sqlite3:*)",
+      "Bash(true)"
     ],
     "deny": []
   }
