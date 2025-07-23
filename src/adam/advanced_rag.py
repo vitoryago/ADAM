@@ -9,6 +9,7 @@ simple vector search to capture different types of relevant content:
 1. **BM25 (Best Matching 25)**: Keyword/frequency-based search for exact term matching
 2. **Semantic Vector Search**: Dense retrieval using ChromaDB embeddings
 3. **Graph Traversal**: Following memory network connections for related content
+4. **Temporal Scoring**: Natural time-based relevance scoring (NEW)
 
 WHY THREE METHODS?
 ==================
@@ -67,6 +68,7 @@ from rich.panel import Panel
 from .memory import ADAMMemoryAdvanced as MemorySystem, Memory
 from .memory_network import MemoryNetworkSystem, MemoryNode
 from .conversation_aware_memory import ConversationAwareMemorySystem
+from .temporal_memory_scoring import TemporalMemoryScorer, TemporalScoringConfig
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -130,6 +132,7 @@ class AdvancedRAGSystem:
         chroma_path: str = "./adam_memory_advanced",
         k1: float = 1.2,  # BM25 parameter for term frequency saturation
         b: float = 0.75,  # BM25 parameter for document length normalization
+        temporal_config: Optional[TemporalScoringConfig] = None,
     ):
         """
         Initialize the advanced RAG system
@@ -154,6 +157,9 @@ class AdvancedRAGSystem:
         self.k1 = k1
         self.b = b
         
+        # Initialize temporal scorer
+        self.temporal_scorer = TemporalMemoryScorer(temporal_config)
+        
         # Cache for performance
         self._doc_cache = {}
         self._embedding_cache = {}
@@ -162,7 +168,7 @@ class AdvancedRAGSystem:
         self._initialize_vector_store()
         self._initialize_bm25_index()
         
-        console.print("[green]Advanced RAG System initialized with three retrieval methods[/green]")
+        console.print("[green]Advanced RAG System initialized with three retrieval methods + temporal scoring[/green]")
     
     def _initialize_bm25_index(self):
         """
@@ -365,13 +371,19 @@ class AdvancedRAGSystem:
                 (vector_results, method_weights["vector"]),
                 (graph_results, method_weights["graph"])
             ],
-            k=k
+            k=k * 2  # Get more results for temporal re-ranking
         )
         
-        # Display retrieval statistics
-        self._display_retrieval_stats(bm25_results, vector_results, graph_results, combined_results)
+        # Apply temporal scoring to re-rank results
+        temporally_scored_results = self._apply_temporal_scoring(combined_results)
         
-        return combined_results
+        # Take top k after temporal scoring
+        final_results = temporally_scored_results[:k]
+        
+        # Display retrieval statistics
+        self._display_retrieval_stats(bm25_results, vector_results, graph_results, final_results)
+        
+        return final_results
     
     def _bm25_retrieve(self, query: str, k: int) -> List[RetrievalResult]:
         """
@@ -682,6 +694,55 @@ class AdvancedRAGSystem:
             final_results.append(result)
         
         return final_results
+    
+    def _apply_temporal_scoring(self, results: List[RetrievalResult]) -> List[RetrievalResult]:
+        """
+        Apply temporal scoring to already-ranked results
+        
+        This adds time awareness to the RRF-combined results, ensuring
+        recent memories get appropriate boost while preserving the
+        relevance signals from BM25, vector, and graph methods.
+        """
+        # Convert RetrievalResult objects to dict format for scorer
+        memories = []
+        for result in results:
+            memory = {
+                'memory_id': result.memory_id,
+                'content': result.content,
+                'similarity': result.score,  # RRF score becomes base similarity
+                'metadata': result.metadata,
+                'original_result': result  # Keep original for reconstruction
+            }
+            memories.append(memory)
+        
+        # Apply temporal scoring
+        reranked_memories = self.temporal_scorer.rerank_memories(memories)
+        
+        # Convert back to RetrievalResult objects
+        reranked_results = []
+        for memory in reranked_memories:
+            original_result = memory['original_result']
+            
+            # Create new result with updated score and metadata
+            new_result = RetrievalResult(
+                memory_id=original_result.memory_id,
+                content=original_result.content,
+                retrieval_method=original_result.retrieval_method,
+                score=memory['combined_score'],  # New temporal-aware score
+                metadata={
+                    **original_result.metadata,
+                    'original_rrf_score': original_result.score,
+                    'semantic_score': memory['semantic_score'],
+                    'temporal_score': memory['temporal_score'],
+                    'combined_score': memory['combined_score']
+                },
+                matched_terms=original_result.matched_terms,
+                vector_similarity=original_result.vector_similarity,
+                graph_path=original_result.graph_path
+            )
+            reranked_results.append(new_result)
+        
+        return reranked_results
     
     def _display_retrieval_stats(
         self,

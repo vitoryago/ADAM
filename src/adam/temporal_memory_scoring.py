@@ -69,6 +69,13 @@ class TemporalMemoryScorer:
         # Get base semantic score (from BM25, vector search, or graph)
         semantic_score = memory.get('similarity', 0.5)
         
+        # Special handling for memories with negative similarity
+        # These are often important memories that have decayed in strength
+        if semantic_score < 0:
+            # Convert negative similarity to a small positive value
+            # This ensures temporal scoring can still help surface them
+            semantic_score = 0.1 + (semantic_score + 1) * 0.05  # Maps [-1, 0] to [0.1, 0.15]
+        
         # Get timestamp and calculate temporal score
         metadata = memory.get('metadata', {})
         timestamp_str = metadata.get('timestamp', '')

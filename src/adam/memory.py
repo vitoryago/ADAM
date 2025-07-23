@@ -502,6 +502,68 @@ class ADAMMemoryAdvanced:
         
         return top_memories
     
+    def recall_with_advanced_rag(self, query: str, n_results: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieve memories using the Advanced RAG system with temporal scoring
+        
+        This method leverages:
+        1. BM25 for keyword matching
+        2. Vector search for semantic similarity
+        3. Graph traversal for connected memories
+        4. Temporal scoring for recency preference
+        
+        Returns memories with full retrieval metadata
+        """
+        # Import here to avoid circular imports
+        from .advanced_rag import AdvancedRAGSystem
+        from .memory_network import MemoryNetworkSystem
+        from .conversation_system import ConversationSystem
+        
+        # Initialize systems if not already done
+        if not hasattr(self, '_rag_system'):
+            # Create conversation system if needed
+            if not hasattr(self, '_conversation_system'):
+                self._conversation_system = ConversationSystem()
+            
+            # Create memory network
+            memory_network = MemoryNetworkSystem(
+                base_memory_system=self,
+                conversation_system=self._conversation_system
+            )
+            
+            # Create Advanced RAG with temporal scoring enabled
+            self._rag_system = AdvancedRAGSystem(
+                memory_system=self,
+                memory_network=memory_network,
+                temporal_config=None  # Use default config
+            )
+        
+        # Run advanced retrieval
+        results = self._rag_system.retrieve(query, k=n_results)
+        
+        # Convert RetrievalResult objects to dict format for compatibility
+        memories = []
+        for result in results:
+            memory_dict = {
+                'id': result.memory_id,
+                'content': result.content,
+                'similarity': result.score,
+                'metadata': result.metadata,
+                'retrieval_method': result.retrieval_method,
+                'matched_terms': result.matched_terms,
+                'active_days': result.metadata.get('active_days', 0)
+            }
+            
+            # Include temporal scoring info if available
+            if 'temporal_score' in result.metadata:
+                memory_dict['temporal_score'] = result.metadata['temporal_score']
+                memory_dict['semantic_score'] = result.metadata['semantic_score']
+                memory_dict['combined_score'] = result.metadata['combined_score']
+            
+            memories.append(memory_dict)
+        
+        return memories
+    
     def update_memory_success(self, memory_id: str, success: bool, 
                             new_solution: Optional[str] = None):
         """

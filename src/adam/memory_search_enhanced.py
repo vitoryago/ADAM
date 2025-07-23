@@ -32,10 +32,12 @@ class MemorySearchEnhancer:
         r"we (?:were|was) (?:talking|discussing|working)",
         r"(?:remember|recall) (?:when|that)",
         r"(?:the|that) (?:code|example|dag|model) (?:you|we)",
-        r"(?:bring|show|give) (?:me|the) (?:code|example|dag) again",
-        r"(?:previous|earlier|last) (?:conversation|discussion|code)",
+        r"(?:bring|show|give) (?:me|us)? ?(?:back|again)?",  # More flexible pattern
+        r"bring (?:me|us) back",  # Specific pattern for "bring me back"
+        r"(?:previous|earlier|last) (?:conversation|discussion|code|dag)",
         r"continue (?:our|the) (?:conversation|discussion)",
         r"back to (?:our|the|that)",
+        r"can you (?:bring|show|give)",  # Common pattern
     ]
     
     # Technical term extraction patterns
@@ -124,12 +126,21 @@ class MemorySearchEnhancer:
         # Boost for recall intent with matching context
         if context.user_intent == 'recall':
             # Check if memory contains code blocks
-            if '```' in content or 'def ' in content or 'class ' in content:
-                score *= 1.5
+            has_code_block = '```python' in content or '```' in content
+            has_code_patterns = any(pattern in content for pattern in ['def ', 'class ', 'from ', 'import '])
+            
+            if has_code_block:
+                score *= 2.0  # Strong boost for actual code blocks
+            elif has_code_patterns:
+                score *= 1.5  # Moderate boost for code patterns
             
             # Check for specific patterns the user might be recalling
             if 'bashoperator' in content and 'dag' in context.current_query.lower():
                 score *= 1.3
+            
+            # Additional boost for DAG-specific code
+            if 'dag' in context.current_query.lower() and 'from airflow' in content:
+                score *= 1.5
         
         # SPECIAL BOOST for generic queries to favor recent memories
         # This works for ANY type of content, not just DAGs
@@ -257,8 +268,11 @@ def format_memory_for_prompt(memory: Dict[str, Any], context: SearchContext) -> 
         
         # For recall intent, include FULL response especially code
         if context.user_intent == 'recall':
-            # Check if this is about DAG/code
-            if any(term in query_part.lower() for term in ['dag', 'code', 'create', 'model']):
+            # Check if this is about DAG/code or contains code blocks
+            has_code = '```python' in response_part or '```' in response_part
+            is_code_query = any(term in query_part.lower() for term in ['dag', 'code', 'create', 'model', 'script', 'function'])
+            
+            if has_code or is_code_query:
                 # Include the FULL response for code-related recalls
                 return f"=== PREVIOUS CONVERSATION ===\nUser asked: {query_part}\n\nYour response was:\n{response_part}\n"
             
