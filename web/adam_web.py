@@ -522,10 +522,13 @@ class ADAMWebInterface:
                 if conversation_context:
                     enhanced_query = f"{enhanced_query} {conversation_context[:500]}"
                 
-                # Get initial memories - get more for filtering
+                # Get initial memories - reduce count for generic queries to avoid noise
+                # For generic queries, we want fewer but more relevant results
+                n_results = 10 if is_generic_recall else 20
+                
                 raw_memories = st.session_state.memory.recall_with_context(
                     query=enhanced_query,
-                    n_results=20  # Get more candidates for filtering
+                    n_results=n_results
                 )
                 
                 # TWO-PHASE SEARCH: Prioritize recent memories for generic recalls

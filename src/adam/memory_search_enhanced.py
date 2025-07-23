@@ -96,7 +96,17 @@ class MemorySearchEnhancer:
     
     def score_memory_relevance(self, memory: Dict[str, Any], context: SearchContext) -> float:
         """Score how relevant a memory is to the current context"""
-        score = memory.get('similarity', 0.5)
+        # Start with base similarity but ensure it's not negative
+        # Negative similarities indicate poor vector match but might still be relevant
+        base_similarity = memory.get('similarity', 0.5)
+        
+        # Convert negative similarities to small positive values
+        # This allows recency and other boosts to still work
+        if base_similarity < 0:
+            score = 0.1 + (base_similarity + 1) * 0.1  # Maps [-1, 0] to [0.1, 0.2]
+        else:
+            score = base_similarity
+        
         content = memory.get('content', '').lower()
         
         # Boost score for exact technical term matches
@@ -127,6 +137,8 @@ class MemorySearchEnhancer:
             # For generic queries about past work, heavily favor recent memories
             metadata = memory.get('metadata', {})
             timestamp_str = metadata.get('timestamp', '')
+            strength = metadata.get('strength', 0)
+            
             if timestamp_str:
                 try:
                     from datetime import datetime
@@ -134,13 +146,21 @@ class MemorySearchEnhancer:
                     now = datetime.now(memory_time.tzinfo) if memory_time.tzinfo else datetime.now()
                     hours_ago = (now - memory_time).total_seconds() / 3600
                     
-                    # Strong recency bias for generic queries
+                    # EXTREME recency bias for generic queries
+                    # This compensates for negative strength scores
                     if hours_ago < 24:  # Within last day
-                        score *= 8.0  # Strong boost for very recent
+                        score *= 20.0  # Massive boost
                     elif hours_ago < 72:  # Within last 3 days
-                        score *= 4.0
+                        score *= 15.0
                     elif hours_ago < 168:  # Within last week
-                        score *= 2.0
+                        score *= 10.0
+                    elif hours_ago < 336:  # Within last 2 weeks
+                        score *= 5.0
+                    
+                    # Additional boost for memories with negative strength
+                    # (these are often valuable but underused memories)
+                    if strength < 0 and hours_ago < 168:
+                        score *= 3.0  # Help surface neglected recent memories
                 except:
                     pass
             
@@ -173,7 +193,7 @@ class MemorySearchEnhancer:
         if memory_age_days > 30 and context.user_intent != 'recall':
             score *= 0.7
         
-        return min(score, 1.0)  # Cap at 1.0
+        return score  # Don't cap - let recency boosts differentiate
     
     def filter_and_rank_memories(self, memories: List[Dict[str, Any]], context: SearchContext) -> List[Dict[str, Any]]:
         """Filter and rank memories based on relevance"""
