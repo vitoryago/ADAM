@@ -490,16 +490,63 @@ class ADAMWebInterface:
         if st.session_state.get('use_memory', True):  # Default to True
             # Use enhanced memory search
             try:
-                # First, get raw memories with enhanced query
-                enhanced_query = prompt
-                if conversation_context:
-                    enhanced_query = f"{prompt} {conversation_context[:500]}"
+                # CRITICAL: Add temporal hints to generic queries about past work
+                query_lower = prompt.lower()
                 
-                # Get initial memories
+                # Generic patterns that indicate user is asking about past work
+                # These are domain-agnostic and work for any type of content
+                generic_recall_patterns = [
+                    "bring me back", "show me", "can you bring",
+                    "we have done", "we created", "we discussed", "we talked about",
+                    "any", "some", "that", "those"
+                ]
+                
+                # Words that indicate the user is being specific about a topic
+                specificity_indicators = [
+                    "specific", "particular", "exact", "called", "named",
+                    "with", "contains", "includes", "about"
+                ]
+                
+                # Check if this is a generic query about past work
+                is_generic_recall = any(pattern in query_lower for pattern in generic_recall_patterns)
+                has_temporal_hint = any(word in query_lower for word in ["recent", "last", "latest", "today", "yesterday", "newest"])
+                has_specificity = any(word in query_lower for word in specificity_indicators)
+                
+                # Only enhance truly generic queries that lack both temporal and specific hints
+                if is_generic_recall and not has_temporal_hint and not has_specificity:
+                    enhanced_query = f"{prompt} (focusing on our most recent conversations)"
+                else:
+                    enhanced_query = prompt
+                
+                # Add conversation context
+                if conversation_context:
+                    enhanced_query = f"{enhanced_query} {conversation_context[:500]}"
+                
+                # Get initial memories - get more for filtering
                 raw_memories = st.session_state.memory.recall_with_context(
                     query=enhanced_query,
-                    n_results=10  # Get more candidates for filtering
+                    n_results=20  # Get more candidates for filtering
                 )
+                
+                # TWO-PHASE SEARCH: Prioritize recent memories for generic recalls
+                if is_generic_recall and not has_specificity and raw_memories:
+                    from datetime import datetime, timedelta
+                    cutoff_date = datetime.now() - timedelta(days=7)
+                    
+                    recent_memories = []
+                    for memory in raw_memories:
+                        timestamp_str = memory.get('metadata', {}).get('timestamp', '')
+                        if timestamp_str:
+                            try:
+                                memory_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                                if memory_time.replace(tzinfo=None) > cutoff_date:
+                                    recent_memories.append(memory)
+                            except:
+                                pass
+                    
+                    # Use recent memories if we have any
+                    if recent_memories:
+                        raw_memories = recent_memories[:10]  # Use top 10 recent
                 
                 # Enhance and filter memories
                 if raw_memories:
@@ -538,7 +585,9 @@ CRITICAL INSTRUCTIONS:
 1. When the user references previous conversations (e.g., "we were talking about", "you showed me", "the code you gave me", "bring the code again"), you MUST use the PROVIDED MEMORY CONTEXT below.
 2. DO NOT generate generic examples or templates - use the EXACT code and details from the memory context.
 3. The memory context contains ACTUAL conversations we had - treat it as your source of truth.
-4. If you see "📚 Relevant from your memory:" section, that contains our REAL previous conversations."""
+4. If you see "📚 Relevant from your memory:" section, that contains our REAL previous conversations.
+5. When users use generic references like "any", "some", or "that thing we discussed", they usually mean the MOST RECENT conversation about that topic.
+6. Always prioritize recent conversations unless the user specifically asks for older examples or mentions specific details."""
         
         full_prompt = system_prompt
         
