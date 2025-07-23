@@ -35,6 +35,10 @@ class ModelConfig:
     temperature_range: tuple = (0.0, 1.0)
     supports_streaming: bool = True
     cost_per_1k_tokens: float = 0.0  # Add your pricing here
+    supports_vision: bool = False  # Whether model supports image input
+    # Separate input/output pricing (optional, defaults to cost_per_1k_tokens)
+    cost_per_1k_input_tokens: Optional[float] = None
+    cost_per_1k_output_tokens: Optional[float] = None
 
 class LLMConfig:
     """Central configuration for LLM models"""
@@ -60,7 +64,8 @@ class LLMConfig:
                 supports_reasoning=False,  # grok-4 doesn't have reasoning_effort param
                 reasoning_param=None,  # Use as high-power model without param
                 max_tokens=8192,
-                supports_streaming=True
+                supports_streaming=True,
+                supports_vision=True  # grok-4 supports image input
             ),
             
             "grok-4": ModelConfig(
@@ -75,7 +80,8 @@ class LLMConfig:
                 supports_reasoning=True,
                 reasoning_param=None,  # grok-4 standard mode
                 max_tokens=4096,
-                supports_streaming=True
+                supports_streaming=True,
+                supports_vision=True  # grok-4 supports image input
             ),
             
             "grok-3-mini-high": ModelConfig(
@@ -91,6 +97,25 @@ class LLMConfig:
                 reasoning_param="reasoning_effort",
                 max_tokens=4096,
                 supports_streaming=True
+            ),
+            
+            "grok-2-vision-1212": ModelConfig(
+                name="grok-2-vision-1212",
+                provider=ModelProvider.GROK,
+                api_name="grok-2-vision-1212",
+                capabilities=[
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION,
+                    ModelCapability.REASONING
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=8192,
+                supports_streaming=True,
+                supports_vision=True,  # This is a vision model
+                cost_per_1k_tokens=0.006,  # Average of input/output for backward compatibility
+                cost_per_1k_input_tokens=0.002,  # $2 per million input tokens
+                cost_per_1k_output_tokens=0.010   # $10 per million output tokens
             ),
             
             "o4-mini-high": ModelConfig(
@@ -122,7 +147,8 @@ class LLMConfig:
                 reasoning_param=None,
                 max_tokens=8192,
                 supports_streaming=True,
-                cost_per_1k_tokens=0.03
+                cost_per_1k_tokens=0.03,
+                supports_vision=True  # GPT-4 vision is supported
             ),
             
             "gpt-3.5-turbo": ModelConfig(

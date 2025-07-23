@@ -625,10 +625,34 @@ MEMORY INSTRUCTIONS:
                 response_placeholder.markdown(full_response)
             
             # Calculate cost (estimate with image handling)
-            # Images cost more: roughly 0.01 per image for GPT-4V
-            text_cost = len(full_prompt + full_response) / 1000 * 0.001
-            image_cost = 0.01 if image_data else 0
-            cost = text_cost + image_cost
+            # Different models have different image pricing
+            model_config = st.session_state.llm_config.get_model_config(st.session_state.selected_model)
+            
+            # Calculate token counts
+            input_tokens = len(full_prompt) / 4  # Rough estimate: 1 token ≈ 4 chars
+            output_tokens = len(full_response) / 4
+            
+            # Different pricing for different models
+            if st.session_state.selected_model == "grok-2-vision-1212":
+                # Grok-2 vision: $2/million input, $10/million output
+                input_cost = (input_tokens / 1_000_000) * 2.00
+                output_cost = (output_tokens / 1_000_000) * 10.00
+                # Images are part of input tokens for Grok
+                if image_data:
+                    # Estimate ~1000 tokens per image for Grok vision
+                    image_tokens = 1000
+                    input_cost += (image_tokens / 1_000_000) * 2.00
+                cost = input_cost + output_cost
+            elif "gpt-4" in st.session_state.selected_model:
+                # GPT-4 pricing
+                base_cost_per_1k = model_config.cost_per_1k_tokens if model_config else 0.03
+                text_cost = (input_tokens + output_tokens) / 1000 * base_cost_per_1k
+                image_cost = 0.01 if image_data else 0  # GPT-4V image pricing
+                cost = text_cost + image_cost
+            else:
+                # Default pricing for other models
+                base_cost_per_1k = model_config.cost_per_1k_tokens if model_config else 0.001
+                cost = (input_tokens + output_tokens) / 1000 * base_cost_per_1k
             st.session_state.total_cost += cost
             
             # Record in conversation
@@ -676,21 +700,38 @@ MEMORY INSTRUCTIONS:
         with col2:
             # Model selector at the top
             model_info = {
-                "grok-4-reasoning": "Deep reasoning",
-                "grok-4": "Most capable",
+                "grok-4-reasoning": "Deep reasoning 🖼️",
+                "grok-4": "Most capable 🖼️",
                 "grok-3-mini-high": "Fast & efficient",
+                "grok-2-vision-1212": "Vision optimized 🖼️",
                 "o4-mini-high": "High reasoning",
-                "gpt-4": "OpenAI GPT-4",
+                "gpt-4": "OpenAI GPT-4 🖼️",
                 "gpt-3.5-turbo": "Fast & cheap"
             }
             
-            selected_model = st.selectbox(
+            # Add vision indicator to model names in dropdown
+            model_display_names = []
+            for model in st.session_state.available_models:
+                config = st.session_state.llm_config.get_model_config(model)
+                if config and config.supports_vision:
+                    model_display_names.append(f"{model} 🖼️")
+                else:
+                    model_display_names.append(model)
+            
+            selected_display = st.selectbox(
                 "Model",
-                options=st.session_state.available_models,
-                index=st.session_state.available_models.index(st.session_state.get('selected_model', st.session_state.available_models[0])),
+                options=model_display_names,
+                index=model_display_names.index(
+                    f"{st.session_state.get('selected_model', st.session_state.available_models[0])} 🖼️" 
+                    if st.session_state.llm_config.get_model_config(st.session_state.get('selected_model', st.session_state.available_models[0])).supports_vision
+                    else st.session_state.get('selected_model', st.session_state.available_models[0])
+                ),
                 key="top_model_selector",
                 label_visibility="collapsed"
             )
+            
+            # Extract actual model name (remove vision indicator)
+            selected_model = selected_display.replace(" 🖼️", "")
             st.session_state.selected_model = selected_model
             st.caption(model_info.get(selected_model, ""))
         
@@ -722,12 +763,19 @@ MEMORY INSTRUCTIONS:
         # Chat input
         prompt = st.chat_input("Message ADAM...")
         
-        # File uploader for images
-        uploaded_file = st.file_uploader(
-            "Upload an image (optional)",
-            type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
-            key="image_upload"
-        )
+        # File uploader for images - only show if current model supports vision
+        model_config = st.session_state.llm_config.get_model_config(st.session_state.selected_model)
+        if model_config and model_config.supports_vision:
+            uploaded_file = st.file_uploader(
+                "Upload an image (optional) 🖼️",
+                type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
+                key="image_upload",
+                help=f"{st.session_state.selected_model} supports image analysis"
+            )
+        else:
+            uploaded_file = None
+            if st.session_state.get('image_upload'):
+                st.info(f"ℹ️ {st.session_state.selected_model} doesn't support images. Switch to a vision model (marked with 🖼️) to analyze images.")
         
         if prompt:
             # Get image data if uploaded

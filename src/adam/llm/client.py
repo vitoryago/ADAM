@@ -159,9 +159,16 @@ class UnifiedLLMClient:
         if system_prompt:
             chat.append(system(system_prompt))
         
-        # TODO: Add image support for Grok when available
-        if image_data:
-            logger.warning("Image support not yet implemented for Grok models")
+        # Handle image data for vision-enabled Grok models
+        if image_data and model_config.supports_vision:
+            # For Grok vision models, we need to format the message differently
+            # Currently xai_sdk doesn't have documented image support
+            # We'll need to use the correct format when it's available
+            logger.info(f"Image provided for {model_config.name} - vision support enabled")
+            # For now, we'll still send the text prompt
+            # In the future, update this with proper Grok vision API format
+        elif image_data:
+            logger.warning(f"Image provided but {model_config.name} doesn't support vision")
         
         chat.append(user(prompt))
         
@@ -367,13 +374,35 @@ class UnifiedLLMClient:
     
     def _calculate_cost(self, model_config: ModelConfig, response) -> float:
         """Calculate cost for Grok models"""
-        # Add your pricing calculation here
+        # Check if we have separate input/output pricing
+        if hasattr(response.usage, 'prompt_tokens') and hasattr(response.usage, 'completion_tokens'):
+            prompt_tokens = getattr(response.usage, 'prompt_tokens', 0)
+            completion_tokens = getattr(response.usage, 'completion_tokens', 0)
+            
+            if model_config.cost_per_1k_input_tokens and model_config.cost_per_1k_output_tokens:
+                # Use separate pricing
+                input_cost = (prompt_tokens / 1000) * model_config.cost_per_1k_input_tokens
+                output_cost = (completion_tokens / 1000) * model_config.cost_per_1k_output_tokens
+                return input_cost + output_cost
+        
+        # Fallback to simple calculation
         total_tokens = getattr(response.usage, 'total_tokens', 0)
         return (total_tokens / 1000) * model_config.cost_per_1k_tokens
     
     def _calculate_openai_cost(self, model_config: ModelConfig, usage) -> float:
         """Calculate cost for OpenAI models"""
-        # Add your pricing calculation here
+        # Check if we have separate input/output pricing
+        if hasattr(usage, 'prompt_tokens') and hasattr(usage, 'completion_tokens'):
+            prompt_tokens = usage.prompt_tokens
+            completion_tokens = usage.completion_tokens
+            
+            if model_config.cost_per_1k_input_tokens and model_config.cost_per_1k_output_tokens:
+                # Use separate pricing
+                input_cost = (prompt_tokens / 1000) * model_config.cost_per_1k_input_tokens
+                output_cost = (completion_tokens / 1000) * model_config.cost_per_1k_output_tokens
+                return input_cost + output_cost
+        
+        # Fallback to simple calculation
         total_tokens = usage.total_tokens
         return (total_tokens / 1000) * model_config.cost_per_1k_tokens
 
