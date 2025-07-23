@@ -361,13 +361,14 @@ def _calculate_reference_weight(self, new_memory, existing_memory):
 ## 7. LLM Integration and Intelligent Routing
 
 ### What You'll Learn
-How to effectively integrate and control large language models in production systems with intelligent routing.
+How to effectively integrate and control large language models in production systems with intelligent routing and multimodal support.
 
 ### Key Files to Study
 - `src/adam/llm/config.py` - Model configurations
 - `src/adam/llm/client.py` - Unified client
 - `src/adam/llm/query_analyzer.py` - Intelligent routing
 - `docs/INTELLIGENT_ROUTING.md` - Complete guide
+- `docs/GROK_VISION_IMPLEMENTATION.md` - Vision model integration
 
 ### Recent Implementation: Intelligent Model Routing
 
@@ -392,9 +393,11 @@ class QueryAnalyzer:
 ```
 
 ### Model Hierarchy
-- **grok-4-reasoning**: Complex tasks (code generation, deep analysis)
-- **grok-4**: Standard technical queries
+- **grok-4-reasoning**: Complex tasks (code generation, deep analysis) 🖼️
+- **grok-4**: Standard technical queries 🖼️
+- **grok-2-vision-1212**: Optimized for image analysis 🖼️
 - **grok-3-mini-high**: Simple queries, memory recaps
+- **gpt-4**: OpenAI GPT-4 with vision 🖼️
 
 ### Questions You Should Be Able to Answer
 
@@ -411,10 +414,137 @@ class QueryAnalyzer:
 ### Research Papers
 - "Language Models are Few-Shot Learners" (Brown et al., 2020)
 - "Constitutional AI: Harmlessness from AI Feedback" (Bai et al., 2022)
+- "GPT-4V(ision) System Card" (OpenAI, 2023)
+- "Flamingo: a Visual Language Model for Few-Shot Learning" (Alayrac et al., 2022)
 
 ---
 
-## 8. SQL Analysis and Optimization Tools
+## 8. Vision and Multimodal AI
+
+### What You'll Learn
+How to build AI systems that can process both text and images, understand visual content, and provide cost-effective multimodal interactions.
+
+### Key Files to Study
+- `src/adam/llm/config.py` - Vision model configuration
+- `src/adam/llm/client.py` - Image handling implementation
+- `web/adam_web.py` - Multimodal web interface
+- `examples/test_grok_vision.py` - Vision testing
+- `docs/GROK_VISION_PRICING.md` - Cost analysis
+
+### Core Concepts
+
+#### Vision Model Integration
+```python
+# Proper xAI SDK format for images
+from xai_sdk.chat import user, image
+
+chat.append(
+    user(
+        "What's in this image?",
+        image(image_url=f"data:image/jpeg;base64,{base64_image}", detail="high")
+    )
+)
+```
+
+#### Image Token Calculation
+Grok vision models process images by:
+1. Breaking into 448x448 pixel tiles
+2. Each tile = 256 tokens
+3. Maximum 6 tiles per image
+4. Formula: `(# of tiles + 1) * 256` tokens
+
+#### Cost Optimization
+```python
+# Different models, different pricing
+if "grok-2-vision" in model_name:
+    # Input: $2/million tokens, Output: $10/million tokens
+    input_cost = (input_tokens / 1_000_000) * 2.00
+    output_cost = (output_tokens / 1_000_000) * 10.00
+    image_tokens = estimate_image_tokens(image_data)  # ~1280 typical
+elif "gpt-4" in model_name:
+    # Fixed image cost + text tokens
+    image_cost = 0.01  # ~$0.01 per image
+    text_cost = calculate_text_cost(tokens)
+```
+
+### Questions You Should Be Able to Answer
+
+1. **How do you implement proper image encoding for different APIs?**
+   - Base64 encoding vs URL references
+   - Format specifications (data:image/jpeg;base64,...)
+   - Detail levels (high, low, auto)
+
+2. **What are the cost implications of vision models?**
+   - Token-based vs fixed pricing
+   - Image size impact on costs
+   - When to use vision vs text-only models
+
+3. **How do you design adaptive UIs for multimodal capabilities?**
+   - Conditional feature display
+   - Visual capability indicators
+   - User experience considerations
+
+### Practical Exercises
+
+1. **Implement Multi-Image Support**
+   - Handle multiple images in one query
+   - Compare costs across providers
+   - Test with different image sizes
+
+2. **Build Image Preprocessing Pipeline**
+   - Resize images to optimize token usage
+   - Format conversion (PNG → JPEG)
+   - Quality vs cost tradeoffs
+
+3. **Create Vision Model Benchmarks**
+   - Compare accuracy across models
+   - Measure cost per successful analysis
+   - Test edge cases (blurry, dark images)
+
+### Vision-Specific Considerations
+
+#### Image Quality vs Cost
+- **High detail**: Better accuracy, more tokens
+- **Low detail**: Faster, cheaper, may miss fine details
+- **Auto**: Model decides, usually good balance
+
+#### Multimodal Prompt Engineering
+```python
+# Effective vision prompts
+good_prompt = "Analyze this code screenshot and identify any syntax errors."
+bad_prompt = "What do you see?"  # Too generic
+
+# Context matters
+with_context = "This is a Python function. Check for any issues with the implementation."
+without_context = "Check this code."  # Less effective
+```
+
+### Integration Patterns
+
+#### Graceful Degradation
+```python
+if model_supports_vision and image_provided:
+    response = analyze_with_image(prompt, image)
+else:
+    if image_provided:
+        prompt += " (Note: Image was provided but current model doesn't support vision)"
+    response = analyze_text_only(prompt)
+```
+
+#### Cost-Aware Selection
+```python
+def select_vision_model(image_complexity, budget):
+    if budget > 0.02:  # High budget
+        return "gpt-4-vision"
+    elif image_complexity == "simple":
+        return "grok-2-vision-1212"  # More cost-effective
+    else:
+        return "grok-4"  # Balance of cost and capability
+```
+
+---
+
+## 9. SQL Analysis and Optimization Tools
 
 ### What You'll Learn
 How ADAM helps analytics engineers optimize SQL queries and maintain code quality.
@@ -462,7 +592,7 @@ complexity_score = min(10, max(1, (
 
 ---
 
-## 9. Web and CLI Interfaces
+## 10. Web and CLI Interfaces
 
 ### What You'll Learn
 How to build effective user interfaces for AI systems, from command-line to web.
@@ -498,7 +628,7 @@ if memory_context and len(conversation_context) < 500:
 
 ---
 
-## 10. System Design and Architecture
+## 11. System Design and Architecture
 
 ### What You'll Learn
 How to build production-grade AI systems that scale, perform, and maintain.
@@ -525,7 +655,7 @@ ADAM/
 
 ---
 
-## 11. Performance and Scalability
+## 12. Performance and Scalability
 
 ### What You'll Learn
 Making AI systems fast and efficient at scale.
@@ -556,7 +686,7 @@ Making AI systems fast and efficient at scale.
 
 ---
 
-## 12. Memory Lifecycle and Decay Systems
+## 13. Memory Lifecycle and Decay Systems
 
 ### What You'll Learn
 Psychology-inspired memory management with decay, reinforcement, and compression.
@@ -594,7 +724,7 @@ TIER_HIGH = 90       # Key insights only
 
 ---
 
-## 13. Production Engineering
+## 14. Production Engineering
 
 ### What You'll Learn
 Building reliable, secure, and observable AI systems.
@@ -639,8 +769,42 @@ Building reliable, secure, and observable AI systems.
 8. **File Organization** - Clean project structure
 9. **Enhanced Memory Search** - Intent-aware retrieval with technical term extraction
 10. **Session Persistence** - Auto-save conversations to disk
+11. **Vision/Multimodal Support** - Image analysis with Grok and GPT-4 vision models
+12. **Temporal Memory Scoring** - Time-aware retrieval prioritization
+13. **Intelligent Model Routing** - Automatic cost optimization (63-89% savings)
 
-### 🚧 Recent Fixes and Improvements (Today's Session)
+### 🚧 Recent Fixes and Improvements (Latest Sessions)
+
+#### Vision Model Integration (Day 023)
+1. **Proper Grok Vision API** - Using official xAI SDK format
+   ```python
+   from xai_sdk.chat import user, image
+   chat.append(
+       user("What's in this image?",
+            image(image_url=f"data:image/jpeg;base64,{base64_image}", detail="high"))
+   )
+   ```
+
+2. **Enhanced Web Interface** - Vision-aware UI
+   ```python
+   # Conditional image upload based on model capabilities
+   if model_config and model_config.supports_vision:
+       uploaded_file = st.file_uploader("Upload an image 🖼️")
+   ```
+
+3. **Accurate Cost Tracking** - Separate input/output pricing
+   ```python
+   # Grok-2 vision pricing
+   input_cost = (input_tokens / 1_000_000) * 2.00   # $2/million
+   output_cost = (output_tokens / 1_000_000) * 10.00 # $10/million
+   ```
+
+4. **Model Selector Improvements**
+   - Moved to top of page for visibility
+   - Visual indicators (🖼️) for vision support
+   - Real-time cost display
+
+#### Memory Retrieval Perfection (Day 022)
 1. **BM25 Empty Corpus** - Handle initialization with no documents
    ```python
    if tokenized_corpus and len(tokenized_corpus) > 0:
@@ -697,11 +861,14 @@ Building reliable, secure, and observable AI systems.
    ```
 
 ### 📋 Next Steps
-1. **dbt Integration** - Error parser and model analyzer
-2. **Voice Interface** - Complete implementation
-3. **Agent System** - Move from archive to production
-4. **Performance** - Optimize for 100K+ memories
-5. **Memory Visualization** - Interactive graph display
+1. **URL Image Support** - Fetch images from web URLs
+2. **Multi-Image Queries** - Handle multiple images in one prompt
+3. **Voice Interface** - Complete implementation with vision
+4. **Agent System** - Move from archive to production
+5. **Performance** - Optimize for 100K+ memories
+6. **Screen Capture Integration** - ADAM as coworker watching your screen
+7. **Image Preprocessing** - Automatic optimization for cost/quality
+8. **dbt Integration** - Error parser and model analyzer
 
 ---
 
@@ -776,6 +943,9 @@ Building reliable, secure, and observable AI systems.
 3. What makes intelligent routing reduce costs by 63-89%?
 4. How does activity-based aging solve the vacation problem?
 5. Why is BM25 still relevant with modern embeddings?
+6. How do vision models process images into tokens?
+7. What are the cost implications of multimodal AI?
+8. How does temporal scoring improve retrieval relevance?
 
 ### Recent Improvements Understanding
 1. **Why did BM25 fail with empty corpus and how was it fixed?**
@@ -809,6 +979,9 @@ Building reliable, secure, and observable AI systems.
 3. How would you implement cross-user memory sharing?
 4. What monitoring would you add for production?
 5. How would you extend SQL analysis for NoSQL queries?
+6. How would you implement vision support for a new model?
+7. What image preprocessing would optimize costs?
+8. How would you build a screen capture integration?
 
 ### Debugging Skills (From Today's Session)
 1. **How do you debug memory retrieval issues?**
@@ -894,6 +1067,9 @@ Building reliable, secure, and observable AI systems.
 3. How would you implement "memory dreams" (offline consolidation)?
 4. What would collaborative memory networks look like?
 5. How could ADAM learn optimal decay rates per user?
+6. How could multimodal embeddings improve retrieval?
+7. What would real-time screen analysis look like?
+8. How could ADAM learn optimal image detail levels per query type?
 
 ---
 
@@ -911,6 +1087,9 @@ Building reliable, secure, and observable AI systems.
 3. Create a visualization of your memory network
 4. Write tests for a component you want to understand
 5. Try different models and measure cost/performance
+6. Test vision models with different image types
+7. Implement custom temporal scoring for your domain
+8. Create image analysis workflows
 
 ### This Month
 1. Build a custom tool using ADAM's components
