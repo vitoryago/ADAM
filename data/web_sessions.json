@@ -204,5 +204,32 @@
     "selected_model": "grok-3-mini-high",
     "use_memory": true,
     "last_updated": "2025-07-23T15:11:57.003110"
+  },
+  "session_20250723_152316_0248f8a6": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hi ADAM, can you bring me back that private DAG?",
+        "timestamp": "2025-07-23T15:23:26.715967"
+      },
+      {
+        "role": "assistant",
+        "content": "### Response from ADAM\n\nHi! I'm ADAM, your AI assistant with perfect memory. Absolutely, I remember our previous conversations perfectly\u2014thanks for circling back. You're asking for that private DAG, which was the one for running a private DBT model. We built it by following a similar...",
+        "timestamp": "2025-07-23T15:23:40.335184",
+        "metadata": {
+          "model": "grok-3-mini-high",
+          "cost": 0.002888
+        }
+      },
+      {
+        "role": "user",
+        "content": "can you bring the dag?",
+        "timestamp": "2025-07-23T15:24:22.552013"
+      }
+    ],
+    "total_cost": 0.0066029999999999995,
+    "selected_model": "grok-3-mini-high",
+    "use_memory": true,
+    "last_updated": "2025-07-23T15:24:38.974878"
   }
 }

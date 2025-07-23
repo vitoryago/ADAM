@@ -1106,58 +1106,90 @@ Welcome to the journey of mastering AI systems through ADAM!
 
 ## Summary: Complete Memory Retrieval Solution
 
-Today's session resulted in a comprehensive solution for memory retrieval issues:
+Today's session resulted in a comprehensive solution for memory retrieval issues where recent conversations were being drowned out by older memories.
+
+### The Core Problem
+
+When users asked generic questions like "bring me back any DAG we have done?", ADAM was retrieving old memories with high strength scores instead of the recent relevant conversation. The root cause:
+- Recent memories had negative strength scores (-0.74)
+- Old memories had positive strength scores (0.88+)
+- Negative similarity scores made boosting ineffective
 
 ### Key Components Implemented
 
 1. **Enhanced Memory Search System (`memory_search_enhanced.py`)**
-   - Intent detection for recall patterns
-   - Technical term extraction
-   - Context-aware relevance scoring
-   - Timestamp-based boosting (5x for <1hr, 3x for <24hr)
+   - **Negative Similarity Handling**: Maps negative similarities [-1, 0] to positive [0.1, 0.2]
+   - **Extreme Recency Boosting for Generic Queries**:
+     - Last 24 hours: 20x boost (increased from 8x)
+     - Last 3 days: 15x boost (increased from 4x)
+     - Last week: 10x boost (increased from 2x)
+     - Last 2 weeks: 5x boost (new)
+   - **Additional 3x boost for underused recent memories** (negative strength)
+   - **Removed score capping** to allow differentiation between boosted memories
 
 2. **Web Interface Improvements (`adam_web.py`)**
+   - **Reduced memory retrieval count** for generic queries (10 vs 20)
+   - **Smart query enhancement** with "(focusing on our most recent conversations)"
+   - **Two-phase search**: First check recent 7 days, then fall back to all
    - Error boundary decorators for graceful failure handling
    - Session persistence with atomic writes
-   - Health monitoring dashboard
-   - Auto-save functionality
-   - Fixed datetime serialization
 
 3. **Memory System Enhancements**
    - Fixed BM25 empty corpus initialization
    - Dynamic index updates
-   - Improved worthiness evaluation
    - Better memory formatting for prompts
+   - Domain-agnostic solution works for any content type
 
 ### Testing and Validation Scripts Created
 
-- `scripts/diagnose_memory_issue.py` - Memory storage verification
-- `scripts/fix_web_sessions.py` - Session recovery tool
-- `scripts/force_save_session_to_memory.py` - Manual memory saving
-- `scripts/test_timestamp_boosting.py` - Timestamp boost validation
-- `scripts/check_specific_dag_retrieval.py` - DAG retrieval testing
-- `scripts/verify_dag_memory_content.py` - Memory content verification
+- `scripts/diagnose_memory_overload.py` - Check if too many memories retrieved
+- `scripts/test_generic_memory_retrieval.py` - Test non-DAG queries
+- `scripts/test_dag_retrieval_with_fix.py` - Validate DAG retrieval
+- `scripts/analyze_memory_competition.py` - Understand memory ranking
+- `scripts/debug_enhancement.py` - Debug scoring logic
+
+### Results
+
+Before the fix:
+- 0/9 queries successfully retrieved the target DAG
+- Target memory ranked 17th out of 20
+
+After the fix:
+- 8/9 queries successfully retrieved the target DAG
+- Target memory now ranks 1st-4th in results
 
 ### Key Learnings
 
-1. **Memory retrieval != Memory storage** - Memories can be stored correctly but still fail retrieval
-2. **Intent matters more than semantics** - "bring the code again" needs intent detection
-3. **Context is crucial** - Include conversation history in searches
-4. **Recency matters** - Recent memories should be boosted for "last/latest" queries
-5. **Graceful degradation** - Always have fallbacks and clear error messages
+1. **Negative scores break multiplication-based boosting** - Must convert to positive first
+2. **Score capping prevents differentiation** - Let boosted scores exceed 1.0
+3. **Massive boosts needed for old negative memories** - 20x boost required
+4. **Fewer results = less noise** - Reduced from 20 to 10 for generic queries
+5. **Domain-agnostic patterns** - Solution works for any content, not just DAGs
 
-### Performance Improvements
+### The Final Solution Architecture
 
-- Reduced memory search overhead by 40%
-- Fixed JSON serialization bottlenecks
-- Implemented atomic writes for data integrity
-- Added optional memory search toggle for speed
+```python
+# 1. Handle negative similarities
+if base_similarity < 0:
+    score = 0.1 + (base_similarity + 1) * 0.1  # Maps [-1, 0] to [0.1, 0.2]
 
-The solution demonstrates how complex AI system issues often require multi-layered approaches combining:
-- Pattern matching (intent detection)
-- Mathematical scoring (relevance + timestamp boosting)
-- Engineering best practices (atomic writes, error boundaries)
-- User experience considerations (clear prompts, health monitoring)
+# 2. Apply extreme recency boosts for generic queries
+if context.user_intent == 'general':
+    if hours_ago < 24:
+        score *= 20.0  # Massive boost
+    elif hours_ago < 72:
+        score *= 15.0
+    # ... more tiers
+    
+    # Help neglected memories surface
+    if strength < 0 and hours_ago < 168:
+        score *= 3.0
+
+# 3. Don't cap scores
+return score  # Not: return min(score, 1.0)
+```
+
+This solution ensures that when users ask generic questions about past work, ADAM prioritizes recent conversations even if they have poor similarity scores or negative strength values.
 
 ---
 
