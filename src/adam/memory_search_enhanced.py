@@ -87,9 +87,10 @@ class MemorySearchEnhancer:
             if context.technical_terms:
                 enhanced_parts.append(f"technical context: {' '.join(context.technical_terms)}")
         
-        # Add specific search hints based on patterns
-        if 'dag' in context.technical_terms and 'dbt' in context.technical_terms:
-            enhanced_parts.append("airflow dag dbt model bashoperator schedule")
+        # Add domain-specific hints based on technical terms
+        # This is generic and works for any domain
+        if len(context.technical_terms) >= 2:
+            enhanced_parts.append(' '.join(context.technical_terms))
         
         return ' '.join(enhanced_parts)
     
@@ -119,6 +120,29 @@ class MemorySearchEnhancer:
             # Check for specific patterns the user might be recalling
             if 'bashoperator' in content and 'dag' in context.current_query.lower():
                 score *= 1.3
+        
+        # SPECIAL BOOST for generic queries to favor recent memories
+        # This works for ANY type of content, not just DAGs
+        if context.user_intent == 'general':
+            # For generic queries about past work, heavily favor recent memories
+            metadata = memory.get('metadata', {})
+            timestamp_str = metadata.get('timestamp', '')
+            if timestamp_str:
+                try:
+                    from datetime import datetime
+                    memory_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    now = datetime.now(memory_time.tzinfo) if memory_time.tzinfo else datetime.now()
+                    hours_ago = (now - memory_time).total_seconds() / 3600
+                    
+                    # Strong recency bias for generic queries
+                    if hours_ago < 24:  # Within last day
+                        score *= 8.0  # Strong boost for very recent
+                    elif hours_ago < 72:  # Within last 3 days
+                        score *= 4.0
+                    elif hours_ago < 168:  # Within last week
+                        score *= 2.0
+                except:
+                    pass
             
             # MAJOR boost for "last" or "recent" queries based on timestamp
             if any(word in context.current_query.lower() for word in ['last', 'latest', 'recent', 'newest']):
