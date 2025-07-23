@@ -633,14 +633,15 @@ MEMORY INSTRUCTIONS:
             output_tokens = len(full_response) / 4
             
             # Different pricing for different models
-            if st.session_state.selected_model == "grok-2-vision-1212":
-                # Grok-2 vision: $2/million input, $10/million output
+            if st.session_state.selected_model == "grok-2-vision-1212" or ("grok" in st.session_state.selected_model and model_config.supports_vision):
+                # Grok vision pricing: $2/million input, $10/million output
                 input_cost = (input_tokens / 1_000_000) * 2.00
                 output_cost = (output_tokens / 1_000_000) * 10.00
-                # Images are part of input tokens for Grok
+                # Images consume tokens based on tiles (256 tokens per tile + 1 extra tile)
                 if image_data:
-                    # Estimate ~1000 tokens per image for Grok vision
-                    image_tokens = 1000
+                    # Maximum 6 tiles, so max 1792 tokens per image
+                    # For typical images, estimate 4-5 tiles = ~1280 tokens
+                    image_tokens = 1280
                     input_cost += (image_tokens / 1_000_000) * 2.00
                 cost = input_cost + output_cost
             elif "gpt-4" in st.session_state.selected_model:
@@ -795,7 +796,7 @@ MEMORY INSTRUCTIONS:
             with st.chat_message("user"):
                 st.markdown(prompt)
                 if image_data:
-                    st.image(image_data, caption="Attached image", use_column_width=True)
+                    st.image(image_data, caption="Attached image", use_container_width=True)
             
             # Process with ADAM
             with st.chat_message("assistant"):

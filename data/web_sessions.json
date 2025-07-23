@@ -286,5 +286,34 @@
     "selected_model": "grok-4-reasoning",
     "use_memory": true,
     "last_updated": "2025-07-23T16:43:14.596804"
+  },
+  "session_20250723_174101_6e20d401": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "I'm talking about this with jeremy tee, how can i check which dbt model is using these tables?",
+        "timestamp": "2025-07-23T17:43:21.622325",
+        "has_image": true
+      },
+      {
+        "role": "assistant",
+        "content": "To figure out which DBT models are using specific tables (I'm assuming you're referring to something like the `cdp_user_profile_traits` table from our earlier chat about that error\u2014let me know if it's different ones), here's a straightforward way to check. Since you're chatting with Jeremy about this, you could loop him in on the output too.\n\n### Quick Methods in DBT:\n1. **Using DBT CLI for Lineage Search**:\n   - Run `dbt ls --select <source_name>.<table_name>.+` (replace `<source_name>` with your actual source, like `raw` or whatever it's defined as in your `schema.yml`, and `<table_name>` with the table in question, e.g., `cdp_user_profile_traits`).\n     - This lists all models that depend on that source table downstream.\n     - Example: If it's defined as `source: raw.cdp_user_profile_traits`, you'd do `dbt ls --select raw.cdp_user_profile_traits.+`.\n   - If you want the reverse (what sources a model uses), flip it to `dbt ls --select +<model_name>`.\n\n2. **Via DBT Docs**:\n   - Generate the docs with `dbt docs generate`.\n   - Then serve them locally: `dbt docs serve`.\n   - In the web interface, search for the table name and check the lineage graph\u2014it visually shows which models reference it.\n\n3. **Manual Check in Code**:\n   - Grep your models folder for references to the table, like `grep -r \"source('<source_name>', '<table_name>')\" models/`.\n   - Or peek at your `dbt_project.yml` and `schema.yml` files for dependencies (we talked about missing descriptions in those before).\n\nIf the tables aren't defined as sources (e.g., they're intermediate or from another model), you might need to dig into the `manifest.json` file after a `dbt compile`\u2014search for the table name in there under \"ref\" or \"source\" nodes.\n\nRun into any issues with that, or need an example tailored to a specific table? Just share more details.",
+        "timestamp": "2025-07-23T17:43:44.152022",
+        "metadata": {
+          "model": "grok-4",
+          "cost": 0.0
+        }
+      },
+      {
+        "role": "user",
+        "content": "No, in fact I'm making reference to this image: can you explain this image please?",
+        "timestamp": "2025-07-23T17:46:47.079203",
+        "has_image": true
+      }
+    ],
+    "total_cost": 0.0,
+    "selected_model": "grok-4",
+    "use_memory": true,
+    "last_updated": "2025-07-23T17:47:21.833822"
   }
 }

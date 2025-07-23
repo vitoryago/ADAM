@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Import model-specific SDKs
 try:
     from xai_sdk import Client as XAIClient
-    from xai_sdk.chat import user, system
+    from xai_sdk.chat import user, system, image
     XAI_AVAILABLE = True
 except ImportError:
     XAI_AVAILABLE = False
@@ -161,16 +161,23 @@ class UnifiedLLMClient:
         
         # Handle image data for vision-enabled Grok models
         if image_data and model_config.supports_vision:
-            # For Grok vision models, we need to format the message differently
-            # Currently xai_sdk doesn't have documented image support
-            # We'll need to use the correct format when it's available
-            logger.info(f"Image provided for {model_config.name} - vision support enabled")
-            # For now, we'll still send the text prompt
-            # In the future, update this with proper Grok vision API format
+            # Encode image as base64 for Grok vision models
+            import base64
+            base64_image = base64.b64encode(image_data).decode('utf-8')
+            
+            # Use the proper xAI SDK format with image function
+            chat.append(
+                user(
+                    prompt,
+                    image(image_url=f"data:image/jpeg;base64,{base64_image}", detail="high")
+                )
+            )
+            logger.info(f"Image provided for {model_config.name} - using vision format")
         elif image_data:
             logger.warning(f"Image provided but {model_config.name} doesn't support vision")
-        
-        chat.append(user(prompt))
+            chat.append(user(prompt))
+        else:
+            chat.append(user(prompt))
         
         # Get response
         if stream:
@@ -205,7 +212,10 @@ class UnifiedLLMClient:
                 total_tokens=getattr(response.usage, 'total_tokens', 0),
                 reasoning_tokens=getattr(response.usage, 'reasoning_tokens', 0),
                 completion_tokens=getattr(response.usage, 'completion_tokens', 0),
-                cost=self._calculate_cost(model_config, response)
+                cost=self._calculate_cost(model_config, response),
+                raw_response={
+                    'prompt_image_tokens': getattr(response.usage, 'prompt_image_tokens', 0) if hasattr(response.usage, 'prompt_image_tokens') else 0
+                }
             )
     
     async def _complete_openai(
