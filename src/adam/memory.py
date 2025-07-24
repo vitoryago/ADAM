@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from enum import Enum
+import logging
 
 # Vector and storage components
 import chromadb
@@ -33,10 +34,22 @@ from collections import deque
 try:
     from .memory_config import MemoryConfig
     from .memory_lifecycle import MemoryLifecycleManager
+    from .errors import (
+        ADAMError, MemoryError, StorageError, RetrievalError, 
+        CorruptedMemoryError, EmbeddingError, LoadError, SaveError,
+        retry_with_backoff, ErrorHandler, ErrorContext,
+        FallbackJSONRecovery, ConfigurationError
+    )
 except ImportError:
     # Fallback if running standalone
     from memory_config import MemoryConfig
     from memory_lifecycle import MemoryLifecycleManager
+    from errors import (
+        ADAMError, MemoryError, StorageError, RetrievalError, 
+        CorruptedMemoryError, EmbeddingError, LoadError, SaveError,
+        retry_with_backoff, ErrorHandler, ErrorContext,
+        FallbackJSONRecovery, ConfigurationError
+    )
 
 # Rich output for better visibility
 from rich.console import Console
@@ -44,6 +57,7 @@ from rich.table import Table
 from rich.panel import Panel
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 class MemoryType(Enum):
@@ -197,47 +211,62 @@ class ADAMMemoryAdvanced:
         
         console.print("[yellow]🧠 Initializing Advanced Memory System...[/yellow]")
         
-        # Core components
-        self.memory_config = MemoryConfig()
-        console.print(f"[cyan]📊 Using embedding model: {self.memory_config.embedding_model_name}[/cyan]")
-        console.print(f"[dim]   Provider: {self.memory_config.embedding_config.provider.value}[/dim]")
-        console.print(f"[dim]   Dimension: {self.memory_config.embedding_config.dimension}[/dim]")
-        
-        # Get embedding function from config
-        self.embedding_function = self.memory_config.get_embedding_function()
-        self.worthiness_evaluator = MemoryWorthinessEvaluator()
-        
-        # Vector database with advanced settings
-        self.chroma_client = chromadb.PersistentClient(
-            path=str(self.persist_directory),
-            settings=Settings(
-                anonymized_telemetry=False,
-                allow_reset=True
-            )
+        # Initialize error handler with recovery strategies
+        self.error_handler = ErrorHandler()
+        self.error_handler.add_recovery_strategy(
+            FallbackJSONRecovery(str(self.persist_directory / "fallback"))
         )
+        
+        # Core components with error handling
+        try:
+            self.memory_config = MemoryConfig()
+            console.print(f"[cyan]📊 Using embedding model: {self.memory_config.embedding_model_name}[/cyan]")
+            console.print(f"[dim]   Provider: {self.memory_config.embedding_config.provider.value}[/dim]")
+            console.print(f"[dim]   Dimension: {self.memory_config.embedding_config.dimension}[/dim]")
+        except Exception as e:
+            logger.error(f"Failed to load memory config: {e}")
+            raise ConfigurationError("Memory configuration failed", cause=e)
+        
+        # Get embedding function from config with retry
+        try:
+            self.embedding_function = self._get_embedding_function_with_retry()
+            self.worthiness_evaluator = MemoryWorthinessEvaluator()
+        except Exception as e:
+            logger.error(f"Failed to initialize embedding function: {e}")
+            raise EmbeddingError("Embedding initialization failed", cause=e)
+        
+        # Vector database with advanced settings and error handling
+        try:
+            self.chroma_client = self._initialize_chromadb()
+        except Exception as e:
+            logger.error(f"Failed to initialize ChromaDB: {e}")
+            raise StorageError("ChromaDB initialization failed", cause=e)
         
         # Main memory collection with custom embedding function
         collection_name = f"adam_memory_{self.memory_config.embedding_model_name.replace('-', '_')}"
         
-        try:
-            # Try to get existing collection (without specifying embedding function)
-            self.collection = self.chroma_client.get_collection(
-                name=collection_name
-            )
-            console.print(f"[green]✅ Loaded existing collection: {collection_name}[/green]")
-        except:
-            # Create new collection with embedding function
-            self.collection = self.chroma_client.create_collection(
-                name=collection_name,
-                metadata={
-                    "description": "ADAM's intelligent memory with versioning",
-                    "embedding_model": self.memory_config.embedding_model_name,
-                    "embedding_dimension": self.memory_config.embedding_config.dimension,
-                    "created_at": datetime.now().isoformat()
-                },
-                embedding_function=self.embedding_function
-            )
-            console.print(f"[green]✅ Created new collection: {collection_name}[/green]")
+        with ErrorContext("collection_initialization", self.error_handler, {"collection_name": collection_name}):
+            try:
+                # Try to get existing collection (without specifying embedding function)
+                self.collection = self.chroma_client.get_collection(
+                    name=collection_name
+                )
+                console.print(f"[green]✅ Loaded existing collection: {collection_name}[/green]")
+                self._verify_collection_integrity()
+            except Exception as e:
+                # Create new collection with embedding function
+                logger.info(f"Creating new collection: {collection_name}")
+                self.collection = self.chroma_client.create_collection(
+                    name=collection_name,
+                    metadata={
+                        "description": "ADAM's intelligent memory with versioning",
+                        "embedding_model": self.memory_config.embedding_model_name,
+                        "embedding_dimension": self.memory_config.embedding_config.dimension,
+                        "created_at": datetime.now().isoformat()
+                    },
+                    embedding_function=self.embedding_function
+                )
+                console.print(f"[green]✅ Created new collection: {collection_name}[/green]")
         
         # Conversation state tracking
         self.conversation_states: Dict[str, ConversationState] = {}
@@ -262,15 +291,27 @@ class ADAMMemoryAdvanced:
     def _load_access_patterns(self) -> Dict[str, Any]:
         """Load memory access patterns for optimization"""
         if self.access_log_path.exists():
-            with open(self.access_log_path, 'r') as f:
-                return json.load(f)
+            try:
+                with open(self.access_log_path, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load access patterns, using defaults: {e}")
+                # Rename corrupted file
+                backup_path = self.access_log_path.with_suffix('.corrupted')
+                self.access_log_path.rename(backup_path)
         return {"memory_hits": 0, "memory_misses": 0, "total_queries": 0}
     
     def _load_cost_savings(self) -> Dict[str, float]:
         """Load cost tracking data"""
         if self.cost_log_path.exists():
-            with open(self.cost_log_path, 'r') as f:
-                return json.load(f)
+            try:
+                with open(self.cost_log_path, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load cost savings, using defaults: {e}")
+                # Rename corrupted file
+                backup_path = self.cost_log_path.with_suffix('.corrupted')
+                self.cost_log_path.rename(backup_path)
         return {
             "total_saved": 0.0,
             "storage_cost": 0.0,
@@ -279,12 +320,70 @@ class ADAMMemoryAdvanced:
         }
     
     def _save_metadata(self):
-        """Persist metadata to disk"""
-        with open(self.access_log_path, 'w') as f:
-            json.dump(self.access_patterns, f, indent=2)
-        
-        with open(self.cost_log_path, 'w') as f:
-            json.dump(self.cost_savings, f, indent=2)
+        """Persist metadata to disk with error handling"""
+        try:
+            # Save access patterns
+            temp_path = self.access_log_path.with_suffix('.tmp')
+            with open(temp_path, 'w') as f:
+                json.dump(self.access_patterns, f, indent=2)
+            temp_path.replace(self.access_log_path)  # Atomic replace
+            
+            # Save cost data
+            temp_path = self.cost_log_path.with_suffix('.tmp')
+            with open(temp_path, 'w') as f:
+                json.dump(self.cost_savings, f, indent=2)
+            temp_path.replace(self.cost_log_path)  # Atomic replace
+            
+        except IOError as e:
+            logger.error(f"Failed to save metadata: {e}")
+            # Try fallback save
+            self.error_handler.handle_error(
+                SaveError("Metadata save failed", cause=e),
+                {"data": {"access_patterns": self.access_patterns, "cost_savings": self.cost_savings}}
+            )
+    
+    @retry_with_backoff(
+        max_attempts=3,
+        exceptions=(EmbeddingError,),
+        on_retry=lambda attempt, e: logger.warning(f"Embedding retry attempt {attempt + 1}: {e}")
+    )
+    def _get_embedding_function_with_retry(self):
+        """Get embedding function with retry logic"""
+        try:
+            return self.memory_config.get_embedding_function()
+        except Exception as e:
+            raise EmbeddingError(f"Failed to get embedding function: {e}", cause=e)
+    
+    @retry_with_backoff(
+        max_attempts=3,
+        exceptions=(StorageError,),
+        initial_delay=2.0
+    )
+    def _initialize_chromadb(self):
+        """Initialize ChromaDB with retry logic"""
+        try:
+            return chromadb.PersistentClient(
+                path=str(self.persist_directory),
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True
+                )
+            )
+        except Exception as e:
+            raise StorageError(f"ChromaDB initialization failed: {e}", cause=e)
+    
+    def _verify_collection_integrity(self):
+        """Verify collection is not corrupted"""
+        try:
+            # Try a simple query to verify collection works
+            test_result = self.collection.query(
+                query_texts=["test"],
+                n_results=1
+            )
+            logger.info("Collection integrity verified")
+        except Exception as e:
+            logger.error(f"Collection integrity check failed: {e}")
+            raise CorruptedMemoryError("Collection appears corrupted", cause=e)
     
     def remember_if_worthy(self, query: str, response: str, 
                           context: Optional[Dict[str, Any]] = None,
@@ -371,8 +470,13 @@ class ADAMMemoryAdvanced:
         
         return min(1.0, max(0.1, confidence))
     
+    @retry_with_backoff(
+        max_attempts=3,
+        exceptions=(StorageError,),
+        on_retry=lambda attempt, e: logger.warning(f"Storage retry attempt {attempt + 1}: {e}")
+    )
     def _store_memory(self, memory: Memory):
-        """Store memory in the vector database"""
+        """Store memory in the vector database with error handling"""
         # Prepare metadata for ChromaDB
         metadata = {
             "memory_type": memory.memory_type.value,
@@ -388,12 +492,28 @@ class ADAMMemoryAdvanced:
         if memory.parent_id:
             metadata["parent_id"] = memory.parent_id
         
-        # Store in ChromaDB
-        self.collection.add(
-            documents=[memory.content],
-            metadatas=[metadata],
-            ids=[memory.id]
-        )
+        try:
+            # Store in ChromaDB
+            self.collection.add(
+                documents=[memory.content],
+                metadatas=[metadata],
+                ids=[memory.id]
+            )
+            logger.info(f"Successfully stored memory {memory.id}")
+            
+        except chromadb.errors.ChromaError as e:
+            logger.error(f"ChromaDB storage error: {e}")
+            # Try fallback storage
+            fallback_success = self.error_handler.handle_error(
+                StorageError(f"Failed to store in ChromaDB: {e}", cause=e),
+                {"memory_id": memory.id, "data": asdict(memory)}
+            )
+            if not fallback_success:
+                raise StorageError(f"Storage failed even with fallback: {e}", cause=e)
+                
+        except Exception as e:
+            logger.error(f"Unexpected storage error: {e}")
+            raise StorageError(f"Unexpected error during storage: {e}", cause=e)
     
     def recall_with_context(self, query: str, 
                            screen_context: Optional[str] = None,
@@ -409,16 +529,24 @@ class ADAMMemoryAdvanced:
         # Update access patterns
         self.access_patterns["total_queries"] += 1
         
-        # Search vector database
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=n_results * 2  # Get more candidates for filtering
-        )
-        
-        if not results['documents'] or not results['documents'][0]:
-            self.access_patterns["memory_misses"] += 1
-            self._save_metadata()
-            return []
+        try:
+            # Search vector database with error handling
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=n_results * 2  # Get more candidates for filtering
+            )
+            
+            if not results['documents'] or not results['documents'][0]:
+                self.access_patterns["memory_misses"] += 1
+                self._save_metadata()
+                return []
+                
+        except chromadb.errors.ChromaError as e:
+            logger.error(f"ChromaDB query error: {e}")
+            raise RetrievalError(f"Failed to query memories: {e}", cause=e)
+        except Exception as e:
+            logger.error(f"Unexpected retrieval error: {e}")
+            raise RetrievalError(f"Unexpected error during retrieval: {e}", cause=e)
         
         # Process and score results considering context
         memories = []

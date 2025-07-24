@@ -48,6 +48,9 @@ class MemorySearchEnhancer:
         'model': r'\b(?:model|models|modeling)\b',
         'operator': r'\b(?:operator|operators|bashoperator|pythonoperator)\b',
         'task': r'\b(?:task|tasks|task_id)\b',
+        'python': r'\b(?:python|py|\.py|python files?|python code)\b',
+        'file': r'\b(?:files?|scripts?|modules?|code files?)\b',
+        'adam': r'\b(?:adam|memory system|improvements?|error handling)\b',
         'schedule': r'\b(?:schedule|schedule_interval|cron)\b',
     }
     

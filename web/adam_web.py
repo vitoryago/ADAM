@@ -436,17 +436,19 @@ class ADAMWebInterface:
             if session:
                 st.session_state.messages = []
                 for exchange in session.exchanges:
+                    # Add user message
                     st.session_state.messages.append({
                         "role": "user",
-                    "content": exchange.query,
-                    "timestamp": exchange.timestamp
-                })
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": exchange.response,
-                    "timestamp": exchange.timestamp,
-                    "metadata": exchange.metadata
-                })
+                        "content": exchange.query,
+                        "timestamp": exchange.timestamp
+                    })
+                    # Add assistant response
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": exchange.response,
+                        "timestamp": exchange.timestamp,
+                        "metadata": getattr(exchange, 'metadata', {})  # Handle missing metadata
+                    })
         
         st.rerun()
     
@@ -592,7 +594,13 @@ class ADAMWebInterface:
         user_messages = [msg for msg in st.session_state.messages if msg["role"] == "user"]
         message_number = len(user_messages) + 1  # +1 for the current message
         
-        system_prompt = f"""You are ADAM, a helpful AI coworker. This is message #{message_number} in our current conversation.
+        system_prompt = f"""You are ADAM, a helpful AI coworker who actively helps with coding and technical tasks. This is message #{message_number} in our current conversation.
+
+YOUR CAPABILITIES:
+- Generate code, create examples, build applications when asked
+- Help with programming, debugging, and technical problems
+- Access previous conversations from memory when relevant
+- Provide tutorials and technical guidance
 
 IMPORTANT BEHAVIORAL RULES:
 - DO NOT introduce yourself or greet the user (no "Hi!", "I'm ADAM", etc.)
@@ -600,6 +608,7 @@ IMPORTANT BEHAVIORAL RULES:
 - Be direct and conversational, like a coworker sitting next to them
 - Only introduce yourself if explicitly asked "who are you?" or similar
 - For message #2 and beyond, continue the conversation naturally without greetings
+- ALWAYS generate code when asked - don't refuse or say you can't create new code
 
 MEMORY INSTRUCTIONS:
 1. When the user references previous conversations, use the PROVIDED MEMORY CONTEXT below.
@@ -607,7 +616,15 @@ MEMORY INSTRUCTIONS:
 3. The memory context contains ACTUAL conversations - treat it as truth.
 4. "📚 Relevant from your memory:" contains REAL previous conversations.
 5. Generic references ("any", "some", "that thing") usually mean MOST RECENT.
-6. Prioritize recent conversations unless user asks for older examples."""
+6. Prioritize recent conversations unless user asks for older examples.
+
+CRITICAL ANTI-HALLUCINATION RULES (ONLY for memory recall):
+- If you don't find a SPECIFIC PAST CONVERSATION the user is asking about, SAY SO
+- NEVER make up fake past conversations or claim we discussed something we didn't
+- These rules ONLY apply when user asks about PREVIOUS conversations
+- You CAN and SHOULD generate NEW code when asked to create something
+- You CAN provide examples, tutorials, and help with programming
+- Creating new code is NOT hallucination - it's being helpful!"""
         
         full_prompt = system_prompt
         
@@ -633,9 +650,11 @@ MEMORY INSTRUCTIONS:
             # Add specific instructions based on search context
             if search_context and search_context.user_intent == 'recall' and not image_data:
                 full_prompt += "\n🚨 IMPORTANT: The user is asking you to recall something specific from above. DO NOT make up new code - use the EXACT code from the memory context above!\n"
-        elif "we were" in prompt.lower() or "again" in prompt.lower() or "previous" in prompt.lower() or "last" in prompt.lower():
+        elif any(keyword in prompt.lower() for keyword in ["we were", "again", "previous", "last conversation", "talked about", "discussed", "bring me back", "recall"]):
             # User is referencing past conversation but we found no relevant memories
-            full_prompt += "\n\n⚠️ Note: I searched my memory but could not find specific details about this topic in our previous conversations. I may not have access to that particular conversation, or it may not have been stored.\n"
+            full_prompt += "\n\n⚠️ MEMORY SEARCH: I searched but could not find the specific past conversation you're referring to.\n"
+            full_prompt += "You should acknowledge this briefly and ask for clarification if needed.\n"
+            full_prompt += "IMPORTANT: This ONLY applies to recalling past conversations. You can still help with NEW requests!\n"
         
         # Don't duplicate conversation context - it's already added above
         

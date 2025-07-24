@@ -48,6 +48,18 @@ import logging
 # For embedding-based semantic similarity
 import numpy as np
 
+# Import error handling
+try:
+    from .errors import (
+        NetworkError, LoadError, SaveError, CorruptedMemoryError,
+        retry_with_backoff, ErrorHandler, ErrorContext
+    )
+except ImportError:
+    from errors import (
+        NetworkError, LoadError, SaveError, CorruptedMemoryError,
+        retry_with_backoff, ErrorHandler, ErrorContext
+    )
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1200,50 +1212,141 @@ class MemoryNetworkSystem:
         
         return fig
     
+    @retry_with_backoff(
+        max_attempts=3,
+        exceptions=(SaveError,),
+        on_retry=lambda attempt, e: logger.warning(f"Save retry attempt {attempt + 1}: {e}")
+    )
     def _save_network(self):
         """
-        Persist the memory network to disk
+        Persist the memory network to disk with error handling
 
-        This snures ADAM's knowledge graph survives restarts.
+        This ensures ADAM's knowledge graph survives restarts.
         We save both the structure and the metadata.
         """
-        # Save the graph structure using NetworkX's pickle format
-        # This preserves all node and edge data
-        # Note: In NetworkX 3.x, write_gpickle is deprecated, use pickle directly
-        import pickle
-        with open(self.network_path / "memory_graph.gpickle", 'wb') as f:
-            pickle.dump(self.memory_graph, f)
-        
-        # Save our indices as JSON for human readability
-        with open(self.network_path / "indices.json", 'w') as f:
-            json.dump({
-                # Convert sets to lists for JSON serialization
-                'topic_to_memories': {k: list(v) for k, v in self.topic_to_memories.items()},
-                'topic_to_threads': dict(self.topic_to_threads)
-            }, f, indent=2)
-        
-        # Save threads
-        threads_data = {}
-        for tid, thread in self.threads.items():
-            # Convert thread object to dictionary
-            threads_data[tid] = {
-                'thread_id': thread.thread_id,
-                'primary_topic': thread.primary_topic,
-                'subtopics': thread.subtopics,
-                'conversation_ids': thread.conversation_ids,
-                'memory_ids': thread.memory_ids,
-                'last_updated': thread.last_updated.isoformat(),
-                'total_interactions': thread.total_interactions,
-                'evolution_summary': thread.evolution_summary,
-                'pattern_signatures': thread.pattern_signatures
-            }
-        
-        with open(self.network_path / "threads.json", 'w') as f:
-            json.dump(threads_data, f, indent=2)
+        try:
+            # Create backup of existing files first
+            self._backup_existing_network()
+            
+            # Save the graph structure using NetworkX's pickle format
+            # This preserves all node and edge data
+            import pickle
+            temp_graph_path = self.network_path / "memory_graph.gpickle.tmp"
+            graph_path = self.network_path / "memory_graph.gpickle"
+            
+            with open(temp_graph_path, 'wb') as f:
+                pickle.dump(self.memory_graph, f)
+            temp_graph_path.replace(graph_path)  # Atomic replace
+            
+            # Save our indices as JSON for human readability
+            temp_indices_path = self.network_path / "indices.json.tmp"
+            indices_path = self.network_path / "indices.json"
+            
+            with open(temp_indices_path, 'w') as f:
+                json.dump({
+                    # Convert sets to lists for JSON serialization
+                    'topic_to_memories': {k: list(v) for k, v in self.topic_to_memories.items()},
+                    'topic_to_threads': dict(self.topic_to_threads)
+                }, f, indent=2)
+            temp_indices_path.replace(indices_path)
+            
+            # Save threads
+            threads_data = {}
+            for tid, thread in self.threads.items():
+                # Convert thread object to dictionary
+                threads_data[tid] = {
+                    'thread_id': thread.thread_id,
+                    'primary_topic': thread.primary_topic,
+                    'subtopics': thread.subtopics,
+                    'conversation_ids': thread.conversation_ids,
+                    'memory_ids': thread.memory_ids,
+                    'last_updated': thread.last_updated.isoformat(),
+                    'total_interactions': thread.total_interactions,
+                    'evolution_summary': thread.evolution_summary,
+                    'pattern_signatures': thread.pattern_signatures
+                }
+            
+            temp_threads_path = self.network_path / "threads.json.tmp"
+            threads_path = self.network_path / "threads.json"
+            
+            with open(temp_threads_path, 'w') as f:
+                json.dump(threads_data, f, indent=2)
+            temp_threads_path.replace(threads_path)
+            
+            logger.info("Successfully saved memory network")
+            
+        except Exception as e:
+            logger.error(f"Failed to save network: {e}")
+            # Try to restore from backup
+            self._restore_from_backup()
+            raise SaveError(f"Network save failed: {e}", cause=e)
     
+    def _backup_existing_network(self):
+        """Create backup of existing network files"""
+        import shutil
+        backup_dir = self.network_path / "backup"
+        backup_dir.mkdir(exist_ok=True)
+        
+        for filename in ["memory_graph.gpickle", "indices.json", "threads.json"]:
+            source = self.network_path / filename
+            if source.exists():
+                dest = backup_dir / f"{filename}.bak"
+                shutil.copy2(source, dest)
+    
+    def _restore_from_backup(self):
+        """Restore network from backup files"""
+        import shutil
+        backup_dir = self.network_path / "backup"
+        
+        if backup_dir.exists():
+            for filename in ["memory_graph.gpickle", "indices.json", "threads.json"]:
+                backup = backup_dir / f"{filename}.bak"
+                if backup.exists():
+                    dest = self.network_path / filename
+                    shutil.copy2(backup, dest)
+            logger.info("Restored network from backup")
+    
+    def _try_restore_from_backup(self) -> bool:
+        """Try to restore from backup, return True if successful"""
+        try:
+            self._restore_from_backup()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to restore from backup: {e}")
+            return False
+    
+    def _verify_graph_integrity(self):
+        """Verify the loaded graph is not corrupted"""
+        try:
+            # Basic integrity checks
+            node_count = len(self.memory_graph.nodes())
+            edge_count = len(self.memory_graph.edges())
+            
+            # Check for basic graph properties
+            if node_count == 0:
+                logger.warning("Empty graph loaded")
+                return
+            
+            # Verify node data structure
+            for node_id in list(self.memory_graph.nodes())[:5]:  # Check first 5 nodes
+                node_data = self.memory_graph.nodes[node_id].get('data')
+                if not node_data or not hasattr(node_data, 'memory_id'):
+                    raise CorruptedMemoryError(f"Node {node_id} has invalid data structure")
+            
+            logger.info(f"Graph integrity verified: {node_count} nodes, {edge_count} edges")
+            
+        except Exception as e:
+            logger.error(f"Graph integrity check failed: {e}")
+            raise CorruptedMemoryError("Graph integrity verification failed", cause=e)
+    
+    @retry_with_backoff(
+        max_attempts=3,
+        exceptions=(LoadError,),
+        on_retry=lambda attempt, e: logger.warning(f"Load retry attempt {attempt + 1}: {e}")
+    )
     def _load_network(self):
         """
-        Load the memory network from disk
+        Load the memory network from disk with error handling
 
         This method is THE BRIDGE between ADAM's sessions. Without it, ADAM would forget everything
         when restarted. With it, ADAM's knowledge accumulates over days, weeks, and months.
@@ -1278,43 +1381,30 @@ class MemoryNetworkSystem:
         a one-time cost at startup. The payoff is instant access
         to all historical knowledge.
         """
-        # First, let's understand what we're loading:
-        # 1. The graph structure (nodes = memories, edges = refereneces)
-        # 2. Topic indices (for fast topic-based searches)
-        # 3. Conversation threads (ongoing problem-solving journeys)
-
+        # Initialize error handler
+        self.error_handler = ErrorHandler()
+        
         # STEP 1: LOAD THE MEMORY GRAPH
-        # This is the core structure - without it, we have no memories at all
         graph_file = self.network_path / "memory_graph.gpickle"
         
-        # Check if we have a saved brain to load
         if graph_file.exists():
             try:
-                # NetworkX's read_gpickle deserializes the entire graph structure
-                # This includes all nodes (memories) and edges (references between memories)
-                # Note: In NetworkX 3.x, read_gpickle is deprecated, use pickle directly
                 import pickle
                 with open(graph_file, 'rb') as f:
                     self.memory_graph = pickle.load(f)
 
-                # Give feedback so we know the load succeeded
-                # len(self.memory_graph.nodes) tells us how many memories ADAM has accumulated
                 logger.info(f"Loaded memory graph with {len(self.memory_graph.nodes)} memories")
                 
-                # CRITICAL STEP: Rebuild the biderectional references
-                # Here's why this is necessary:
-                # - The graph edges store "Memory A references Memory B"
-                # - But we also need to know "Memory B is referenced by Memory A"
-                # - The edges only store one direction, so we rebuild the other
-
-                # First, clear all referenced_by lists to start fresh
-                # This prevents duplicates if the lists somehow got corrupted
+                # CRITICAL STEP: Rebuild the bidirectional references
+                # Verify graph integrity first
+                self._verify_graph_integrity()
+                
+                # Clear all referenced_by lists to start fresh
                 for node_id in self.memory_graph.nodes():
                     node_data = self.memory_graph.nodes[node_id]['data']
-                    # Clear and rebuild referenced_by lists
                     node_data.referenced_by = []
                 
-                # Now, traverse every edge and build the reverse references
+                # Rebuild reverse references
                 for source, target in self.memory_graph.edges():
                     # If source references target, then target is referenced by source
                     target_node = self.memory_graph.nodes[target]['data']
@@ -1325,11 +1415,17 @@ class MemoryNetworkSystem:
                 # - What memories it builds upon (references)
                 # - What memories build upon it (referenced_by)
 
+            except (pickle.UnpicklingError, EOFError) as e:
+                logger.error(f"Corrupted graph file: {e}")
+                # Try to restore from backup
+                if self._try_restore_from_backup():
+                    # Retry loading
+                    raise LoadError("Attempting backup restore") from e
+                else:
+                    # Initialize empty graph - ADAM won't remember but can still work
+                    self.memory_graph = nx.DiGraph()
             except Exception as e:
-                # If ANYTHING goes wrong loading the graph, we don't want ADAM to crash
-                # Better to start fresh than to fail completely
-                logger.error(f"Error loading graph: {e}")
-                # Initialize empty graph - ADAM won't remember but can still work
+                logger.error(f"Unexpected error loading graph: {e}")
                 self.memory_graph = nx.DiGraph()
         else:
             # No saved graph exists - this might be ADAM's first run
