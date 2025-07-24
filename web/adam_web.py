@@ -456,20 +456,29 @@ class ADAMWebInterface:
         # Build conversation context from current session
         conversation_context = ""
         if st.session_state.messages:
-            # Get last 3 exchanges for context
-            recent_messages = st.session_state.messages[-6:]  # Last 3 exchanges (user + assistant)
-            if len(recent_messages) > 0:
-                conversation_context = "Current conversation:\n"
-                for msg in recent_messages:
-                    role = "Human" if msg["role"] == "user" else "Assistant"
-                    conversation_context += f"{role}: {msg['content'][:200]}...\n"
-                conversation_context += "\n"
+            # Include ALL messages from current conversation
+            all_messages = st.session_state.messages
+            conversation_context = "Current conversation history:\n"
+            for i, msg in enumerate(all_messages):
+                role = "Human" if msg["role"] == "user" else "Assistant"
+                # Include full content for recent messages, truncate older ones
+                if i >= len(all_messages) - 4:  # Last 2 exchanges
+                    conversation_context += f"{role}: {msg['content']}\n"
+                else:
+                    conversation_context += f"{role}: {msg['content'][:300]}...\n"
+            conversation_context += "\n"
         
         # Search memory for additional context only if enabled
         memory_context = ""
         search_context = None
         
-        if st.session_state.get('use_memory', True):  # Default to True
+        # Skip memory search for pure image analysis queries
+        is_image_analysis = image_data and any(phrase in prompt.lower() for phrase in [
+            "explain this image", "what's in this image", "analyze this image",
+            "what do you see", "describe this image", "look at this"
+        ])
+        
+        if st.session_state.get('use_memory', True) and not is_image_analysis:  # Default to True
             # Use enhanced memory search
             try:
                 # CRITICAL: Add temporal hints to generic queries about past work
@@ -542,13 +551,27 @@ class ADAMWebInterface:
                         raw_memories=raw_memories
                     )
                     
-                    # Build memory context
+                    # Build memory context - be more selective
                     if enhanced_memories:
-                        memory_context = "\n📚 Relevant from your memory:\n"
-                        for memory in enhanced_memories[:3]:  # Top 3 most relevant
-                            formatted = format_memory_for_prompt(memory, search_context)
-                            memory_context += f"\n{formatted}\n"
-                            memory_context += "-" * 50 + "\n"
+                        # Only include memories with high relevance
+                        # Increase threshold when image is present to avoid confusion
+                        relevance_threshold = 0.6 if image_data else 0.4
+                        relevant_memories = [m for m in enhanced_memories if m.get('combined_score', 0) > relevance_threshold]
+                        
+                        if relevant_memories:
+                            # When image is present, clearly separate memory context
+                            if image_data:
+                                memory_context = "\n📚 [PAST MEMORY - NOT FROM CURRENT IMAGE]:\n"
+                                memory_context += "Note: The following is from previous conversations, not from the image you just shared.\n"
+                            else:
+                                memory_context = "\n📚 Relevant from your memory:\n"
+                            
+                            # Limit memories more strictly when image is present
+                            memory_limit = 1 if image_data else 2
+                            for memory in relevant_memories[:memory_limit]:
+                                formatted = format_memory_for_prompt(memory, search_context)
+                                memory_context += f"\n{formatted}\n"
+                                memory_context += "-" * 50 + "\n"
                 
             except Exception as e:
                 logger.error(f"Error in enhanced memory search: {e}")
@@ -588,41 +611,75 @@ MEMORY INSTRUCTIONS:
         
         full_prompt = system_prompt
         
-        # Add memory context FIRST and make it prominent
+        # Add current conversation context FIRST (highest priority)
+        if conversation_context:
+            full_prompt += f"\n\n{'='*60}\nCURRENT CONVERSATION CONTEXT:\n{'='*60}"
+            full_prompt += f"\n{conversation_context}"
+            full_prompt += f"{'='*60}\n"
+        
+        # Add memory context SECOND
         if memory_context:
-            full_prompt += f"\n\n{'='*60}\nMEMORY CONTEXT - THIS IS FROM OUR ACTUAL PREVIOUS CONVERSATIONS:\n{'='*60}"
-            full_prompt += f"\n{memory_context}"
-            full_prompt += f"\n{'='*60}\n"
+            if image_data:
+                # Special handling when image is present
+                full_prompt += f"\n\n{'='*60}\n⚠️ MEMORY CONTEXT - FROM PAST CONVERSATIONS (NOT THE CURRENT IMAGE):\n{'='*60}"
+                full_prompt += f"\n{memory_context}"
+                full_prompt += f"\n{'='*60}\n"
+                full_prompt += "\n🚨 IMPORTANT: You have been provided with an image. Focus on what's IN THE IMAGE, not what's in the memory above. The memory is only for additional context if needed.\n"
+            else:
+                full_prompt += f"\n\n{'='*60}\nMEMORY CONTEXT - THIS IS FROM OUR ACTUAL PREVIOUS CONVERSATIONS:\n{'='*60}"
+                full_prompt += f"\n{memory_context}"
+                full_prompt += f"\n{'='*60}\n"
             
             # Add specific instructions based on search context
-            if search_context and search_context.user_intent == 'recall':
+            if search_context and search_context.user_intent == 'recall' and not image_data:
                 full_prompt += "\n🚨 IMPORTANT: The user is asking you to recall something specific from above. DO NOT make up new code - use the EXACT code from the memory context above!\n"
         elif "we were" in prompt.lower() or "again" in prompt.lower() or "previous" in prompt.lower() or "last" in prompt.lower():
             # User is referencing past conversation but we found no relevant memories
             full_prompt += "\n\n⚠️ Note: I searched my memory but could not find specific details about this topic in our previous conversations. I may not have access to that particular conversation, or it may not have been stored.\n"
         
-        # Add current conversation context
-        if conversation_context:
-            full_prompt += f"\n\nCurrent conversation for context:\n{conversation_context}"
+        # Don't duplicate conversation context - it's already added above
         
         full_prompt += f"\n\nHuman: {prompt}\nAssistant:"
         
         # Get response from LLM
         try:
-            response = await st.session_state.llm_client.complete(
-                prompt=full_prompt,
-                model=st.session_state.selected_model,
-                stream=True,
-                image_data=image_data  # Pass image data to LLM
-            )
-            
-            # Stream response
-            response_placeholder = st.empty()
-            full_response = ""
-            
-            async for chunk in response:
-                full_response += chunk
-                response_placeholder.markdown(full_response)
+            # For automatic routing, we need a non-streaming call first to get routing info
+            if st.session_state.selected_model == "automatic":
+                # Get initial response without streaming to capture routing decision
+                initial_response = await st.session_state.llm_client.complete(
+                    prompt=full_prompt,
+                    model=st.session_state.selected_model,
+                    stream=False,
+                    image_data=image_data,
+                    max_tokens=1500  # Get full response
+                )
+                
+                # Extract routing information
+                actual_model = initial_response.model
+                routing_info = initial_response.raw_response.get('routing_decision') if initial_response.raw_response else None
+                full_response = initial_response.content
+                
+                # Display the response
+                st.markdown(full_response)
+            else:
+                # Regular streaming for non-automatic models
+                actual_model = st.session_state.selected_model
+                routing_info = None
+                
+                response = await st.session_state.llm_client.complete(
+                    prompt=full_prompt,
+                    model=st.session_state.selected_model,
+                    stream=True,
+                    image_data=image_data
+                )
+                
+                # Stream response
+                response_placeholder = st.empty()
+                full_response = ""
+                
+                async for chunk in response:
+                    full_response += chunk
+                    response_placeholder.markdown(full_response)
             
             # Calculate cost (estimate with image handling)
             # Different models have different image pricing
@@ -656,16 +713,23 @@ MEMORY INSTRUCTIONS:
                 cost = (input_tokens + output_tokens) / 1000 * base_cost_per_1k
             st.session_state.total_cost += cost
             
-            # Record in conversation
+            # actual_model and routing_info are already set above
+            
+            context = {
+                "model": actual_model,
+                "requested_model": st.session_state.selected_model,
+                "cost": cost,
+                "has_image": image_data is not None
+            }
+            
+            if routing_info:
+                context["routing_decision"] = routing_info
+            
             st.session_state.conversation.record_exchange(
                 query=prompt,
                 response=full_response,
                 topics=["general"],
-                context={
-                    "model": st.session_state.selected_model,
-                    "cost": cost,
-                    "has_image": image_data is not None
-                }
+                context=context
             )
             
             # Store in memory if valuable
@@ -682,7 +746,8 @@ MEMORY INSTRUCTIONS:
             if st.session_state.get('auto_save', True):
                 self.save_current_session()
             
-            return full_response, cost
+            # Return response with metadata
+            return full_response, cost, {"model": actual_model, "routing_decision": routing_info}
             
         except Exception as e:
             logger.error(f"Error in process_message: {str(e)}", exc_info=True)
@@ -701,6 +766,7 @@ MEMORY INSTRUCTIONS:
         with col2:
             # Model selector at the top
             model_info = {
+                "automatic": "🤖 Smart routing (recommended)",
                 "grok-4-reasoning": "Deep reasoning 🖼️",
                 "grok-4": "Most capable 🖼️",
                 "grok-3-mini-high": "Fast & efficient",
@@ -710,29 +776,55 @@ MEMORY INSTRUCTIONS:
                 "gpt-3.5-turbo": "Fast & cheap"
             }
             
+            # Ensure automatic is first in the list
+            available_models = st.session_state.available_models.copy()
+            if "automatic" in available_models:
+                available_models.remove("automatic")
+                available_models.insert(0, "automatic")
+            
             # Add vision indicator to model names in dropdown
             model_display_names = []
-            for model in st.session_state.available_models:
-                config = st.session_state.llm_config.get_model_config(model)
-                if config and config.supports_vision:
-                    model_display_names.append(f"{model} 🖼️")
+            for model in available_models:
+                if model == "automatic":
+                    model_display_names.append("🤖 Automatic (Smart Routing)")
                 else:
-                    model_display_names.append(model)
+                    config = st.session_state.llm_config.get_model_config(model)
+                    if config and config.supports_vision:
+                        model_display_names.append(f"{model} 🖼️")
+                    else:
+                        model_display_names.append(model)
+            
+            # Handle model selection with automatic as default
+            current_model = st.session_state.get('selected_model', 'automatic')
+            
+            # Find current model in display names
+            try:
+                if current_model == "automatic":
+                    current_index = 0  # automatic is first
+                else:
+                    # Find the index of current model
+                    for i, model in enumerate(available_models):
+                        if model == current_model:
+                            current_index = i
+                            break
+                    else:
+                        current_index = 0  # Default to automatic
+            except:
+                current_index = 0
             
             selected_display = st.selectbox(
                 "Model",
                 options=model_display_names,
-                index=model_display_names.index(
-                    f"{st.session_state.get('selected_model', st.session_state.available_models[0])} 🖼️" 
-                    if st.session_state.llm_config.get_model_config(st.session_state.get('selected_model', st.session_state.available_models[0])).supports_vision
-                    else st.session_state.get('selected_model', st.session_state.available_models[0])
-                ),
+                index=current_index,
                 key="top_model_selector",
                 label_visibility="collapsed"
             )
             
-            # Extract actual model name (remove vision indicator)
-            selected_model = selected_display.replace(" 🖼️", "")
+            # Extract actual model name
+            if selected_display.startswith("🤖 Automatic"):
+                selected_model = "automatic"
+            else:
+                selected_model = selected_display.replace(" 🖼️", "")
             st.session_state.selected_model = selected_model
             st.caption(model_info.get(selected_model, ""))
         
@@ -758,25 +850,43 @@ MEMORY INSTRUCTIONS:
                 # Show metadata for assistant messages
                 if message["role"] == "assistant" and "metadata" in message:
                     metadata = message.get("metadata", {})
-                    if metadata.get("cost"):
-                        st.caption(f"Model: {metadata.get('model', 'unknown')} | Cost: ${metadata.get('cost', 0):.4f}")
+                    model_used = metadata.get('model', 'unknown')
+                    cost = metadata.get('cost', 0)
+                    
+                    # Show routing info if automatic model was used
+                    routing_info = metadata.get('routing_decision')
+                    if routing_info:
+                        st.caption(f"🤖 Auto-selected: {routing_info['selected_model']} (complexity: {routing_info['complexity']}) | Cost: ${cost:.4f}")
+                        
+                        # Show routing reasoning in expander
+                        with st.expander("Why this model?", expanded=False):
+                            st.write(f"**Complexity:** {routing_info['complexity']}")
+                            st.write(f"**Confidence:** {routing_info['confidence']:.1%}")
+                            if routing_info.get('indicators'):
+                                st.write(f"**Indicators:** {', '.join(routing_info['indicators'])}")
+                            if routing_info.get('reasoning'):
+                                st.write(f"**Reasoning:** {', '.join(routing_info['reasoning'])}")
+                    elif cost > 0:
+                        st.caption(f"Model: {model_used} | Cost: ${cost:.4f}")
         
         # Chat input
         prompt = st.chat_input("Message ADAM...")
         
-        # File uploader for images - only show if current model supports vision
+        # File uploader for images - show if current model supports vision or is automatic
         model_config = st.session_state.llm_config.get_model_config(st.session_state.selected_model)
-        if model_config and model_config.supports_vision:
+        supports_vision = (model_config and model_config.supports_vision) or st.session_state.selected_model == "automatic"
+        
+        if supports_vision:
             uploaded_file = st.file_uploader(
                 "Upload an image (optional) 🖼️",
                 type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
                 key="image_upload",
-                help=f"{st.session_state.selected_model} supports image analysis"
+                help=f"{st.session_state.selected_model} supports image analysis" if st.session_state.selected_model != "automatic" else "Automatic mode will select a vision model for image analysis"
             )
         else:
             uploaded_file = None
             if st.session_state.get('image_upload'):
-                st.info(f"ℹ️ {st.session_state.selected_model} doesn't support images. Switch to a vision model (marked with 🖼️) to analyze images.")
+                st.info(f"ℹ️ {st.session_state.selected_model} doesn't support images. Switch to a vision model (marked with 🖼️) or use Automatic mode.")
         
         if prompt:
             # Get image data if uploaded
@@ -800,20 +910,31 @@ MEMORY INSTRUCTIONS:
             
             # Process with ADAM
             with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    response, cost = asyncio.run(
+                # Show different spinner text for automatic mode
+                spinner_text = "Thinking..." if st.session_state.selected_model != "automatic" else "Selecting best model and thinking..."
+                
+                with st.spinner(spinner_text):
+                    result = asyncio.run(
                         self.process_message(prompt, image_data)
                     )
                     
+                    # Handle both old and new return formats
+                    if isinstance(result, tuple) and len(result) == 3:
+                        response, cost, metadata = result
+                    else:
+                        response, cost = result
+                        metadata = {"model": st.session_state.selected_model}
+                    
                     if response:
-                        # Add assistant message
+                        # Add assistant message with full metadata
                         st.session_state.messages.append({
                             "role": "assistant",
                             "content": response,
                             "timestamp": datetime.now(),
                             "metadata": {
-                                "model": st.session_state.selected_model,
-                                "cost": cost
+                                "model": metadata.get("model", st.session_state.selected_model),
+                                "cost": cost,
+                                "routing_decision": metadata.get("routing_decision")
                             }
                         })
             
