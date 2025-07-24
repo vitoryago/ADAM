@@ -52,6 +52,25 @@ class LLMConfig:
         
         # Model configurations
         self.models = {
+            # Virtual automatic model for intelligent routing
+            "automatic": ModelConfig(
+                name="automatic",
+                provider=ModelProvider.GROK,  # Placeholder
+                api_name="automatic",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION,
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA
+                ],
+                supports_reasoning=True,
+                reasoning_param=None,
+                max_tokens=8192,
+                supports_streaming=True,
+                supports_vision=True,  # Can route to vision models
+                cost_per_1k_tokens=0.002  # Average cost estimate
+            ),
             "grok-4-reasoning": ModelConfig(
                 name="grok-4-reasoning",
                 provider=ModelProvider.GROK,

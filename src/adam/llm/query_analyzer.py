@@ -22,7 +22,9 @@ class QueryAnalyzer:
                 'write code', 'write a', 'create a function', 'implement', 'develop',
                 'build a script', 'code for', 'program', 'class', 'algorithm',
                 'refactor', 'optimize code', 'debug', 'fix this code',
-                'write a function', 'write a class', 'write a script'
+                'write a function', 'write a class', 'write a script',
+                'python function', 'async/await', 'rate limiting', 'error handling',
+                'queue of tasks', 'process a queue'
             ],
             'deep_analysis': [
                 'analyze deeply', 'explain in detail', 'comprehensive analysis',
@@ -32,7 +34,10 @@ class QueryAnalyzer:
             'complex_reasoning': [
                 'reason about', 'think through', 'step by step', 'solve this problem',
                 'design a solution', 'architect', 'plan for', 'strategy for',
-                'compare and contrast', 'pros and cons', 'trade-offs'
+                'pros and cons', 'trade-offs',  # Removed 'compare and contrast'  
+                'distributed system', 'system architecture', 'scalability',
+                '1M+ users', 'concurrent users', 'optimization for', 'performance tuning',
+                'suggest optimizations', 'complex analysis', 'comprehensive analysis'
             ],
             'mathematical': [
                 'calculate', 'derive', 'prove', 'mathematical', 'equation',
@@ -44,11 +49,15 @@ class QueryAnalyzer:
         self.medium_indicators = {
             'general_analysis': [
                 'analyze', 'explain', 'describe', 'summarize', 'review',
-                'evaluate', 'assess', 'investigate', 'examine'
+                'evaluate', 'assess', 'investigate', 'examine',
+                'explain in detail', 'detailed explanation', 'how does',
+                'neural networks', 'machine learning', 'deep learning',
+                'what is', 'what are', 'difference between', 'compare'
             ],
             'queries': [
                 'what is', 'how to', 'when should', 'best practices',
-                'recommendations', 'suggestions', 'tips for', 'guide'
+                'recommendations', 'suggestions', 'tips for', 'guide',
+                'explain how', 'how does this work', 'detailed explanation'
             ],
             'data_tasks': [
                 'query optimization', 'performance', 'bigquery', 'sql',
@@ -60,15 +69,19 @@ class QueryAnalyzer:
         self.low_indicators = {
             'memory_tasks': [
                 'recall', 'remember', 'what did we', 'previous conversation',
-                'earlier discussion', 'memory recap', 'history', 'past'
+                'earlier discussion', 'memory recap', 'history', 'past',
+                'what were those', 'bring the', 'list those', 'show me those'
             ],
             'simple_questions': [
                 'define', 'what does', 'list', 'name', 'yes or no',
-                'true or false', 'quick answer', 'brief', 'short'
+                'true or false', 'quick answer', 'brief', 'short',
+                'ok adam', 'got it', 'i see', 'thanks', 'explain this image',
+                'what\'s in this image', 'can you explain', 'help me understand'
             ],
             'basic_tasks': [
                 'count', 'simple', 'basic', 'straightforward', 'easy',
-                'quick check', 'status', 'current', 'latest'
+                'quick check', 'status', 'current', 'latest',
+                'difference between', 'what is the', 'what are the'
             ]
         }
         
@@ -120,10 +133,13 @@ class QueryAnalyzer:
                     low_score += 1
                     analysis['indicators_found'].append(f"low:{category}:{keyword}")
         
-        # Length analysis
+        # Length analysis with reduced weighting - length alone doesn't mean complexity
         if analysis['length'] > self.length_thresholds['very_long']:
-            complex_score += 1
-            analysis['reasoning'].append("Very long query suggests complex requirements")
+            complex_score += 1  # Reduced weight - was 2
+            analysis['reasoning'].append("Very long query")
+        elif analysis['length'] > self.length_thresholds['long']:
+            medium_score += 1  # Changed to medium score instead of complex
+            analysis['reasoning'].append("Long query")
         elif analysis['length'] < self.length_thresholds['short']:
             low_score += 1
             analysis['reasoning'].append("Short query suggests simple task")
@@ -133,16 +149,31 @@ class QueryAnalyzer:
             complex_score += 3
             analysis['reasoning'].append("Query contains code blocks")
         
-        # Determine complexity
-        if complex_score >= 3:
+        # Technical terms that suggest complexity
+        technical_terms = [
+            'distributed', 'concurrent', 'async', 'await', 'architecture',
+            'scalability', 'optimization', 'performance', 'algorithm',
+            'microservices', 'api design', 'system design'
+        ]
+        tech_count = sum(1 for term in technical_terms if term in query_lower)
+        if tech_count >= 2:
+            complex_score += 2
+            analysis['reasoning'].append(f"Multiple technical terms detected ({tech_count})")
+        elif tech_count >= 1:
+            complex_score += 1
+            analysis['reasoning'].append("Technical terminology detected")
+        
+        # Determine complexity with VERY conservative logic
+        # HIGH complexity should be VERY rare - only for explicit code generation
+        if complex_score >= 6:  # Much higher threshold
             complexity = QueryComplexity.HIGH
-            analysis['confidence'] = min(complex_score / 5, 1.0)
-        elif medium_score >= 2 or (complex_score >= 1 and medium_score >= 1):
+            analysis['confidence'] = min(complex_score / 8, 1.0)
+        elif complex_score >= 3 or medium_score >= 4:  # Higher thresholds
             complexity = QueryComplexity.MEDIUM
-            analysis['confidence'] = min(medium_score / 3, 1.0)
+            analysis['confidence'] = min((medium_score + complex_score) / 6, 1.0)
         else:
             complexity = QueryComplexity.LOW
-            analysis['confidence'] = min((low_score + 1) / 3, 1.0)
+            analysis['confidence'] = min((low_score + 2) / 4, 1.0)
         
         analysis['complexity'] = complexity.value
         analysis['scores'] = {
@@ -165,6 +196,9 @@ class QueryAnalyzer:
             r'\{[\s\S]*\}',             # Code blocks with braces
             r'if\s*\(.*\)\s*\{',        # If statements
             r'for\s*\(.*\)\s*\{',       # For loops
+            r'async\s+def',             # Async functions
+            r'await\s+\w+',             # Await calls
+            r'try:\s*\n.*except',       # Error handling
         ]
         
         for pattern in code_patterns:
@@ -183,11 +217,11 @@ class QueryAnalyzer:
         Returns:
             Recommended model name
         """
-        # Model preferences by complexity
+        # Model preferences by complexity - strongly favor grok-3-mini-high
         model_preferences = {
-            QueryComplexity.HIGH: ['grok-4-reasoning', 'grok-4', 'o4-mini-high'],
-            QueryComplexity.MEDIUM: ['grok-4', 'grok-4-reasoning', 'gpt-4'],
-            QueryComplexity.LOW: ['grok-3-mini-high', 'gpt-3.5-turbo', 'grok-4']
+            QueryComplexity.HIGH: ['grok-4-reasoning', 'o4-mini-high', 'grok-4'],  # Only for true complexity
+            QueryComplexity.MEDIUM: ['grok-3-mini-high', 'grok-4', 'gpt-4'],  # Mini first!
+            QueryComplexity.LOW: ['grok-3-mini-high', 'gpt-3.5-turbo', 'grok-4']  # Always mini for simple
         }
         
         # Find first available model from preferences
