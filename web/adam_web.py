@@ -769,6 +769,7 @@ MEMORY INSTRUCTIONS:
                 "automatic": "🤖 Smart routing (recommended)",
                 "grok-4-reasoning": "Deep reasoning 🖼️",
                 "grok-4": "Most capable 🖼️",
+                "grok-3-mini-fast": "⚡ Super fast",
                 "grok-3-mini-high": "Fast & efficient",
                 "grok-2-vision-1212": "Vision optimized 🖼️",
                 "o4-mini-high": "High reasoning",

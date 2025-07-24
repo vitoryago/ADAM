@@ -217,11 +217,11 @@ class QueryAnalyzer:
         Returns:
             Recommended model name
         """
-        # Model preferences by complexity - strongly favor grok-3-mini-high
+        # Model preferences by complexity - prioritize grok-3-mini-fast for speed
         model_preferences = {
             QueryComplexity.HIGH: ['grok-4-reasoning', 'o4-mini-high', 'grok-4'],  # Only for true complexity
-            QueryComplexity.MEDIUM: ['grok-3-mini-high', 'grok-4', 'gpt-4'],  # Mini first!
-            QueryComplexity.LOW: ['grok-3-mini-high', 'gpt-3.5-turbo', 'grok-4']  # Always mini for simple
+            QueryComplexity.MEDIUM: ['grok-3-mini-fast', 'grok-3-mini-high', 'grok-4'],  # Fast first!
+            QueryComplexity.LOW: ['grok-3-mini-fast', 'grok-3-mini-high', 'gpt-3.5-turbo']  # Always fast for simple
         }
         
         # Find first available model from preferences

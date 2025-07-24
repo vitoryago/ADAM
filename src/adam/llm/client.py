@@ -202,10 +202,19 @@ class UnifiedLLMClient:
         
         # Add reasoning effort for models that support it
         if reasoning_effort and model_config.reasoning_param:
-            # Map our unified effort levels to Grok's
-            # Grok supports: low, medium, high
-            effort_map = {"low": "low", "medium": "medium", "high": "high"}
-            chat_params[model_config.reasoning_param] = effort_map.get(reasoning_effort, "medium")
+            # Check if this is grok-4 (which doesn't support reasoning_effort)
+            if model_config.api_name == "grok-4":
+                logger.warning(f"grok-4 doesn't support reasoning_effort, ignoring parameter")
+                # Don't add reasoning_effort to chat_params
+            else:
+                # Map our unified effort levels to model-specific values
+                # grok-3-mini and grok-3-mini-fast only support: low, high (no medium)
+                if "grok-3-mini" in model_config.api_name:
+                    effort_map = {"low": "low", "medium": "high", "high": "high"}
+                else:
+                    # grok-4-reasoning supports: low, medium, high
+                    effort_map = {"low": "low", "medium": "medium", "high": "high"}
+                chat_params[model_config.reasoning_param] = effort_map.get(reasoning_effort, "high")
         
         chat = client.chat.create(**chat_params)
         
