@@ -1283,6 +1283,177 @@ Welcome to the journey of mastering AI systems through ADAM!
 
 ---
 
+## 15. ADAM v2.0 - Project-Based Architecture Development
+
+### What You'll Learn
+Building a complete project-based memory system from scratch teaches modern web development, async programming, and production architecture.
+
+### Key Files to Study
+- `src/adam_v2/` - Complete v2.0 implementation
+- `src/adam_v2/models.py` - SQLAlchemy async models
+- `src/adam_v2/routers/` - FastAPI endpoints
+- `src/adam_v2/tests/` - Comprehensive test suite
+- `docs/architecture/project_based_design.md` - Architecture decisions
+
+### What We Built (January 2025)
+
+#### Phase 1: Foundation
+1. **Async Database Layer**
+   - SQLAlchemy 2.0 with async support
+   - Proper session management
+   - Connection lifecycle handling
+
+2. **Project Management System**
+   - Full CRUD operations
+   - Memory isolation per project
+   - Archive functionality
+   - Statistics endpoints
+
+3. **Conversation Management**
+   - Nested within projects
+   - Pin/unpin functionality
+   - Cascade deletion
+   - Cost tracking
+
+4. **Test-Driven Development**
+   - 100% test coverage goal
+   - Unit and integration tests
+   - Async test support
+   - Fixtures and mocks
+
+### Key Technical Challenges Solved
+
+#### 1. Async Context Issues
+```python
+# Problem: SQLAlchemy relationships fail in async
+@property
+def conversation_count(self):
+    return len(self.conversations)  # MissingGreenlet error!
+
+# Solution: Explicit queries in endpoints
+conv_count = await db.execute(
+    select(func.count(Conversation.id))
+    .where(Conversation.project_id == project.id)
+)
+```
+
+#### 2. Response Model Optimization
+```python
+# Calculate fields before response
+response = ProjectResponse.model_validate(project)
+response.conversation_count = calculated_count
+response.memory_count = memory_count
+return response
+```
+
+#### 3. Test Infrastructure
+```python
+# Async fixtures for testing
+@pytest.fixture
+async def db_session(test_db) -> AsyncSession:
+    async with test_db() as session:
+        yield session
+```
+
+### Questions You Should Be Able to Answer
+
+1. **Why use async SQLAlchemy?**
+   - Non-blocking I/O for better performance
+   - Handle more concurrent requests
+   - Modern Python best practices
+
+2. **How do you test async code?**
+   - pytest-asyncio for async test support
+   - Proper fixture scoping
+   - Mock vs real database tradeoffs
+
+3. **What's the benefit of project isolation?**
+   - Complete privacy between projects
+   - Faster searches (smaller memory pools)
+   - Better relevance (domain-specific context)
+   - Easier scaling and maintenance
+
+### Architecture Decisions
+
+1. **FastAPI over Flask/Django**
+   - Native async support
+   - Automatic API documentation
+   - Type safety with Pydantic
+   - Modern Python features
+
+2. **HTMX over React/Vue**
+   - Server-side rendering
+   - No JavaScript build complexity
+   - Progressive enhancement
+   - Better SEO and accessibility
+
+3. **SQLite for Development**
+   - Zero configuration
+   - File-based (easy backup)
+   - Sufficient for single-user
+   - Easy migration to PostgreSQL
+
+### Development Timeline
+
+1. **Day 1**: Project structure, test setup
+2. **Day 2**: Database layer, models
+3. **Day 3**: Project management endpoints
+4. **Day 4**: Conversation management
+5. **Next**: Message management, LLM integration
+
+### Skills You'll Master
+
+1. **Modern Python Web Development**
+   - FastAPI framework
+   - Async/await patterns
+   - Dependency injection
+   - Type hints throughout
+
+2. **Database Design**
+   - Relational modeling
+   - Foreign key constraints
+   - Cascade operations
+   - Query optimization
+
+3. **API Design**
+   - RESTful principles
+   - Nested resources
+   - Error handling
+   - Status codes
+
+4. **Testing Strategies**
+   - Unit vs integration tests
+   - Test fixtures
+   - Mock objects
+   - Coverage analysis
+
+### Next Steps for v2.0
+
+1. **Message Management**
+   - Streaming responses
+   - LLM integration
+   - Cost tracking
+   - Token counting
+
+2. **Memory Integration**
+   - Project-based ChromaDB collections
+   - Isolated vector spaces
+   - Memory migration tools
+
+3. **Web Interface**
+   - HTMX components
+   - Real-time updates
+   - Drag-and-drop organization
+   - Export functionality
+
+4. **Production Features**
+   - Authentication system
+   - Rate limiting
+   - Monitoring/metrics
+   - Backup/restore
+
+---
+
 ## Summary: Complete Memory Retrieval Solution
 
 Today's session resulted in a comprehensive solution for memory retrieval issues where recent conversations were being drowned out by older memories.
@@ -1372,4 +1543,74 @@ This solution ensures that when users ask generic questions about past work, ADA
 
 ---
 
+## Your Learning Journey with ADAM
+
+### Where to Start Based on Your Interests
+
+#### If You're Interested in AI/ML Engineering
+1. Start with Memory Systems (Section 1)
+2. Deep dive into RAG (Section 2)
+3. Study Vision/Multimodal AI (Section 8)
+4. Master Intelligent Routing (Section 7)
+5. Implement Memory Lifecycle (Section 13)
+
+#### If You're Interested in Backend Development
+1. Start with ADAM v2.0 Development (Section 15)
+2. Study System Design (Section 11)
+3. Learn Production Engineering (Section 14)
+4. Master SQL Tools (Section 9)
+5. Build Web/CLI Interfaces (Section 10)
+
+#### If You're Interested in Full-Stack
+1. Begin with Web Interfaces (Section 10)
+2. Study ADAM v2.0 Architecture (Section 15)
+3. Learn Conversation Systems (Section 3)
+4. Implement Real-time Features
+5. Build End-to-End Features
+
+### Practical Learning Path
+
+#### Week 1-2: Foundation
+- Set up ADAM locally
+- Run all examples
+- Read through one complete module
+- Write your first test
+
+#### Week 3-4: Deep Dive
+- Pick one system to study deeply
+- Implement a small feature
+- Fix a bug or improve performance
+- Write documentation
+
+#### Week 5-6: Integration
+- Build something that uses multiple systems
+- Create a demo for your use case
+- Share what you've learned
+- Contribute back
+
+### Remember
+
+1. **Every Bug is a Teacher**: Debugging deepens understanding
+2. **Build Small, Learn Big**: Start with tiny features
+3. **Tests are Your Friend**: They ensure your understanding is correct
+4. **Documentation is Learning**: Writing about code solidifies knowledge
+5. **Community Accelerates Growth**: Share, ask, and contribute
+
+### Final Advice
+
+> "The best way to learn ADAM is to use ADAM to help you learn ADAM."
+
+Use ADAM to:
+- Explain code sections you don't understand
+- Generate examples for concepts
+- Debug issues you encounter
+- Plan your learning path
+- Track your progress
+
+ADAM is not just a project to study—it's a learning companion that grows with you.
+
+---
+
 *This guide is a living document. As ADAM evolves, so will this guide. Check back regularly for updates and new sections.*
+
+*Last updated: January 2025 - Added ADAM v2.0 development section*
