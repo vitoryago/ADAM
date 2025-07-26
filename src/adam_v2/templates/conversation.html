@@ -1,0 +1,185 @@
+<!-- Conversation View Component -->
+<div class="flex h-full">
+    <!-- Conversations List -->
+    <div class="w-64 bg-gray-100 border-r border-gray-200 p-4">
+        <div class="mb-4">
+            <h2 class="text-lg font-semibold text-gray-800">{{ project.name }}</h2>
+            <button 
+                hx-post="/api/projects/{{ project.id }}/conversations"
+                hx-target="#conversations-list"
+                hx-swap="beforeend"
+                class="mt-2 w-full bg-white hover:bg-gray-50 text-gray-700 py-2 px-3 rounded border border-gray-300 text-sm transition"
+            >
+                <i class="fas fa-plus mr-1"></i> New Conversation
+            </button>
+        </div>
+        
+        <!-- Conversations List -->
+        <div id="conversations-list" class="space-y-1">
+            {% for conv in conversations %}
+            <div 
+                hx-get="/api/conversations/{{ conv.id }}"
+                hx-target="#chat-messages"
+                hx-push-url="true"
+                class="cursor-pointer hover:bg-white p-3 rounded transition {% if conv.id == current_conversation_id %}bg-white shadow{% endif %}"
+            >
+                <div class="flex items-center justify-between">
+                    <span class="font-medium text-sm text-gray-800 truncate">{{ conv.title }}</span>
+                    <button 
+                        hx-get="/api/conversations/{{ conv.id }}/rename"
+                        hx-target="#modal"
+                        hx-stop-propagation="true"
+                        class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600"
+                    >
+                        <i class="fas fa-edit text-xs"></i>
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">
+                    {{ conv.message_count }} messages · ${{ "%.4f"|format(conv.total_cost) }}
+                </p>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Project Stats -->
+        <div class="mt-6 pt-6 border-t border-gray-200">
+            <h3 class="text-sm font-semibold text-gray-600 mb-2">Project Memory</h3>
+            <div class="text-xs text-gray-500 space-y-1">
+                <div class="flex justify-between">
+                    <span>Total Memories:</span>
+                    <span class="font-medium">{{ project.memory_count }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>Total Cost:</span>
+                    <span class="font-medium">${{ "%.2f"|format(project_total_cost) }}</span>
+                </div>
+            </div>
+            <button 
+                hx-get="/api/projects/{{ project.id }}/memories"
+                hx-target="#modal"
+                class="mt-3 text-xs text-blue-600 hover:text-blue-800"
+            >
+                <i class="fas fa-brain mr-1"></i> Browse Memories
+            </button>
+        </div>
+    </div>
+    
+    <!-- Chat Area -->
+    <div class="flex-1 flex flex-col">
+        <!-- Chat Header -->
+        <div class="bg-white border-b border-gray-200 px-6 py-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-gray-800">{{ current_conversation.title }}</h3>
+                <div class="flex items-center space-x-4">
+                    <!-- Model Selector -->
+                    <select id="model-select" class="text-sm border border-gray-300 rounded px-3 py-1">
+                        <option value="automatic">🤖 Automatic (Smart Routing)</option>
+                        <option value="grok-3-mini-fast">⚡ Grok-3 Mini (Fast)</option>
+                        <option value="grok-4-reasoning">🧠 Grok-4 (Reasoning)</option>
+                        <option value="claude-opus-4">📝 Claude Opus 4 (Coding)</option>
+                    </select>
+                    
+                    <!-- Memory Toggle -->
+                    <label class="flex items-center text-sm">
+                        <input type="checkbox" id="use-memory" checked class="mr-2">
+                        <span>Use Project Memory</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Messages -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-4">
+            {% for message in messages %}
+            <div class="flex {% if message.role == 'user' %}justify-end{% endif %}">
+                <div class="max-w-3xl {% if message.role == 'user' %}bg-blue-600 text-white{% else %}bg-gray-100{% endif %} rounded-lg px-4 py-2">
+                    <div class="prose prose-sm {% if message.role == 'user' %}prose-invert{% endif %}">
+                        {{ message.content|safe }}
+                    </div>
+                    {% if message.role == 'assistant' %}
+                    <div class="mt-2 text-xs text-gray-500">
+                        {{ message.model }} · {{ message.tokens_used }} tokens · ${{ "%.4f"|format(message.cost) }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Input Area -->
+        <div class="bg-white border-t border-gray-200 p-4">
+            <form 
+                hx-post="/api/conversations/{{ current_conversation.id }}/messages"
+                hx-target="#chat-messages"
+                hx-swap="beforeend"
+                hx-indicator="#typing-indicator"
+            >
+                <div class="flex space-x-4">
+                    <textarea 
+                        name="content"
+                        rows="3"
+                        class="flex-1 border border-gray-300 rounded-lg px-4 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Type your message..."
+                        required
+                    ></textarea>
+                    <div class="flex flex-col space-y-2">
+                        <button 
+                            type="submit"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"
+                        >
+                            <i class="fas fa-paper-plane mr-2"></i> Send
+                        </button>
+                        <label class="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+                            <input type="file" accept="image/*" class="hidden" name="image">
+                            <i class="fas fa-image mr-1"></i> Attach Image
+                        </label>
+                    </div>
+                </div>
+            </form>
+            
+            <!-- Typing Indicator -->
+            <div id="typing-indicator" class="htmx-indicator mt-2">
+                <div class="flex items-center text-sm text-gray-500">
+                    <div class="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <span class="ml-2">ADAM is thinking...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Typing dots animation */
+.typing-dots span {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #6b7280;
+    margin: 0 2px;
+    animation: typing 1.4s infinite;
+}
+
+.typing-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typing {
+    0%, 80%, 100% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+    40% {
+        transform: scale(1.3);
+        opacity: 1;
+    }
+}
+</style>
