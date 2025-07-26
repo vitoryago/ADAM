@@ -9,8 +9,18 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
 
-from adam.memory import ADAMMemoryAdvanced
-from adam.advanced_rag import AdvancedRAGSystem
+# Import from parent adam module when available
+try:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from adam.memory import ADAMMemoryAdvanced
+    from adam.advanced_rag import AdvancedRAGSystem
+    ADAM_AVAILABLE = True
+except ImportError:
+    # For testing without full ADAM installation
+    ADAM_AVAILABLE = False
+    ADAMMemoryAdvanced = object
 
 logger = logging.getLogger(__name__)
 
@@ -127,21 +137,28 @@ class ProjectMemoryManager:
         }
 
 
-class ProjectAwareMemorySystem(ADAMMemoryAdvanced):
-    """
-    Extended memory system that respects project boundaries
-    Inherits from ADAM's advanced memory but adds project isolation
-    """
-    
-    def __init__(self, project_id: str):
-        self.project_id = project_id
-        self.project_memory_manager = ProjectMemoryManager(project_id)
+if ADAM_AVAILABLE:
+    class ProjectAwareMemorySystem(ADAMMemoryAdvanced):
+        """
+        Extended memory system that respects project boundaries
+        Inherits from ADAM's advanced memory but adds project isolation
+        """
         
-        # Initialize parent class with project-specific directory
-        super().__init__(persist_directory=f"./adam_memory_projects/{project_id}")
-        
-        # Override the collection to use project-specific one
-        self.collection = self.project_memory_manager.collection
+        def __init__(self, project_id: str):
+            self.project_id = project_id
+            self.project_memory_manager = ProjectMemoryManager(project_id)
+            
+            # Initialize parent class with project-specific directory
+            super().__init__(persist_directory=f"./adam_memory_projects/{project_id}")
+            
+            # Override the collection to use project-specific one
+            self.collection = self.project_memory_manager.collection
+else:
+    # Stub for testing
+    class ProjectAwareMemorySystem:
+        def __init__(self, project_id: str):
+            self.project_id = project_id
+            self.project_memory_manager = ProjectMemoryManager(project_id)
     
     def remember_if_worthy(
         self,

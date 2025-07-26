@@ -1,54 +1,95 @@
-#!/usr/bin/env python3
 """
-ADAM v2.0 - Project-Based Memory System
-Main FastAPI application
+Main FastAPI application for ADAM v2.0
 """
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import uvicorn
+from fastapi.responses import HTMLResponse
+from contextlib import asynccontextmanager
+import logging
+import os
 from pathlib import Path
-import sys
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Import database
+from database import init_db, close_db
 
-from adam_v2.database import init_db
-from adam_v2.routers import projects, conversations, messages
-from adam_v2.models import Project, Conversation
+# Import routers
+from routers import projects, conversations
 
-app = FastAPI(title="ADAM v2.0", version="2.0.0")
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Starting ADAM v2.0...")
+    # Initialize database
+    await init_db()
+    logger.info("Database initialized")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down ADAM v2.0...")
+    # Cleanup resources
+    await close_db()
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="ADAM v2.0",
+    description="Project-Based AI Assistant with Memory Isolation",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+# Create directories if they don't exist
+static_dir = Path("static")
+static_dir.mkdir(exist_ok=True)
+templates_dir = Path("templates")
+templates_dir.mkdir(exist_ok=True)
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Templates
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=str(templates_dir))
 
 # Include routers
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
-app.include_router(conversations.router, prefix="/api/conversations", tags=["conversations"])
-app.include_router(messages.router, prefix="/api/messages", tags=["messages"])
+app.include_router(conversations.router, prefix="/api", tags=["conversations"])
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup"""
-    init_db()
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Main page with HTMX interface"""
+    """Main dashboard page"""
     return templates.TemplateResponse("index.html", {"request": request})
+
 
 @app.get("/project/{project_id}", response_class=HTMLResponse)
 async def project_view(request: Request, project_id: str):
-    """Project view page"""
-    return templates.TemplateResponse("project.html", {
+    """Project conversation view"""
+    return templates.TemplateResponse("conversation.html", {
         "request": request,
         "project_id": project_id
     })
 
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "version": "2.0.0"}
+
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
