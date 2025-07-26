@@ -1,14 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ADAM v2.0 - Project-Based AI Assistant</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-</head>
-<body class="bg-gray-50">
+{% extends "base.html" %}
+
+{% block title %}ADAM v2.0 - Project-Based AI Assistant{% endblock %}
+
+{% block content %}
     <div class="flex h-screen">
         <!-- Sidebar -->
         <div class="w-64 bg-gray-900 text-white p-4 overflow-y-auto">
@@ -104,11 +98,6 @@
     </template>
     
     <script>
-        // Enhanced HTMX configuration
-        document.body.addEventListener('htmx:configRequest', (event) => {
-            event.detail.headers['X-Requested-With'] = 'XMLHttpRequest';
-        });
-        
         // Handle keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             // Cmd/Ctrl + K for quick project search
@@ -119,5 +108,4 @@
             }
         });
     </script>
-</body>
-</html>
+{% endblock %}
