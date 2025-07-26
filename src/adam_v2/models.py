@@ -43,14 +43,8 @@ class Project(Base):
     # Relationships
     conversations = relationship("Conversation", back_populates="project", cascade="all, delete-orphan")
     
-    @property
-    def conversation_count(self):
-        return len(self.conversations) if self.conversations else 0
-    
-    @property
-    def memory_count(self):
-        # This will be calculated from ChromaDB
-        return 0
+    # Note: conversation_count and memory_count are calculated separately
+    # to avoid async context issues
 
 
 class Conversation(Base):
@@ -73,15 +67,8 @@ class Conversation(Base):
     project = relationship("Project", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
     
-    @property
-    def message_count(self):
-        return len(self.messages) if self.messages else 0
-    
-    @property
-    def total_cost(self):
-        if not self.messages:
-            return 0.0
-        return sum(msg.cost or 0 for msg in self.messages)
+    # Note: message_count and total_cost are calculated separately
+    # to avoid async context issues
 
 
 class Message(Base):

@@ -45,7 +45,18 @@ async def create_project(
         logger.error(f"Failed to create memory collection: {e}")
         # Don't fail the request, project can work without memory initially
     
-    return project
+    # Calculate conversation count
+    conv_count_result = await db.execute(
+        select(func.count(Conversation.id))
+        .where(Conversation.project_id == project.id)
+    )
+    conversation_count = conv_count_result.scalar() or 0
+    
+    response = ProjectResponse.model_validate(project)
+    response.conversation_count = conversation_count
+    response.memory_count = 0  # Will be calculated from ChromaDB
+    
+    return response
 
 
 @router.get("/", response_model=List[ProjectResponse])
@@ -64,19 +75,30 @@ async def list_projects(
     result = await db.execute(query)
     projects = result.scalars().all()
     
-    # Calculate memory counts for each project
+    # Calculate counts for each project
     project_responses = []
     for project in projects:
+        # Get conversation count
+        conv_count_result = await db.execute(
+            select(func.count(Conversation.id))
+            .where(Conversation.project_id == project.id)
+        )
+        conversation_count = conv_count_result.scalar() or 0
+        
+        # Get memory count
         try:
             memory_manager = ProjectMemoryManager(project.id)
             stats = memory_manager.get_project_stats()
-            project.memory_count = stats.get('total_memories', 0)
+            memory_count = stats.get('total_memories', 0)
         except:
-            project.memory_count = 0
+            memory_count = 0
         
-        project_responses.append(ProjectResponse.model_validate(project))
+        response = ProjectResponse.model_validate(project)
+        response.conversation_count = conversation_count
+        response.memory_count = memory_count
+        project_responses.append(response)
     
-    return project_responses
+    return project_responses_responses
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -104,7 +126,18 @@ async def get_project(
     except:
         project.memory_count = 0
     
-    return project
+    # Calculate conversation count
+    conv_count_result = await db.execute(
+        select(func.count(Conversation.id))
+        .where(Conversation.project_id == project.id)
+    )
+    conversation_count = conv_count_result.scalar() or 0
+    
+    response = ProjectResponse.model_validate(project)
+    response.conversation_count = conversation_count
+    response.memory_count = 0  # Will be calculated from ChromaDB
+    
+    return response
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
@@ -138,7 +171,18 @@ async def update_project(
     await db.commit()
     await db.refresh(project)
     
-    return project
+    # Calculate conversation count
+    conv_count_result = await db.execute(
+        select(func.count(Conversation.id))
+        .where(Conversation.project_id == project.id)
+    )
+    conversation_count = conv_count_result.scalar() or 0
+    
+    response = ProjectResponse.model_validate(project)
+    response.conversation_count = conversation_count
+    response.memory_count = 0  # Will be calculated from ChromaDB
+    
+    return response
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -192,7 +236,18 @@ async def archive_project(
     await db.commit()
     await db.refresh(project)
     
-    return project
+    # Calculate conversation count
+    conv_count_result = await db.execute(
+        select(func.count(Conversation.id))
+        .where(Conversation.project_id == project.id)
+    )
+    conversation_count = conv_count_result.scalar() or 0
+    
+    response = ProjectResponse.model_validate(project)
+    response.conversation_count = conversation_count
+    response.memory_count = 0  # Will be calculated from ChromaDB
+    
+    return response
 
 
 @router.get("/{project_id}/stats")

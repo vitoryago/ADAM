@@ -11,7 +11,7 @@ import logging
 from database import get_db
 from models import (
     Conversation, ConversationCreate, ConversationUpdate, ConversationResponse,
-    Project, Message
+    Project, Message, MessageRole
 )
 
 router = APIRouter()
@@ -49,7 +49,24 @@ async def create_conversation(
     
     logger.info(f"Created conversation {conversation.id} in project {project_id}")
     
-    return conversation
+    # Calculate counts
+    msg_count_result = await db.execute(
+        select(func.count(Message.id))
+        .where(Message.conversation_id == conversation.id)
+    )
+    message_count = msg_count_result.scalar() or 0
+    
+    cost_result = await db.execute(
+        select(func.sum(Message.cost))
+        .where(Message.conversation_id == conversation.id)
+    )
+    total_cost = float(cost_result.scalar() or 0)
+    
+    response = ConversationResponse.model_validate(conversation)
+    response.message_count = message_count
+    response.total_cost = total_cost
+    
+    return response
 
 
 @router.get("/projects/{project_id}/conversations", response_model=List[ConversationResponse])
@@ -79,7 +96,24 @@ async def list_project_conversations(
     result = await db.execute(query)
     conversations = result.scalars().all()
     
-    return [ConversationResponse.model_validate(conv) for conv in conversations]
+    # Calculate counts for each conversation
+    conversation_responses = []
+    for conv in conversations:
+        # Get message count and cost
+        stats_result = await db.execute(
+            select(
+                func.count(Message.id).label("count"),
+                func.sum(Message.cost).label("total")
+            ).where(Message.conversation_id == conv.id)
+        )
+        stats = stats_result.one()
+        
+        response = ConversationResponse.model_validate(conv)
+        response.message_count = stats.count or 0
+        response.total_cost = float(stats.total or 0)
+        conversation_responses.append(response)
+    
+    return conversation_responses
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
@@ -99,7 +133,24 @@ async def get_conversation(
             detail="Conversation not found"
         )
     
-    return conversation
+    # Calculate counts
+    msg_count_result = await db.execute(
+        select(func.count(Message.id))
+        .where(Message.conversation_id == conversation.id)
+    )
+    message_count = msg_count_result.scalar() or 0
+    
+    cost_result = await db.execute(
+        select(func.sum(Message.cost))
+        .where(Message.conversation_id == conversation.id)
+    )
+    total_cost = float(cost_result.scalar() or 0)
+    
+    response = ConversationResponse.model_validate(conversation)
+    response.message_count = message_count
+    response.total_cost = total_cost
+    
+    return response
 
 
 @router.put("/conversations/{conversation_id}", response_model=ConversationResponse)
@@ -129,7 +180,24 @@ async def update_conversation(
     await db.commit()
     await db.refresh(conversation)
     
-    return conversation
+    # Calculate counts
+    msg_count_result = await db.execute(
+        select(func.count(Message.id))
+        .where(Message.conversation_id == conversation.id)
+    )
+    message_count = msg_count_result.scalar() or 0
+    
+    cost_result = await db.execute(
+        select(func.sum(Message.cost))
+        .where(Message.conversation_id == conversation.id)
+    )
+    total_cost = float(cost_result.scalar() or 0)
+    
+    response = ConversationResponse.model_validate(conversation)
+    response.message_count = message_count
+    response.total_cost = total_cost
+    
+    return response
 
 
 @router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -177,7 +245,24 @@ async def pin_conversation(
     await db.commit()
     await db.refresh(conversation)
     
-    return conversation
+    # Calculate counts
+    msg_count_result = await db.execute(
+        select(func.count(Message.id))
+        .where(Message.conversation_id == conversation.id)
+    )
+    message_count = msg_count_result.scalar() or 0
+    
+    cost_result = await db.execute(
+        select(func.sum(Message.cost))
+        .where(Message.conversation_id == conversation.id)
+    )
+    total_cost = float(cost_result.scalar() or 0)
+    
+    response = ConversationResponse.model_validate(conversation)
+    response.message_count = message_count
+    response.total_cost = total_cost
+    
+    return response
 
 
 @router.post("/conversations/{conversation_id}/unpin", response_model=ConversationResponse)
@@ -201,7 +286,24 @@ async def unpin_conversation(
     await db.commit()
     await db.refresh(conversation)
     
-    return conversation
+    # Calculate counts
+    msg_count_result = await db.execute(
+        select(func.count(Message.id))
+        .where(Message.conversation_id == conversation.id)
+    )
+    message_count = msg_count_result.scalar() or 0
+    
+    cost_result = await db.execute(
+        select(func.sum(Message.cost))
+        .where(Message.conversation_id == conversation.id)
+    )
+    total_cost = float(cost_result.scalar() or 0)
+    
+    response = ConversationResponse.model_validate(conversation)
+    response.message_count = message_count
+    response.total_cost = total_cost
+    
+    return response
 
 
 @router.get("/conversations/{conversation_id}/stats")
