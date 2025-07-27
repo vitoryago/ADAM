@@ -1,155 +1,173 @@
-# ADAM v2.0 - Project-Based Memory Architecture
+# ADAM v2.0 - Project-Based AI Assistant
 
-## Overview
-ADAM v2.0 transforms the single-memory system into a powerful project-based architecture with isolated memory contexts, similar to Claude Projects or ChatGPT's organization.
+A modern, project-based AI assistant with isolated memory spaces, built with FastAPI, HTMX, and advanced RAG capabilities.
 
-## Key Features
+## Features
 
-### 1. **Project Organization**
-- Create unlimited projects for different topics/domains
-- Each project has its own isolated memory space
-- Projects can be archived but preserve their memories
-- Custom settings per project (preferred models, temperature, etc.)
-
-### 2. **Conversation Management**
-- Multiple conversations within each project
-- Conversations share the project's memory pool
-- Rename conversations for better organization
-- Pin important conversations
-
-### 3. **Memory Isolation**
-- Each project gets its own ChromaDB collection
-- No cross-contamination between projects
-- Faster searches (smaller, focused collections)
-- Better relevance (domain-specific context)
-
-### 4. **Modern Web Interface**
-- Built with FastAPI + HTMX (no complex JavaScript)
-- Real-time updates without page refreshes
-- Beautiful UI with TailwindCSS
-- Keyboard shortcuts (Cmd+K for quick search)
-
-## Tech Stack
-
-- **Backend**: FastAPI (Python) - Fast, async, modern
-- **Frontend**: HTMX + TailwindCSS - Interactive without JavaScript complexity
-- **Database**: SQLite - Simple, fast, no setup
-- **Memory**: ChromaDB - Vector search with project isolation
-- **Real-time**: Server-Sent Events for live updates
+- 🗂️ **Project Organization** - Keep conversations organized by project
+- 🧠 **Isolated Memory** - Each project has its own ChromaDB memory space
+- 💬 **Multiple Conversations** - Manage multiple conversation threads per project
+- 🔄 **Real-time Streaming** - SSE-based streaming responses
+- 🎯 **Smart Model Routing** - Automatic model selection based on query complexity
+- 🔍 **Advanced RAG** - BM25 + Semantic search fusion for better memory recall
+- 💰 **Cost Tracking** - Track costs per message, conversation, and project
+- 🖼️ **Image Support** - Upload images for vision model analysis
 
 ## Quick Start
 
+### Prerequisites
+
+- Python 3.8+
+- API keys for LLM providers (OpenAI, xAI)
+
+### Installation
+
+1. Install dependencies:
 ```bash
-# Install dependencies
-pip install fastapi uvicorn sqlite3 chromadb htmx
+pip install -r requirements.txt
+```
 
-# Run the server
-cd src/adam_v2
+2. Create `.env` file:
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+```
+
+3. Run the application:
+```bash
 python main.py
-
-# Open in browser
-http://localhost:8000
 ```
 
-## Architecture Benefits
+4. Open your browser to http://localhost:8000
 
-### For Users
-- **Better Organization**: Keep work, personal, and learning separate
-- **Faster Responses**: Smaller memory pools = quicker searches
-- **Privacy**: Projects are completely isolated
-- **Familiar UI**: Similar to Claude/ChatGPT but better
+## Usage
 
-### For Developers
-- **Clean Architecture**: Clear separation of concerns
-- **Easy to Extend**: Add features per-project or globally
-- **Python-Based**: No need to learn complex JS frameworks
-- **Type Safety**: Pydantic models throughout
+### Creating a Project
 
-## Example Use Cases
+1. Click "New Project" on the home page
+2. Enter project name and optional description
+3. Select default model (or use automatic routing)
 
-### Software Development Project
-```
-Project: "E-commerce Platform"
-├── Database Design (conversation)
-├── API Development (conversation)
-├── Frontend React Code (conversation)
-└── Bug Fixes & Debugging (conversation)
+### Starting a Conversation
 
-All memories about schemas, API endpoints, components stay within this project.
-```
+1. Click on a project to open it
+2. Click "New Conversation"
+3. Start chatting with ADAM!
 
-### Learning Project
-```
-Project: "Python Mastery"
-├── Basic Concepts (conversation)
-├── Advanced Patterns (conversation)
-├── Practice Problems (conversation)
-└── Code Reviews (conversation)
+### Memory System
 
-Learning progress and examples isolated from work projects.
-```
+- **Automatic Storage**: Valuable responses are automatically stored
+- **Memory Search**: Use the "Browse Memories" button to search project memories
+- **Memory Toggle**: Enable/disable memory usage per message
 
-### Business Analysis Project
-```
-Project: "Q4 Strategy"
-├── Market Research (conversation)
-├── Competitor Analysis (conversation)
-├── Financial Projections (conversation)
-└── Action Plans (conversation)
+### Keyboard Shortcuts
 
-Sensitive business data stays within project boundaries.
+- `Cmd/Ctrl + K`: Quick search (coming soon)
+- `Cmd/Ctrl + N`: New project
+- `Enter`: Send message
+- `Shift + Enter`: New line in message
+
+## API Documentation
+
+Once running, visit http://localhost:8000/docs for interactive API documentation.
+
+## Testing
+
+Run the test suite:
+```bash
+python run_tests.py
 ```
 
-## Implementation Status
+Or run specific tests:
+```bash
+# Unit tests
+pytest tests/unit/ -v
 
-### Completed ✅
-- Database schema design
-- API structure with FastAPI
-- Memory isolation architecture
-- UI templates with HTMX
-- Project management endpoints
+# Integration tests  
+pytest tests/integration/ -v
 
-### Next Steps 📋
-1. Implement message streaming
-2. Add memory browse/search UI
-3. Export functionality
-4. Project templates
-5. Sharing capabilities
+# Memory tests
+pytest tests/unit/test_memory_service.py -v
+pytest tests/unit/test_advanced_memory.py -v
+```
 
-## Migration from v1
+## Architecture
 
-The system includes migration tools to:
-1. Create a "General" project for existing memories
-2. Import current conversations
-3. Preserve all memory connections
-4. Zero downtime migration
+- **FastAPI** - Modern async web framework
+- **HTMX** - Dynamic UI without complex JavaScript
+- **SQLAlchemy** - Async ORM for database
+- **ChromaDB** - Vector database for memories
+- **Tailwind CSS** - Utility-first styling
 
-## Why This Architecture?
+## Example Usage
 
-1. **Scalability**: Can handle thousands of projects efficiently
-2. **Privacy**: Complete isolation between projects
-3. **Performance**: Focused searches are much faster
-4. **Flexibility**: Per-project settings and configurations
-5. **Familiarity**: Users already know this pattern from other tools
+### Test Messaging
+```bash
+python examples/test_messaging.py
+```
 
-## Code Structure
+### Test Memory
+```bash
+python examples/test_memory.py
+```
 
+## Configuration
+
+### Environment Variables
+
+- `DATABASE_URL`: SQLite database path (default: `sqlite+aiosqlite:///./data/adam_v2.db`)
+- `OPENAI_API_KEY`: OpenAI API key
+- `XAI_API_KEY`: xAI (Grok) API key
+- `DEFAULT_MODEL`: Default LLM model
+- `ADAM_V2_MEMORY_PATH`: ChromaDB storage path
+
+### Project Settings
+
+Each project can have custom settings:
+- `model`: Default model for the project
+- `temperature`: LLM temperature (0-1)
+- `max_tokens`: Maximum response tokens
+
+## Development
+
+### Project Structure
 ```
 adam_v2/
 ├── main.py              # FastAPI application
-├── models.py            # Pydantic models
-├── database.py          # SQLite connection
-├── memory_manager.py    # Project-based ChromaDB
-├── routers/
-│   ├── projects.py      # Project endpoints
-│   ├── conversations.py # Conversation endpoints
-│   └── messages.py      # Messaging endpoints
-├── templates/           # HTMX templates
-│   ├── index.html       # Main layout
-│   ├── conversation.html # Chat interface
-│   └── components/      # Reusable components
-└── static/             # CSS, JS, images
-
+├── models.py            # SQLAlchemy models
+├── database.py          # Database configuration
+├── routers/            # API endpoints
+│   ├── projects.py
+│   ├── conversations.py
+│   ├── messages.py
+│   ├── memories.py
+│   └── ui.py
+├── services/           # Business logic
+│   ├── llm_service.py
+│   ├── memory_service.py
+│   └── advanced_memory_service.py
+├── templates/          # HTML templates
+│   ├── base.html
+│   ├── index.html
+│   └── conversation.html
+├── static/            # Static files
+└── tests/             # Test suite
 ```
 
-This architecture makes ADAM truly production-ready for serious knowledge work!
+## Troubleshooting
+
+### Memory System Not Available
+- Ensure ChromaDB is installed: `pip install chromadb`
+- Check that ADAM v1 modules are accessible
+
+### No LLM Responses
+- Verify API keys in `.env` file
+- Check console for error messages
+
+### Database Issues
+- Delete `data/adam_v2.db` to reset
+- Run `python main.py` to recreate
+
+## License
+
+This project is part of the ADAM ecosystem.

@@ -19,7 +19,10 @@
       "Bash(bash:*)",
       "Bash(/usr/bin/python3:*)",
       "Bash(sqlite3:*)",
-      "Bash(true)"
+      "Bash(true)",
+      "Bash(/Users/vitoryago/ADAM/venv/bin/python main.py)",
+      "Bash(conda info:*)",
+      "Bash(pip show:*)"
     ],
     "deny": []
   }
