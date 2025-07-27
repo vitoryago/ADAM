@@ -15,7 +15,7 @@ from pathlib import Path
 from database import init_db, close_db
 
 # Import routers
-from routers import projects, conversations
+from routers import projects, conversations, messages, memories
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -61,6 +61,8 @@ templates = Jinja2Templates(directory=str(templates_dir))
 # Include routers
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(conversations.router, prefix="/api", tags=["conversations"])
+app.include_router(messages.router, prefix="/api", tags=["messages"])
+app.include_router(memories.router, tags=["memories"])
 
 
 @app.get("/", response_class=HTMLResponse)
