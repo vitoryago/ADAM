@@ -1,0 +1,158 @@
+/* Custom styles for ADAM v2.0 */
+
+/* Prose styling for markdown content */
+.prose h1 { 
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: #e5e7eb;
+}
+.prose h2 { 
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    margin-top: 1rem;
+    color: #e5e7eb;
+}
+.prose h3 { 
+    font-size: 1.125rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    margin-top: 0.75rem;
+    color: #e5e7eb;
+}
+.prose p { 
+    margin-bottom: 1rem;
+    line-height: 1.6;
+}
+.prose ul { 
+    list-style-type: disc;
+    list-style-position: inside;
+    margin-bottom: 1rem;
+    margin-left: 1rem;
+}
+.prose ol { 
+    list-style-type: decimal;
+    list-style-position: inside;
+    margin-bottom: 1rem;
+    margin-left: 1rem;
+}
+.prose li { 
+    margin-bottom: 0.25rem;
+    line-height: 1.6;
+}
+.prose blockquote { 
+    border-left: 4px solid #4b5563;
+    padding-left: 1rem;
+    font-style: italic;
+    margin: 1rem 0;
+}
+.prose pre { 
+    background-color: #111827;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    overflow-x: auto;
+    margin-bottom: 1rem;
+}
+.prose code { 
+    background-color: #374151;
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    font-family: 'Fira Code', 'Consolas', monospace;
+}
+.prose pre code { 
+    background-color: transparent;
+    padding: 0;
+}
+
+/* Code block specific styling */
+.prose .bg-gray-900 {
+    margin: 1rem 0;
+}
+
+/* Better list formatting */
+.prose ul ul,
+.prose ol ol,
+.prose ul ol,
+.prose ol ul {
+    margin-left: 1.5rem;
+    margin-top: 0.25rem;
+}
+
+/* Inverted prose for user messages */
+.prose-invert h1,
+.prose-invert h2,
+.prose-invert h3 { @apply text-white; }
+.prose-invert blockquote { @apply border-blue-400; }
+.prose-invert pre { @apply bg-blue-700; }
+.prose-invert code { @apply bg-blue-700; }
+
+/* Custom scrollbar for dark theme */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-gray-800;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-gray-600 rounded;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-500;
+}
+
+/* Loading dots animation */
+@keyframes loading-dots {
+    0%, 20% {
+        color: rgba(255, 255, 255, 0);
+        text-shadow: 0.25em 0 0 rgba(255, 255, 255, 0), 0.5em 0 0 rgba(255, 255, 255, 0);
+    }
+    40% {
+        color: white;
+        text-shadow: 0.25em 0 0 rgba(255, 255, 255, 0), 0.5em 0 0 rgba(255, 255, 255, 0);
+    }
+    60% {
+        text-shadow: 0.25em 0 0 white, 0.5em 0 0 rgba(255, 255, 255, 0);
+    }
+    80%, 100% {
+        text-shadow: 0.25em 0 0 white, 0.5em 0 0 white;
+    }
+}
+
+.loading-dots:after {
+    content: ' .';
+    animation: loading-dots 1.5s infinite;
+}
+
+/* HTMX indicator improvements */
+.htmx-indicator {
+    opacity: 0;
+    transition: opacity 200ms ease-in;
+}
+
+.htmx-request .htmx-indicator {
+    opacity: 1;
+}
+
+.htmx-request.htmx-indicator {
+    opacity: 1;
+}
+
+/* Smooth transitions for HTMX swaps */
+.htmx-settling {
+    opacity: 0.5;
+}
+
+.htmx-added {
+    opacity: 0;
+}
+
+.htmx-added.htmx-settling {
+    opacity: 1;
+    transition: opacity 0.3s ease-out;
+}
