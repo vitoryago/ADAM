@@ -1,0 +1,2 @@
+[console_scripts]
+adam = adam_v2_memory:main

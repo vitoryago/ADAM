@@ -22,14 +22,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Import ADAM components
-from src.adam.memory import ADAMMemoryAdvanced
-from src.adam.conversation_system import ConversationSystem
-from src.adam.llm.client import UnifiedLLMClient
-from src.adam.llm.config import LLMConfig
-from src.adam.memory_search_enhanced import MemorySearchEnhancer, format_memory_for_prompt
+from adam.memory import ADAMMemoryAdvanced
+from adam.conversation_system import ConversationSystem
+from adam.llm.client import UnifiedLLMClient
+from adam.llm.config import LLMConfig
+from adam.memory_search_enhanced import MemorySearchEnhancer, format_memory_for_prompt
 
 # Configure Streamlit page
 st.set_page_config(

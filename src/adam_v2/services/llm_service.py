@@ -150,8 +150,8 @@ class LLMService:
             # Check if model supports vision
             model_config = MODEL_CONFIGS.get(final_model)
             
-            # Build system prompt from conversation history
-            system_prompt = None
+            # Build system prompt with ADAM identity
+            system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
             if messages and len(messages) > 1:
                 # Create a conversation context from history
                 history_lines = []
@@ -159,7 +159,7 @@ class LLMService:
                     role = msg['role'].capitalize()
                     history_lines.append(f"{role}: {msg['content']}")
                 if history_lines:
-                    system_prompt = "Previous conversation:\n" + "\n".join(history_lines)
+                    system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
             
             if image_data and model_config and model_config.supports_vision:
                 # Use vision-capable model
@@ -304,8 +304,8 @@ class LLMService:
             
             # For now, we'll simulate streaming by breaking up the response
             # In a real implementation, you'd use the actual streaming API
-            # Build system prompt from conversation history
-            system_prompt = None
+            # Build system prompt with ADAM identity
+            system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
             if messages and len(messages) > 1:
                 # Create a conversation context from history
                 history_lines = []
@@ -313,7 +313,7 @@ class LLMService:
                     role = msg['role'].capitalize()
                     history_lines.append(f"{role}: {msg['content']}")
                 if history_lines:
-                    system_prompt = "Previous conversation:\n" + "\n".join(history_lines)
+                    system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
             
             if image_data and model_config and model_config.supports_vision:
                 response = await self.llm_client.complete(

@@ -31,7 +31,8 @@
       "Bash(/Users/vitoryago/ADAM/adam-frontend/test-frontend.sh)",
       "Bash(npm run build:*)",
       "Bash(npx tailwindcss:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "Bash(streamlit run:*)"
     ],
     "deny": []
   }
