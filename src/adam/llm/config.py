@@ -84,7 +84,10 @@ class LLMConfig:
                 reasoning_param=None,  # Use as high-power model without param
                 max_tokens=8192,
                 supports_streaming=True,
-                supports_vision=True  # grok-4 supports image input
+                supports_vision=True,  # grok-4 supports image input
+                cost_per_1k_tokens=0.009,  # Average of input/output for backward compatibility
+                cost_per_1k_input_tokens=0.003,  # $3.00/1M input tokens
+                cost_per_1k_output_tokens=0.015   # $15.00/1M output tokens
             ),
             
             "grok-4": ModelConfig(

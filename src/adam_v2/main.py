@@ -1,15 +1,23 @@
 """
-Main FastAPI application for ADAM v2.0
+Main FastAPI application for ADAM v2.0 API
 """
 
-from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from parent ADAM .env if it exists
+parent_env = Path(__file__).parent.parent.parent / ".env"
+if parent_env.exists():
+    load_dotenv(parent_env)
+    logging.info(f"Loaded environment from {parent_env}")
+
+# Load local .env to override if needed
+load_dotenv()
 
 # Import database
 from database import init_db, close_db
@@ -25,7 +33,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("Starting ADAM v2.0...")
+    logger.info("Starting ADAM v2.0 API...")
     # Initialize database
     await init_db()
     logger.info("Database initialized")
@@ -33,57 +41,41 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    logger.info("Shutting down ADAM v2.0...")
+    logger.info("Shutting down ADAM v2.0 API...")
     # Cleanup resources
     await close_db()
 
 
 # Create FastAPI app
 app = FastAPI(
-    title="ADAM v2.0",
-    description="Project-Based AI Assistant with Memory Isolation",
+    title="ADAM v2.0 API",
+    description="Project-Based AI Assistant with Memory Isolation - REST API",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
 )
 
-# Create directories if they don't exist
-static_dir = Path("static")
-static_dir.mkdir(exist_ok=True)
-templates_dir = Path("templates")
-templates_dir.mkdir(exist_ok=True)
-
-# Mount static files
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-# Templates
-templates = Jinja2Templates(directory=str(templates_dir))
+# Configure CORS for React frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React dev servers
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include routers
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(conversations.router, prefix="/api", tags=["conversations"])
 app.include_router(messages.router, prefix="/api", tags=["messages"])
-app.include_router(memories.router, tags=["memories"])
+app.include_router(memories.router, prefix="/api", tags=["memories"])
 
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    """Main dashboard page"""
-    return templates.TemplateResponse("index.html", {"request": request})
-
-
-@app.get("/project/{project_id}", response_class=HTMLResponse)
-async def project_view(request: Request, project_id: str):
-    """Project conversation view"""
-    return templates.TemplateResponse("conversation.html", {
-        "request": request,
-        "project_id": project_id
-    })
-
-
-@app.get("/health")
+@app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "version": "2.0.0"}
+    return {"status": "healthy", "version": "2.0.0", "type": "api"}
 
 
 if __name__ == "__main__":
