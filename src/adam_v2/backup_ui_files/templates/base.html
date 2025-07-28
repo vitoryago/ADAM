@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ADAM v2.0{% endblock %}</title>
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/json-enc.js"></script>
+    
+    <!-- Alpine.js for UI interactions -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Marked.js for markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- Prism.js for syntax highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-java.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/custom.css">
+    
+    <!-- Syntax highlighting styles -->
+    {{ markdown_styles | safe }}
+    
+    <!-- Custom styles -->
+    <style>
+        /* Smooth transitions */
+        .htmx-swapping {
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
+        }
+        
+        /* Loading states */
+        .htmx-request .htmx-indicator {
+            display: inline-block;
+        }
+        
+        .htmx-indicator {
+            display: none;
+        }
+        
+        /* Message animations */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message-enter {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #4a4a4a;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5a5a5a;
+        }
+        
+        /* Code block styling */
+        pre {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 1rem;
+            overflow-x: auto;
+        }
+        
+        code {
+            font-family: 'Fira Code', 'Consolas', monospace;
+        }
+        
+        /* Modal backdrop */
+        .modal-backdrop {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+    </style>
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
+    <!-- Navigation -->
+    <nav class="bg-gray-800 border-b border-gray-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <a href="/" class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                            <span class="text-white font-bold">A</span>
+                        </div>
+                        <span class="text-xl font-semibold">ADAM v2.0</span>
+                    </a>
+                    
+                    <!-- Breadcrumb -->
+                    <div class="ml-8 flex items-center space-x-2 text-sm text-gray-400">
+                        {% block breadcrumb %}{% endblock %}
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-4">
+                    <!-- Memory Status -->
+                    <div id="memory-status" class="text-sm text-gray-400">
+                        <span class="inline-flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"></path>
+                                <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 1 1 0 000 2H6a2 2 0 00-2 2v6a2 2 0 002 2h2a1 1 0 100-2H6V7h5a1 1 0 011 1v5h2V8a2 2 0 00-2-2H4z" clip-rule="evenodd"></path>
+                            </svg>
+                            Memory Active
+                        </span>
+                    </div>
+                    
+                    <!-- Settings Button -->
+                    <button class="p-2 rounded-lg hover:bg-gray-700 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="flex-1 flex">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2">
+        <!-- Toasts will be inserted here -->
+    </div>
+    
+    <!-- Global Modal Container -->
+    <div id="modal-container"></div>
+    
+    <!-- Utility Scripts -->
+    <script>
+        // Toast notification system
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `p-4 rounded-lg shadow-lg transform transition-all duration-300 translate-y-2 opacity-0 ${
+                type === 'success' ? 'bg-green-600' :
+                type === 'error' ? 'bg-red-600' :
+                type === 'warning' ? 'bg-yellow-600' :
+                'bg-blue-600'
+            }`;
+            toast.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4 hover:opacity-75">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                </div>
+            `;
+            
+            document.getElementById('toast-container').appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        }
+        
+        // HTMX event handlers
+        document.body.addEventListener('htmx:afterRequest', function(event) {
+            if (event.detail.successful) {
+                // Check for success messages in response headers
+                const message = event.detail.xhr.getResponseHeader('X-Success-Message');
+                if (message) {
+                    showToast(message, 'success');
+                }
+            } else {
+                showToast('An error occurred. Please try again.', 'error');
+            }
+        });
+        
+        // Configure marked.js with custom renderer
+        const renderer = new marked.Renderer();
+        
+        // Custom code block rendering
+        renderer.code = function(code, language) {
+            // Escape HTML in code to prevent XSS
+            const escapedCode = code
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+            
+            const langClass = language ? `language-${language}` : '';
+            const langDisplay = {
+                'js': 'JavaScript', 'javascript': 'JavaScript',
+                'py': 'Python', 'python': 'Python',
+                'bash': 'Bash', 'sh': 'Shell', 'shell': 'Shell',
+                'sql': 'SQL', 'json': 'JSON',
+                'yaml': 'YAML', 'yml': 'YAML',
+                'html': 'HTML', 'css': 'CSS',
+                'typescript': 'TypeScript', 'ts': 'TypeScript',
+                'go': 'Go', 'rust': 'Rust', 'java': 'Java',
+                'cpp': 'C++', 'c': 'C', 'cs': 'C#',
+                'php': 'PHP', 'ruby': 'Ruby', 'r': 'R',
+                'swift': 'Swift', 'kotlin': 'Kotlin',
+                'scala': 'Scala', 'dockerfile': 'Dockerfile',
+                'xml': 'XML', 'markdown': 'Markdown', 'md': 'Markdown'
+            };
+            
+            const displayName = langDisplay[language?.toLowerCase()] || (language ? language.toUpperCase() : 'Code');
+            
+            return `<div class="relative group my-4">
+                <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden">
+                    <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex items-center justify-between">
+                        <span class="text-xs text-gray-400 font-medium">${displayName}</span>
+                        <button onclick="copyCode(this)" class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity">Copy</button>
+                    </div>
+                    <pre class="p-4 overflow-x-auto"><code class="${langClass}">${escapedCode}</code></pre>
+                </div>
+            </div>`;
+        };
+        
+        // Custom inline code
+        renderer.codespan = function(code) {
+            return `<code class="bg-gray-800 px-1 py-0.5 rounded text-sm font-mono">${code}</code>`;
+        };
+        
+        // Custom headers
+        renderer.heading = function(text, level) {
+            const sizes = {
+                1: 'text-2xl font-bold mt-4 mb-2',
+                2: 'text-xl font-semibold mt-4 mb-2',
+                3: 'text-lg font-semibold mt-3 mb-2',
+                4: 'text-base font-medium mt-2 mb-1',
+                5: 'text-sm font-medium mt-2 mb-1',
+                6: 'text-sm font-medium mt-1 mb-1'
+            };
+            return `<h${level} class="${sizes[level] || sizes[3]}">${text}</h${level}>`;
+        };
+        
+        // Configure marked options
+        marked.setOptions({
+            renderer: renderer,
+            highlight: function(code, lang) {
+                if (Prism.languages[lang]) {
+                    return Prism.highlight(code, Prism.languages[lang], lang);
+                }
+                return code;
+            },
+            breaks: true,
+            gfm: true,
+            sanitize: false
+        });
+        
+        // Enhanced Markdown rendering function
+        function renderMarkdown(text) {
+            if (!text) return '';
+            
+            try {
+                // Use marked.js to parse markdown
+                const html = marked.parse(text);
+                
+                // Check if the result contains [object Object]
+                if (html.includes('[object Object]')) {
+                    console.error('Markdown rendering error: [object Object] found in output');
+                    console.error('Input text:', text.substring(0, 500));
+                    console.error('Output HTML:', html.substring(0, 500));
+                }
+                
+                // Run Prism highlighting on any code blocks that weren't highlighted
+                setTimeout(() => {
+                    Prism.highlightAll();
+                }, 0);
+                
+                return html;
+            } catch (error) {
+                console.error('Error in renderMarkdown:', error);
+                // Fallback to escaping HTML
+                return text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+            }
+        }
+        
+        // Copy code to clipboard
+        function copyCode(button) {
+            const codeBlock = button.closest('.code-block-wrapper, .relative.group').querySelector('pre');
+            const code = codeBlock.textContent || codeBlock.innerText;
+            navigator.clipboard.writeText(code).then(() => {
+                const originalText = button.innerText;
+                button.innerText = 'Copied!';
+                setTimeout(() => {
+                    button.innerText = originalText;
+                }, 2000);
+            });
+        }
+        
+        // Auto-resize textarea
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = textarea.scrollHeight + 'px';
+        }
+    </script>
+    
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

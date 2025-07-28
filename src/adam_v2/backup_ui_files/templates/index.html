@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Projects - ADAM v2.0{% endblock %}
+
+{% block breadcrumb %}
+<span>/</span>
+<span>Projects</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex-1 max-w-7xl mx-auto p-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold">Your Projects</h1>
+            <p class="text-gray-400 mt-2">Manage your AI assistant projects with isolated memories</p>
+        </div>
+        
+        <!-- Create Project Button -->
+        <button 
+            hx-get="/projects/new"
+            hx-target="#modal-container"
+            hx-swap="innerHTML"
+            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center space-x-2"
+        >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            <span>New Project</span>
+        </button>
+    </div>
+    
+    <!-- Stats Overview -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-gray-800 rounded-lg p-4">
+            <div class="text-sm text-gray-400">Total Projects</div>
+            <div class="text-2xl font-bold" id="total-projects">0</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4">
+            <div class="text-sm text-gray-400">Active Conversations</div>
+            <div class="text-2xl font-bold" id="active-conversations">0</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4">
+            <div class="text-sm text-gray-400">Total Memories</div>
+            <div class="text-2xl font-bold" id="total-memories">0</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4">
+            <div class="text-sm text-gray-400">Total Cost</div>
+            <div class="text-2xl font-bold" id="total-cost">$0.00</div>
+        </div>
+    </div>
+    
+    <!-- Projects Grid -->
+    <div 
+        id="projects-container"
+        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+        hx-get="/projects"
+        hx-trigger="load"
+        hx-select="#project-cards"
+        hx-target="this"
+        hx-swap="innerHTML"
+    >
+        <!-- Loading skeleton -->
+        <div class="bg-gray-800 rounded-lg p-6 animate-pulse">
+            <div class="h-6 bg-gray-700 rounded w-3/4 mb-4"></div>
+            <div class="h-4 bg-gray-700 rounded w-full mb-2"></div>
+            <div class="h-4 bg-gray-700 rounded w-2/3"></div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-6 animate-pulse">
+            <div class="h-6 bg-gray-700 rounded w-3/4 mb-4"></div>
+            <div class="h-4 bg-gray-700 rounded w-full mb-2"></div>
+            <div class="h-4 bg-gray-700 rounded w-2/3"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Handle keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Cmd/Ctrl + K for quick search
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            // Could implement search modal
+        }
+        
+        // Cmd/Ctrl + N for new project
+        if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+            e.preventDefault();
+            htmx.ajax('GET', '/projects/new', {target: '#modal-container'});
+        }
+    });
+    
+    // Update stats after project list loads
+    document.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'projects-container') {
+            updateProjectStats();
+        }
+    });
+    
+    // Update project statistics
+    async function updateProjectStats() {
+        try {
+            const response = await fetch('/api/projects/stats');
+            const stats = await response.json();
+            
+            document.getElementById('total-projects').textContent = stats.total_projects || 0;
+            document.getElementById('active-conversations').textContent = stats.active_conversations || 0;
+            document.getElementById('total-memories').textContent = stats.total_memories || 0;
+            document.getElementById('total-cost').textContent = `$${(stats.total_cost || 0).toFixed(2)}`;
+        } catch (error) {
+            console.error('Failed to update stats:', error);
+        }
+    }
+</script>
+{% endblock %}
