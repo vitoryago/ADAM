@@ -22,7 +22,16 @@
       "Bash(true)",
       "Bash(/Users/vitoryago/ADAM/venv/bin/python main.py)",
       "Bash(conda info:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(npm create:*)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss init:*)",
+      "Bash(npm run dev:*)",
+      "Bash(/Users/vitoryago/ADAM/adam-frontend/test-frontend.sh)",
+      "Bash(npm run build:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(npm uninstall:*)"
     ],
     "deny": []
   }
