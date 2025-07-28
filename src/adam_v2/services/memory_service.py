@@ -7,8 +7,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 import asyncio
-import chromadb
-from chromadb.config import Settings
+try:
+    import chromadb
+    from chromadb.config import Settings
+    CHROMADB_AVAILABLE = True
+except ImportError:
+    CHROMADB_AVAILABLE = False
+    chromadb = None
+    Settings = None
 import hashlib
 import json
 from dataclasses import dataclass
@@ -80,17 +86,20 @@ class ProjectMemoryService:
         ))
         self.persist_directory.mkdir(parents=True, exist_ok=True)
         
-        # Initialize ChromaDB client
-        self.chroma_client = chromadb.PersistentClient(
-            path=str(self.persist_directory),
-            settings=Settings(
-                anonymized_telemetry=False,
-                allow_reset=True
+        # Initialize ChromaDB client if available
+        if CHROMADB_AVAILABLE:
+            self.chroma_client = chromadb.PersistentClient(
+                path=str(self.persist_directory),
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True
+                )
             )
-        )
-        
-        # Get or create collection
-        self._initialize_collection()
+            # Get or create collection
+            self._initialize_collection()
+        else:
+            self.chroma_client = None
+            self.collection = None
     
     def _initialize_collection(self):
         """Initialize the project's ChromaDB collection"""
@@ -129,6 +138,9 @@ class ProjectMemoryService:
         cost: Optional[float] = None
     ) -> str:
         """Store a memory in the project's collection"""
+        if not self.collection:
+            return ""  # Memory not available
+            
         # Generate unique ID
         memory_id = self._generate_memory_id(content)
         
@@ -165,18 +177,28 @@ class ProjectMemoryService:
         conversation_id: Optional[str] = None
     ) -> List[MemorySearchResult]:
         """Search memories in the project's collection"""
+        if not self.collection:
+            return []  # Memory not available
+            
         # Build where clause for filtering
-        where_clause = {"project_id": self.project_id}
+        # ChromaDB requires $and for multiple conditions
+        conditions = [{"project_id": {"$eq": self.project_id}}]
         
         if memory_types:
             type_values = [
                 t.value if hasattr(t, 'value') else str(t) 
                 for t in memory_types
             ]
-            where_clause["memory_type"] = {"$in": type_values}
+            conditions.append({"memory_type": {"$in": type_values}})
         
         if conversation_id:
-            where_clause["conversation_id"] = conversation_id
+            conditions.append({"conversation_id": {"$eq": conversation_id}})
+        
+        # If multiple conditions, use $and
+        if len(conditions) > 1:
+            where_clause = {"$and": conditions}
+        else:
+            where_clause = conditions[0] if conditions else None
         
         # Perform search
         results = self.collection.query(
@@ -236,6 +258,16 @@ class ProjectMemoryService:
     
     async def get_memory_stats(self) -> Dict[str, Any]:
         """Get statistics about the project's memories"""
+        if not self.collection:
+            return {
+                "total_memories": 0,
+                "memory_types": {},
+                "total_cost": 0.0,
+                "avg_access_count": 0.0,
+                "oldest_memory": None,
+                "newest_memory": None
+            }
+            
         # Get all memories for stats
         all_memories = self.collection.get()
         

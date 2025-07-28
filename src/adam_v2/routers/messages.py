@@ -134,17 +134,17 @@ async def send_message(
         # Store in memory if worthy
         if message_data.use_memory and response.cost > 0.001:  # Store if cost > $0.001
             try:
-                memory_manager = ProjectMemoryManager(project.id)
-                memory_manager.store_memory(
-                    query=message_data.content,
-                    response=response.content,
-                    conversation_id=conversation_id,
+                memory_service = ProjectMemoryService(project.id, project.name)
+                await memory_service.store_memory(
+                    content=f"Q: {message_data.content}\n\nA: {response.content}",
                     memory_type="conversation",
                     metadata={
                         "model": response.model_used,
                         "cost": response.cost,
                         "tokens": response.tokens_used
-                    }
+                    },
+                    conversation_id=conversation_id,
+                    cost=response.cost
                 )
             except Exception as e:
                 logger.error(f"Error storing memory: {e}")
@@ -293,17 +293,17 @@ async def send_message_stream(
             # Store in memory if worthy
             if message_data.use_memory and cost > 0.001:
                 try:
-                    memory_manager = ProjectMemoryManager(project.id)
-                    memory_manager.store_memory(
-                        query=message_data.content,
-                        response=full_response,
-                        conversation_id=conversation_id,
+                    memory_service = ProjectMemoryService(project.id, project.name)
+                    await memory_service.store_memory(
+                        content=f"Q: {message_data.content}\n\nA: {full_response}",
                         memory_type="conversation",
                         metadata={
                             "model": model_used,
                             "cost": cost,
                             "tokens": tokens_used
-                        }
+                        },
+                        conversation_id=conversation_id,
+                        cost=cost
                     )
                 except Exception as e:
                     logger.error(f"Error storing memory: {e}")

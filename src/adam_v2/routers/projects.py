@@ -13,7 +13,7 @@ from models import (
     Project, ProjectCreate, ProjectUpdate, ProjectResponse,
     Conversation
 )
-from memory_manager import ProjectMemoryManager
+from services.memory_service import ProjectMemoryService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -38,8 +38,8 @@ async def create_project(
     
     # Initialize memory collection for this project
     try:
-        memory_manager = ProjectMemoryManager(project.id)
-        memory_manager.initialize_collection()
+        memory_service = ProjectMemoryService(project.id, project.name)
+        # Collection is initialized automatically in __init__
         logger.info(f"Created project {project.id} with memory collection")
     except Exception as e:
         logger.error(f"Failed to create memory collection: {e}")
@@ -54,7 +54,7 @@ async def create_project(
     
     response = ProjectResponse.model_validate(project)
     response.conversation_count = conversation_count
-    response.memory_count = 0  # Will be calculated from ChromaDB
+    response.memory_count = 0  # TODO: Get from ChromaDB
     
     return response
 
@@ -87,8 +87,8 @@ async def list_projects(
         
         # Get memory count
         try:
-            memory_manager = ProjectMemoryManager(project.id)
-            stats = memory_manager.get_project_stats()
+            memory_service = ProjectMemoryService(project.id, project.name)
+            stats = await memory_service.get_memory_stats()
             memory_count = stats.get('total_memories', 0)
         except:
             memory_count = 0
@@ -98,7 +98,7 @@ async def list_projects(
         response.memory_count = memory_count
         project_responses.append(response)
     
-    return project_responses_responses
+    return project_responses
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -120,9 +120,9 @@ async def get_project(
     
     # Get memory count
     try:
-        memory_manager = ProjectMemoryManager(project.id)
-        stats = memory_manager.get_project_stats()
-        project.memory_count = stats.get('total_memories', 0)
+        memory_service = ProjectMemoryService(project.id, project.name)
+        stats = await memory_service.get_memory_stats()
+        memory_count = stats.get('total_memories', 0)
     except:
         project.memory_count = 0
     
@@ -135,7 +135,7 @@ async def get_project(
     
     response = ProjectResponse.model_validate(project)
     response.conversation_count = conversation_count
-    response.memory_count = 0  # Will be calculated from ChromaDB
+    response.memory_count = 0  # TODO: Get from ChromaDB
     
     return response
 
@@ -180,7 +180,7 @@ async def update_project(
     
     response = ProjectResponse.model_validate(project)
     response.conversation_count = conversation_count
-    response.memory_count = 0  # Will be calculated from ChromaDB
+    response.memory_count = 0  # TODO: Get from ChromaDB
     
     return response
 
@@ -204,8 +204,9 @@ async def delete_project(
     
     # Delete memory collection
     try:
-        memory_manager = ProjectMemoryManager(project_id)
-        memory_manager.delete_collection()
+        from services.memory_service import ProjectMemoryService
+        memory_service = ProjectMemoryService(project_id, project.name)
+        await memory_service.clear_memories()
         logger.info(f"Deleted memory collection for project {project_id}")
     except Exception as e:
         logger.error(f"Failed to delete memory collection: {e}")
@@ -245,7 +246,7 @@ async def archive_project(
     
     response = ProjectResponse.model_validate(project)
     response.conversation_count = conversation_count
-    response.memory_count = 0  # Will be calculated from ChromaDB
+    response.memory_count = 0  # TODO: Get from ChromaDB
     
     return response
 
@@ -277,8 +278,9 @@ async def get_project_stats(
     
     # Get memory stats
     try:
-        memory_manager = ProjectMemoryManager(project_id)
-        memory_stats = memory_manager.get_project_stats()
+        from services.memory_service import ProjectMemoryService
+        memory_service = ProjectMemoryService(project_id, project.name)
+        memory_stats = await memory_service.get_memory_stats()
     except:
         memory_stats = {"total_memories": 0, "error": "Memory collection not found"}
     

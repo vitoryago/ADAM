@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from dataclasses import dataclass
 import logging
+import asyncio
+
+logger = logging.getLogger(__name__)
 
 # Add parent directory to path to import ADAM modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -16,14 +19,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 try:
     from adam.llm.client import UnifiedLLMClient
     from adam.llm.query_analyzer import QueryAnalyzer, QueryComplexity
-    from adam.llm.config import MODEL_CONFIGS
+    from adam.llm.config import LLMConfig
     ADAM_LLM_AVAILABLE = True
-except ImportError:
+    logger.info("Successfully imported ADAM LLM client")
+    # Get model configs from LLMConfig instance
+    llm_config = LLMConfig()
+    MODEL_CONFIGS = llm_config.models
+except ImportError as e:
     ADAM_LLM_AVAILABLE = False
     UnifiedLLMClient = None
     QueryAnalyzer = None
     QueryComplexity = None
     MODEL_CONFIGS = {}
+    llm_config = None
+    logger.error(f"Failed to import ADAM LLM client: {e}")
 
 try:
     from adam.memory import MemoryType
@@ -34,8 +43,6 @@ except ImportError:
         CONVERSATION = "conversation"
         CODE_PATTERN = "code_pattern"
         CONCEPT_EXPLANATION = "concept_explanation"
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -70,8 +77,14 @@ class LLMService:
         
         # Initialize ADAM's LLM client if available
         if ADAM_LLM_AVAILABLE:
-            self.llm_client = UnifiedLLMClient()
-            self.query_analyzer = QueryAnalyzer()
+            try:
+                self.llm_client = UnifiedLLMClient()
+                self.query_analyzer = QueryAnalyzer()
+                logger.info("LLM client initialized successfully")
+            except Exception as e:
+                self.llm_client = None
+                self.query_analyzer = None
+                logger.error(f"Failed to initialize LLM client: {e}")
         else:
             self.llm_client = None
             self.query_analyzer = None
@@ -137,31 +150,51 @@ class LLMService:
             # Check if model supports vision
             model_config = MODEL_CONFIGS.get(final_model)
             
+            # Build system prompt from conversation history
+            system_prompt = None
+            if messages and len(messages) > 1:
+                # Create a conversation context from history
+                history_lines = []
+                for msg in messages[:-1]:  # Exclude the current message
+                    role = msg['role'].capitalize()
+                    history_lines.append(f"{role}: {msg['content']}")
+                if history_lines:
+                    system_prompt = "Previous conversation:\n" + "\n".join(history_lines)
+            
             if image_data and model_config and model_config.supports_vision:
                 # Use vision-capable model
-                response = self.llm_client.query(
-                    query=full_prompt,
-                    model_name=final_model,
-                    messages=messages,
+                response = await self.llm_client.complete(
+                    prompt=full_prompt,
+                    model=final_model,
+                    system_prompt=system_prompt,
                     image_data=image_data,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens
                 )
             else:
                 # Text-only query
-                response = self.llm_client.query(
-                    query=full_prompt,
-                    model_name=final_model,
-                    messages=messages,
+                response = await self.llm_client.complete(
+                    prompt=full_prompt,
+                    model=final_model,
+                    system_prompt=system_prompt,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens
                 )
+            
+            # Calculate cost based on tokens
+            # Simple cost estimation - you may want to adjust these rates
+            model_config = MODEL_CONFIGS.get(final_model)
+            if model_config and hasattr(model_config, 'cost_per_1k_tokens'):
+                cost_per_1k = model_config.cost_per_1k_tokens
+            else:
+                cost_per_1k = 0.002  # Default fallback
+            estimated_cost = (response.total_tokens / 1000) * cost_per_1k
             
             llm_response = LLMResponse(
                 content=response.content,
                 model_used=response.model,
                 tokens_used=response.total_tokens,
-                cost=response.cost,
+                cost=response.cost if hasattr(response, 'cost') else estimated_cost,
                 metadata={
                     "complexity": complexity.value if 'complexity' in locals() else None,
                     "has_image": bool(image_data)
@@ -271,40 +304,68 @@ class LLMService:
             
             # For now, we'll simulate streaming by breaking up the response
             # In a real implementation, you'd use the actual streaming API
+            # Build system prompt from conversation history
+            system_prompt = None
+            if messages and len(messages) > 1:
+                # Create a conversation context from history
+                history_lines = []
+                for msg in messages[:-1]:  # Exclude the current message
+                    role = msg['role'].capitalize()
+                    history_lines.append(f"{role}: {msg['content']}")
+                if history_lines:
+                    system_prompt = "Previous conversation:\n" + "\n".join(history_lines)
+            
             if image_data and model_config and model_config.supports_vision:
-                response = self.llm_client.query(
-                    query=full_prompt,
-                    model_name=final_model,
-                    messages=messages,
+                response = await self.llm_client.complete(
+                    prompt=full_prompt,
+                    model=final_model,
+                    system_prompt=system_prompt,
                     image_data=image_data,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens
                 )
             else:
-                response = self.llm_client.query(
-                    query=full_prompt,
-                    model_name=final_model,
-                    messages=messages,
+                response = await self.llm_client.complete(
+                    prompt=full_prompt,
+                    model=final_model,
+                    system_prompt=system_prompt,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens
                 )
             
-            # Simulate streaming by yielding words
-            words = response.content.split()
-            for i, word in enumerate(words):
+            # Simulate streaming by yielding chunks (improved chunking for better UX)
+            content = response.content
+            chunk_size = 3  # Words per chunk for more natural streaming
+            words = content.split()
+            
+            for i in range(0, len(words), chunk_size):
+                chunk_words = words[i:i + chunk_size]
+                chunk_text = ' '.join(chunk_words) + ' '
+                
                 yield StreamChunk(
-                    content=word + " ",
+                    content=chunk_text,
                     model_used=response.model,
                     tokens_used=0,  # Will be set in final chunk
                     cost=0.0
                 )
+                
+                # Small delay for more natural streaming feel
+                await asyncio.sleep(0.03)  # 30ms between chunks
+            
+            # Calculate cost
+            model_config = MODEL_CONFIGS.get(final_model)
+            if model_config and hasattr(model_config, 'cost_per_1k_tokens'):
+                cost_per_1k = model_config.cost_per_1k_tokens
+            else:
+                cost_per_1k = 0.002  # Default fallback
+            estimated_cost = (response.total_tokens / 1000) * cost_per_1k
             
             # Final chunk with metadata
             yield StreamChunk(
                 content="",
                 model_used=response.model,
                 tokens_used=response.total_tokens,
-                cost=response.cost,
+                cost=response.cost if hasattr(response, 'cost') else estimated_cost,
                 is_final=True
             )
             
@@ -349,16 +410,19 @@ class LLMService:
         if not model_config:
             return 0.001  # Default estimate
         
-        # Calculate based on model pricing
-        input_cost = (estimated_tokens / 1_000_000) * model_config.cost_per_million_input_tokens
-        output_cost = (self.max_tokens / 1_000_000) * model_config.cost_per_million_output_tokens
+        # Calculate based on model pricing (convert from per-1k to per-million)
+        cost_per_million_input = (model_config.cost_per_1k_input_tokens or model_config.cost_per_1k_tokens) * 1000
+        cost_per_million_output = (model_config.cost_per_1k_output_tokens or model_config.cost_per_1k_tokens) * 1000
+        
+        input_cost = (estimated_tokens / 1_000_000) * cost_per_million_input
+        output_cost = (self.max_tokens / 1_000_000) * cost_per_million_output
         
         # Add image cost if applicable
         image_cost = 0.0
         if has_image and model_config.supports_vision:
             # Estimate ~1280 tokens for image
             image_tokens = 1280
-            image_cost = (image_tokens / 1_000_000) * model_config.cost_per_million_input_tokens
+            image_cost = (image_tokens / 1_000_000) * cost_per_million_input
         
         return input_cost + output_cost + image_cost
     
