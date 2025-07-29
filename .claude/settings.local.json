@@ -40,7 +40,11 @@
       "Bash(/opt/anaconda3/bin/pip install langchain-community)",
       "Bash(/opt/anaconda3/bin/pip install langchain-openai)",
       "Bash(source:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(cp:*)",
+      "Bash(npm start)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }
