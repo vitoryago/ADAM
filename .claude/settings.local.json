@@ -44,7 +44,12 @@
       "Bash(cp:*)",
       "Bash(npm start)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(DATABASE_URL=\"postgresql://neondb_owner:npg_SgejxJq7Zm4o@ep-proud-sea-acin7mj6-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require\" npm run dev)",
+      "Bash(PORT=3001 DATABASE_URL=\"postgresql://neondb_owner:npg_SgejxJq7Zm4o@ep-proud-sea-acin7mj6-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require\" npm run dev)",
+      "Bash(PORT=3001 npm run dev)",
+      "Bash(kill:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": []
   }
