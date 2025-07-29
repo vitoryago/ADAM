@@ -32,7 +32,15 @@
       "Bash(npm run build:*)",
       "Bash(npx tailwindcss:*)",
       "Bash(npm uninstall:*)",
-      "Bash(streamlit run:*)"
+      "Bash(streamlit run:*)",
+      "Bash(conda install:*)",
+      "Bash(/opt/anaconda3/bin/pip install langgraph)",
+      "Bash(/opt/anaconda3/bin/pip install -r /Users/vitoryago/ADAM/requirements_web.txt)",
+      "Bash(/opt/anaconda3/bin/streamlit run adam_web.py)",
+      "Bash(/opt/anaconda3/bin/pip install langchain-community)",
+      "Bash(/opt/anaconda3/bin/pip install langchain-openai)",
+      "Bash(source:*)",
+      "Bash(tree:*)"
     ],
     "deny": []
   }

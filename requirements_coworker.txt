@@ -1,0 +1,18 @@
+# Additional requirements for ADAM Coworker features
+
+# Screen capture
+mss>=9.0.1  # Cross-platform screen capture
+Pillow>=10.0.0  # Image processing
+pytesseract>=0.3.10  # OCR for text extraction
+
+# macOS specific (optional)
+# pyobjc-framework-Quartz>=9.0  # For macOS screen capture
+# pyobjc-framework-AppKit>=9.0  # For macOS UI integration
+
+# System integration (optional)
+pystray>=0.19.5  # System tray integration
+keyboard>=0.13.5  # Global hotkeys
+plyer>=2.1  # Native notifications
+
+# Include base requirements
+-r requirements.txt
