@@ -14,7 +14,12 @@ from .langgraph_conversation import (
 )
 from .integrated_conversation_system import IntegratedADAMSystem
 
-__version__ = "3.0.0"  # Major version bump for LangGraph integration
+# New coworker components
+from .project_manager import ProjectManager, Project
+from .screen_capture import ScreenCaptureService, ScreenContextAnalyzer
+from .project_aware_memory import ProjectAwareMemory
+
+__version__ = "3.1.0"  # Version bump for coworker features
 
 __all__ = [
     'ConversationSystem',
@@ -28,5 +33,11 @@ __all__ = [
     'ConversationState',
     'QueryComplexityAnalyzer',
     'MemoryConfidenceScorer',
-    'IntegratedADAMSystem'
+    'IntegratedADAMSystem',
+    # New coworker components
+    'ProjectManager',
+    'Project',
+    'ScreenCaptureService',
+    'ScreenContextAnalyzer',
+    'ProjectAwareMemory'
 ]
