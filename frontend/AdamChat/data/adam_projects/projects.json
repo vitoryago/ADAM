@@ -1,0 +1,21 @@
+{
+  "projects": {
+    "0d69acb9-3947-4658-8b86-fac6a87923aa": {
+      "id": "0d69acb9-3947-4658-8b86-fac6a87923aa",
+      "name": "Project 0d69acb9",
+      "created_at": "2025-07-29T16:11:41.806283",
+      "last_accessed": "2025-07-29T16:19:48.593716",
+      "memory_collection": "project_0d69acb9-3947-4658-8b86-fac6a87923aa",
+      "conversation_count": 0,
+      "total_queries": 2,
+      "total_cost": 0.00014175,
+      "settings": {
+        "default_model": "gpt-4o-mini",
+        "memory_enabled": true,
+        "rag_enabled": true
+      },
+      "metadata": {}
+    }
+  },
+  "last_updated": "2025-07-29T16:19:48.593750"
+}
