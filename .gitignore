@@ -72,3 +72,10 @@ Desktop.ini
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Frontend
+frontend/AdamChat/node_modules/
+frontend/AdamChat/dist/
+frontend/AdamChat/.env.local
+frontend/AdamChat/*.log
+frontend/AdamChat/package-lock.json

@@ -17,6 +17,9 @@ src/adam/memory_lifecycle.py
 src/adam/memory_network.py
 src/adam/memory_search_enhanced.py
 src/adam/pricing_manager.py
+src/adam/project_aware_memory.py
+src/adam/project_manager.py
+src/adam/screen_capture.py
 src/adam/temporal_memory_scoring.py
 src/adam/tools/__init__.py
 src/adam/tools/sql_tools.py

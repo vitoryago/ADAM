@@ -1,4 +1,4 @@
-Metadata-Version: 2.4
+Metadata-Version: 2.1
 Name: adam-assistant
 Version: 2.0.0
 Summary: Analytics Data Assistant with Memory - An intelligent AI assistant with conversation tracking and memory networks
@@ -41,16 +41,6 @@ Requires-Dist: openai-whisper>=20231117; extra == "vision"
 Provides-Extra: web
 Requires-Dist: streamlit>=1.29.0; extra == "web"
 Requires-Dist: gradio>=4.13.0; extra == "web"
-Dynamic: author
-Dynamic: author-email
-Dynamic: classifier
-Dynamic: description
-Dynamic: description-content-type
-Dynamic: home-page
-Dynamic: provides-extra
-Dynamic: requires-dist
-Dynamic: requires-python
-Dynamic: summary
 
 # ADAM - Analytics Data Assistant with Memory
 
