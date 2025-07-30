@@ -162,12 +162,27 @@ class LLMService:
                     system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
             
             if image_data and model_config and model_config.supports_vision:
+                # Convert base64 string to bytes if needed
+                if isinstance(image_data, str):
+                    import base64
+                    try:
+                        # Remove data URL prefix if present
+                        if image_data.startswith('data:'):
+                            image_data = image_data.split(',')[1]
+                        # Decode base64 to bytes
+                        image_bytes = base64.b64decode(image_data)
+                    except Exception as e:
+                        logger.error(f"Failed to decode base64 image: {e}")
+                        raise ValueError("Invalid image data format")
+                else:
+                    image_bytes = image_data
+                
                 # Use vision-capable model
                 response = await self.llm_client.complete(
                     prompt=full_prompt,
                     model=final_model,
                     system_prompt=system_prompt,
-                    image_data=image_data,
+                    image_data=image_bytes,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens
                 )
@@ -316,11 +331,26 @@ class LLMService:
                     system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
             
             if image_data and model_config and model_config.supports_vision:
+                # Convert base64 string to bytes if needed
+                if isinstance(image_data, str):
+                    import base64
+                    try:
+                        # Remove data URL prefix if present
+                        if image_data.startswith('data:'):
+                            image_data = image_data.split(',')[1]
+                        # Decode base64 to bytes
+                        image_bytes = base64.b64decode(image_data)
+                    except Exception as e:
+                        logger.error(f"Failed to decode base64 image: {e}")
+                        raise ValueError("Invalid image data format")
+                else:
+                    image_bytes = image_data
+                    
                 response = await self.llm_client.complete(
                     prompt=full_prompt,
                     model=final_model,
                     system_prompt=system_prompt,
-                    image_data=image_data,
+                    image_data=image_bytes,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens
                 )
@@ -333,14 +363,13 @@ class LLMService:
                     max_tokens=self.max_tokens
                 )
             
-            # Simulate streaming by yielding chunks (improved chunking for better UX)
+            # Simulate streaming by yielding chunks (preserve formatting)
             content = response.content
-            chunk_size = 3  # Words per chunk for more natural streaming
-            words = content.split()
+            chunk_size = 50  # Characters per chunk
             
-            for i in range(0, len(words), chunk_size):
-                chunk_words = words[i:i + chunk_size]
-                chunk_text = ' '.join(chunk_words) + ' '
+            # Stream character by character to preserve formatting
+            for i in range(0, len(content), chunk_size):
+                chunk_text = content[i:i + chunk_size]
                 
                 yield StreamChunk(
                     content=chunk_text,
