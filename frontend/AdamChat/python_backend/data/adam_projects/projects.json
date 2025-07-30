@@ -1,0 +1,37 @@
+{
+  "projects": {
+    "test-project": {
+      "id": "test-project",
+      "name": "Project test-pro",
+      "created_at": "2025-07-29T00:00:59.226471",
+      "last_accessed": "2025-07-29T00:01:17.587137",
+      "memory_collection": "project_test-project",
+      "conversation_count": 0,
+      "total_queries": 2,
+      "total_cost": 0.0001167,
+      "settings": {
+        "default_model": "grok-3-mini-fast",
+        "memory_enabled": true,
+        "rag_enabled": true
+      },
+      "metadata": {}
+    },
+    "demo-project": {
+      "id": "demo-project",
+      "name": "Project demo-pro",
+      "created_at": "2025-07-29T00:41:52.865841",
+      "last_accessed": "2025-07-29T00:42:01.119172",
+      "memory_collection": "project_demo-project",
+      "conversation_count": 0,
+      "total_queries": 1,
+      "total_cost": 0.005725,
+      "settings": {
+        "default_model": "gpt-4o-mini",
+        "memory_enabled": true,
+        "rag_enabled": true
+      },
+      "metadata": {}
+    }
+  },
+  "last_updated": "2025-07-29T00:42:01.119329"
+}
