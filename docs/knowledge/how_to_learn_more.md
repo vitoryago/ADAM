@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This document is your complete guide to understanding every aspect of ADAM - from the theoretical foundations to the practical implementation details. By following this guide, you'll not only understand how ADAM works but also gain deep insights into modern AI systems, distributed architectures, and production engineering.
+This document is your complete guide to understanding every aspect of ADAM - from the theoretical foundations to the practical implementation details. By following this guide, you'll not only understand how ADAM works but also gain deep insights into modern AI systems, distributed architectures, production engineering, and full-stack development with AI integration.
 
 ## Table of Contents
 
@@ -19,6 +19,8 @@ This document is your complete guide to understanding every aspect of ADAM - fro
 11. [Performance and Scalability](#11-performance-and-scalability)
 12. [Memory Lifecycle and Decay Systems](#12-memory-lifecycle-and-decay-systems)
 13. [Production Engineering](#13-production-engineering)
+14. [ADAM v2.0 - Full-Stack AI Application Development](#14-adam-v20---full-stack-ai-application-development)
+15. [Frontend Integration - Modern React + TypeScript](#15-frontend-integration---modern-react--typescript)
 
 ---
 
@@ -32,7 +34,6 @@ The psychology-inspired design of ADAM's memory system teaches fundamental conce
 - `src/adam/memory_network.py` - Graph-based memory connections
 - `src/adam/memory_lifecycle.py` - Decay and reinforcement
 - `tests/test_memory_network.py` - How memories connect
-- `docs/daily_logs/day_002.md` - The journey of building it
 
 ### Questions You Should Be Able to Answer
 
@@ -68,37 +69,6 @@ class MemoryType(Enum):
 - Categorization strategies
 - Domain modeling
 
-#### Cost-Aware Storage
-```python
-def should_store_memory(self, query: str, response: str, 
-                       generation_cost: float, complexity: QueryComplexity):
-    if generation_cost > 0.01:  # More than 1 cent
-        return True, f"Expensive response (${generation_cost:.3f})"
-```
-
-**What This Teaches**:
-- Economic models in AI systems
-- Cost optimization strategies
-- Resource allocation algorithms
-
-### Practical Exercises
-
-1. **Implement Memory Decay**
-   - Add time-based decay to memory strength
-   - Learn about forgetting curves
-   - Understand cache eviction policies
-
-2. **Build a Memory Compression System**
-   - Reduce storage size while preserving information
-   - Learn about dimensionality reduction
-   - Understand lossy vs. lossless compression
-
-### AI Concepts You'll Master
-- **Episodic vs. Semantic Memory**: How AI systems can model human memory
-- **Information Value Theory**: Deciding what's worth storing
-- **Temporal Reasoning**: How memories change over time
-- **Versioning Systems**: Git-like concepts for AI memory
-
 ---
 
 ## 2. Advanced Retrieval (RAG) - Finding the Right Information
@@ -108,44 +78,11 @@ The three-stage retrieval system teaches you why simple vector search isn't enou
 
 ### Key Files to Study
 - `src/adam/advanced_rag.py` - The complete RAG implementation
-- `examples/test_rag_comparison.py` - See it in action
-- `docs/daily_logs/day_007.md` - The theory and motivation
+- `src/adam_v2/services/advanced_memory_service.py` - Advanced memory service with BM25 and evaluation
 
-### The BM25 ZeroDivisionError Fix
-One of the recent challenges was handling empty corpus initialization:
+### The Three Pillars of Retrieval
 
-```python
-# Problem: BM25Okapi crashes with empty corpus
-# Solution: Check before initialization
-if tokenized_corpus and len(tokenized_corpus) > 0:
-    self.bm25 = BM25Okapi(tokenized_corpus, k1=self.k1, b=self.b)
-else:
-    self.bm25 = None
-    console.print("[yellow]No documents to index for BM25[/yellow]")
-```
-
-### Questions You Should Be Able to Answer
-
-1. **Why does vector search miss 40% of relevant results?**
-   - Understand the lexical gap problem
-   - Learn about semantic drift
-   - Grasp the limitations of embeddings
-
-2. **How does BM25 work and when does it excel?**
-   - Study term frequency-inverse document frequency
-   - Understand probabilistic retrieval
-   - Learn when keywords beat semantics
-
-3. **What is Reciprocal Rank Fusion?**
-   - Analyze the fusion algorithm
-   - Understand score normalization
-   - Learn ensemble methods
-
-### Deep Dive Topics
-
-#### The Three Pillars of Retrieval
-
-##### 1. BM25 - Keyword Matching
+#### 1. BM25 - Keyword Matching
 ```python
 def _tokenize_for_bm25(self, text: str) -> List[str]:
     # Split camelCase: "getElementById" -> "get element by id"
@@ -154,13 +91,7 @@ def _tokenize_for_bm25(self, text: str) -> List[str]:
     return [t for t in tokens if len(t) > 1]
 ```
 
-**What This Teaches**:
-- Information retrieval fundamentals
-- Tokenization strategies
-- Term weighting schemes
-- Why TF-IDF still matters in 2025
-
-##### 2. Vector Search - Semantic Understanding
+#### 2. Vector Search - Semantic Understanding
 ```python
 # ChromaDB handles embedding generation internally
 results = self.vector_store.query(
@@ -171,30 +102,13 @@ results = self.vector_store.query(
 similarity = 1.0 / (1.0 + distances[i])
 ```
 
-**What This Teaches**:
-- Embedding spaces and distances
-- Similarity metrics (cosine, L2, dot product)
-- Dense vs. sparse retrieval
-- The curse of dimensionality
-
-##### 3. Graph Traversal - Following Connections
+#### 3. Graph Traversal - Following Connections
 ```python
 # Use NetworkX for graph operations
 for neighbor_id in self.memory_network.memory_graph.successors(node_id):
     edge_weight = edge_data.get('weight', 0.5)
     new_score = score * edge_weight * 0.8  # Decay factor
 ```
-
-**What This Teaches**:
-- Graph algorithms (BFS, DFS, PageRank)
-- Path finding and traversal
-- Weight propagation
-- Network effects in knowledge
-
-### Research Papers
-- "Dense Passage Retrieval for Open-Domain Question Answering" (Karpukhin et al., 2020)
-- "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks" (Lewis et al., 2020)
-- "REALM: Retrieval-Augmented Language Model Pre-Training" (Guu et al., 2020)
 
 ---
 
@@ -204,58 +118,26 @@ for neighbor_id in self.memory_network.memory_graph.successors(node_id):
 How to build systems that truly understand conversational context, not just process independent queries.
 
 ### Key Files to Study
-- `src/adam/conversation_system.py` - Session management
-- `src/adam/conversation_aware_memory.py` - Context integration
-- `web/adam_web.py` - Fixed context handling implementation
+- `src/adam_v2/models.py` - Conversation and message models
+- `src/adam_v2/routers/conversations.py` - Conversation management
+- `src/adam_v2/routers/messages.py` - Message handling with LLM
 
-### Recent Improvements
-We recently fixed the context handling in the web interface:
-
+### Recent Implementation
 ```python
-# Build conversation context from current session
-conversation_context = ""
-if st.session_state.messages:
-    recent_messages = st.session_state.messages[-6:]  # Last 3 exchanges
-    for msg in recent_messages:
-        role = "Human" if msg["role"] == "user" else "Assistant"
-        conversation_context += f"{role}: {msg['content'][:200]}...\n"
+# Build conversation history
+messages = []
+if history:
+    for msg in history[-10:]:  # Last 10 messages
+        messages.append({
+            "role": msg.role,
+            "content": msg.content
+        })
+
+# Add memory context if available
+full_prompt = message
+if memory_context:
+    full_prompt = f"{memory_context}\n\nUser: {message}"
 ```
-
-### Questions You Should Be Able to Answer
-
-1. **How do you maintain context across turns?**
-   - Understand session state management
-   - Learn about conversation memory buffers
-   - Grasp turn-taking mechanics
-
-2. **When should context influence memory storage?**
-   - Study context-aware worthiness evaluation
-   - Understand conversational coherence
-   - Learn about topic modeling
-
-3. **How do you handle conversation branching?**
-   - Analyze conversation trees
-   - Understand backtracking
-   - Learn about hypothetical reasoning
-
-### Deep Dive Topics
-
-#### Session Lifecycle Management
-```python
-def start_session(self, title: Optional[str] = None) -> str:
-    session = ConversationSession(
-        session_id=session_id,
-        title=title or f"Session {timestamp}",
-        start_time=datetime.now(),  # Note: not started_at
-        state="active"  # Note: string, not enum
-    )
-```
-
-### AI Concepts You'll Master
-- **Dialogue State Tracking**: Managing conversational flow
-- **Context Modeling**: What matters and when
-- **Coreference Resolution**: Understanding "it", "that", "they"
-- **Conversational Coherence**: Making AI feel natural
 
 ---
 
@@ -265,26 +147,8 @@ def start_session(self, title: Optional[str] = None) -> str:
 The transition from Q&A systems to goal-oriented agents that plan, execute, and learn.
 
 ### Key Files to Study
-- `archive/advanced_features/agent_system.py` - Agent implementation
-- `archive/advanced_features/agent_tools.py` - Tool suite for agents
-- `examples/agent_demo.py` - See agents in action
-
-### Questions You Should Be Able to Answer
-
-1. **What's the difference between ReAct, Plan-and-Execute, and Reflexion?**
-   - Understand each architecture's strengths
-   - Learn when to use which approach
-   - Grasp the tradeoffs
-
-2. **How do agents decompose complex goals?**
-   - Study hierarchical task decomposition
-   - Understand dependency graphs
-   - Learn about planning algorithms
-
-### Research Papers
-- "ReAct: Synergizing Reasoning and Acting in Language Models" (Yao et al., 2023)
-- "Reflexion: Language Agents with Verbal Reinforcement Learning" (Shinn et al., 2023)
-- "Plan-and-Solve Prompting" (Wang et al., 2023)
+- Future: Agent system to be implemented with ADAM v2.0
+- Planning for tool use, web browsing, and autonomous task completion
 
 ---
 
@@ -296,29 +160,13 @@ The mathematics and engineering behind semantic search and high-dimensional data
 ### Key Files to Study
 - `src/adam/memory.py` - ChromaDB integration
 - `src/adam/advanced_rag.py` - Embedding usage
-- `src/adam/memory_config.py` - Embedding configuration
+- `src/adam_v2/services/advanced_memory_service.py` - Advanced search implementation
 
-### Recent Updates
-ADAM now supports multiple embedding models:
-- all-mpnet-base-v2 (default)
-- text-embedding-ada-002
-- Custom models via configuration
-
-### Questions You Should Be Able to Answer
-
-1. **Why do embeddings capture meaning?**
-   - Understand distributional hypothesis
-   - Learn about word2vec to transformers
-   - Grasp geometric interpretation
-
-2. **How do vector databases achieve fast search?**
-   - Study HNSW algorithm
-   - Understand approximate nearest neighbors
-   - Learn about indexing strategies
-
-### Research Papers
-- "Efficient and Robust Approximate Nearest Neighbor Search Using HNSW" (Malkov & Yashunin, 2020)
-- "Billion-scale similarity search with GPUs" (Johnson et al., 2019)
+### Key Concepts
+- Embedding spaces and distances
+- Similarity metrics (cosine, L2, dot product)
+- Dense vs. sparse retrieval
+- The curse of dimensionality
 
 ---
 
@@ -329,32 +177,8 @@ How relationships between information create intelligence beyond isolated facts.
 
 ### Key Files to Study
 - `src/adam/memory_network.py` - Graph-based memory
-- `tests/test_memory_network.py` - Network operations
-- `examples/visualize_memory_network.py` - Visualization tools
-
-### Questions You Should Be Able to Answer
-
-1. **How do you determine connection strength?**
-   - Understand weight calculation
-   - Learn about semantic similarity
-   - Grasp temporal factors
-
-2. **What graph algorithms enable knowledge discovery?**
-   - Study PageRank for importance
-   - Understand community detection
-   - Learn path-finding algorithms
-
-### Deep Dive Topics
-
-#### Automatic Reference Discovery
-```python
-def _calculate_reference_weight(self, new_memory, existing_memory):
-    content_similarity = self.calculate_similarity(new_memory, existing_memory)
-    temporal_proximity = self.calculate_temporal_factor(new_memory, existing_memory)
-    topic_overlap = self.calculate_topic_overlap(new_memory, existing_memory)
-    
-    return self.combine_factors(content_similarity, temporal_proximity, topic_overlap)
-```
+- NetworkX for graph operations
+- Automatic connection discovery
 
 ---
 
@@ -367,1250 +191,632 @@ How to effectively integrate and control large language models in production sys
 - `src/adam/llm/config.py` - Model configurations
 - `src/adam/llm/client.py` - Unified client
 - `src/adam/llm/query_analyzer.py` - Intelligent routing
-- `docs/INTELLIGENT_ROUTING.md` - Complete guide
-- `docs/GROK_VISION_IMPLEMENTATION.md` - Vision model integration
+- `src/adam_v2/services/llm_service.py` - Production LLM service
 
-### Recent Implementation: Intelligent Model Routing
-
-ADAM now automatically selects the best model based on query complexity:
-
+### Model Hierarchy Implemented
 ```python
-class QueryAnalyzer:
-    def analyze_query(self, query: str) -> Tuple[QueryComplexity, Dict[str, any]]:
-        complexity_score = 0
-        
-        # Check for complexity indicators
-        if any(indicator in query_lower for indicator in self.HIGH_COMPLEXITY_INDICATORS):
-            complexity_score += 3
-        
-        # Long queries tend to be complex
-        if len(query) > 500:
-            complexity_score += 2
-            
-        # Map to complexity level
-        if complexity_score >= 3:
-            return QueryComplexity.HIGH
+# Available models with their capabilities
+models = {
+    "automatic": "Let ADAM choose the best model",
+    "grok-4-reasoning": "Most powerful for complex tasks (vision-capable)",
+    "grok-4": "Standard high-quality responses (vision-capable)",
+    "grok-2-vision-1212": "Optimized for image analysis",
+    "grok-3-mini-high": "Fast responses with reasoning",
+    "grok-3-mini-fast": "Fastest responses",
+    "gpt-4": "OpenAI's flagship model (vision-capable)",
+    "gpt-3.5-turbo": "Fast and efficient"
+}
 ```
 
-### Model Hierarchy
-- **grok-4-reasoning**: Complex tasks (code generation, deep analysis) 🖼️
-- **grok-4**: Standard technical queries 🖼️
-- **grok-2-vision-1212**: Optimized for image analysis 🖼️
-- **grok-3-mini-high**: Simple queries, memory recaps
-- **gpt-4**: OpenAI GPT-4 with vision 🖼️
-
-### Questions You Should Be Able to Answer
-
-1. **How does intelligent routing reduce costs?**
-   - Understand query complexity analysis
-   - Learn about model capability mapping
-   - Calculate cost savings (63-89% reduction)
-
-2. **When should you override automatic selection?**
-   - Study edge cases
-   - Understand model limitations
-   - Learn manual override patterns
-
-### Research Papers
-- "Language Models are Few-Shot Learners" (Brown et al., 2020)
-- "Constitutional AI: Harmlessness from AI Feedback" (Bai et al., 2022)
-- "GPT-4V(ision) System Card" (OpenAI, 2023)
-- "Flamingo: a Visual Language Model for Few-Shot Learning" (Alayrac et al., 2022)
-
----
-
-## 8. Vision and Multimodal AI
-
-### What You'll Learn
-How to build AI systems that can process both text and images, understand visual content, and provide cost-effective multimodal interactions.
-
-### Key Files to Study
-- `src/adam/llm/config.py` - Vision model configuration
-- `src/adam/llm/client.py` - Image handling implementation
-- `web/adam_web.py` - Multimodal web interface
-- `examples/test_grok_vision.py` - Vision testing
-- `docs/GROK_VISION_PRICING.md` - Cost analysis
-
-### Core Concepts
-
-#### Vision Model Integration
+### Intelligent Routing Implementation
 ```python
-# Proper xAI SDK format for images
-from xai_sdk.chat import user, image
-
-chat.append(
-    user(
-        "What's in this image?",
-        image(image_url=f"data:image/jpeg;base64,{base64_image}", detail="high")
-    )
-)
-```
-
-#### Image Token Calculation
-Grok vision models process images by:
-1. Breaking into 448x448 pixel tiles
-2. Each tile = 256 tokens
-3. Maximum 6 tiles per image
-4. Formula: `(# of tiles + 1) * 256` tokens
-
-#### Cost Optimization
-```python
-# Different models, different pricing
-if "grok-2-vision" in model_name:
-    # Input: $2/million tokens, Output: $10/million tokens
-    input_cost = (input_tokens / 1_000_000) * 2.00
-    output_cost = (output_tokens / 1_000_000) * 10.00
-    image_tokens = estimate_image_tokens(image_data)  # ~1280 typical
-elif "gpt-4" in model_name:
-    # Fixed image cost + text tokens
-    image_cost = 0.01  # ~$0.01 per image
-    text_cost = calculate_text_cost(tokens)
-```
-
-### Questions You Should Be Able to Answer
-
-1. **How do you implement proper image encoding for different APIs?**
-   - Base64 encoding vs URL references
-   - Format specifications (data:image/jpeg;base64,...)
-   - Detail levels (high, low, auto)
-
-2. **What are the cost implications of vision models?**
-   - Token-based vs fixed pricing
-   - Image size impact on costs
-   - When to use vision vs text-only models
-
-3. **How do you design adaptive UIs for multimodal capabilities?**
-   - Conditional feature display
-   - Visual capability indicators
-   - User experience considerations
-
-### Practical Exercises
-
-1. **Implement Multi-Image Support**
-   - Handle multiple images in one query
-   - Compare costs across providers
-   - Test with different image sizes
-
-2. **Build Image Preprocessing Pipeline**
-   - Resize images to optimize token usage
-   - Format conversion (PNG → JPEG)
-   - Quality vs cost tradeoffs
-
-3. **Create Vision Model Benchmarks**
-   - Compare accuracy across models
-   - Measure cost per successful analysis
-   - Test edge cases (blurry, dark images)
-
-### Vision-Specific Considerations
-
-#### Image Quality vs Cost
-- **High detail**: Better accuracy, more tokens
-- **Low detail**: Faster, cheaper, may miss fine details
-- **Auto**: Model decides, usually good balance
-
-#### Multimodal Prompt Engineering
-```python
-# Effective vision prompts
-good_prompt = "Analyze this code screenshot and identify any syntax errors."
-bad_prompt = "What do you see?"  # Too generic
-
-# Context matters
-with_context = "This is a Python function. Check for any issues with the implementation."
-without_context = "Check this code."  # Less effective
-```
-
-### Integration Patterns
-
-#### Graceful Degradation
-```python
-if model_supports_vision and image_provided:
-    response = analyze_with_image(prompt, image)
-else:
-    if image_provided:
-        prompt += " (Note: Image was provided but current model doesn't support vision)"
-    response = analyze_text_only(prompt)
-```
-
-#### Cost-Aware Selection
-```python
-def select_vision_model(image_complexity, budget):
-    if budget > 0.02:  # High budget
-        return "gpt-4-vision"
-    elif image_complexity == "simple":
-        return "grok-2-vision-1212"  # More cost-effective
+def _select_model_by_complexity(self, complexity: 'QueryComplexity') -> str:
+    """Select model based on query complexity"""
+    if complexity == QueryComplexity.HIGH:
+        return "grok-4-reasoning"
+    elif complexity == QueryComplexity.MEDIUM:
+        return "grok-4"
     else:
-        return "grok-4"  # Balance of cost and capability
+        return "grok-3-mini-high"
 ```
 
 ---
 
-## 9. SQL Analysis and Optimization Tools
+## 8. SQL Analysis and Optimization Tools
 
 ### What You'll Learn
 How ADAM helps analytics engineers optimize SQL queries and maintain code quality.
 
 ### Key Files to Study
 - `src/adam/tools/sql_tools.py` - Complete implementation
-- `tests/test_sql_tools.py` - Comprehensive tests
-- `examples/sql_tools_demo.py` - Usage examples
-
-### Key Features
-
-#### Pattern-Based Issue Detection
-```python
-def _check_select_star(self, query: str) -> List[SQLIssue]:
-    if re.search(r'SELECT\s+\*', query, re.IGNORECASE):
-        return [SQLIssue(
-            line_number=self._get_line_number(query, 'SELECT'),
-            issue_type=IssueType.PERFORMANCE,
-            message="SELECT * can be inefficient",
-            suggestion="Specify only needed columns"
-        )]
-```
-
-#### Complexity Scoring
-```python
-complexity_score = min(10, max(1, (
-    (line_count // 30) +
-    (cte_count) +
-    (join_count) +
-    (subquery_count)
-)))
-```
-
-### Questions You Should Be Able to Answer
-
-1. **How does ADAM detect SQL anti-patterns?**
-   - Pattern matching techniques
-   - Performance impact estimation
-   - Platform-specific optimizations
-
-2. **What makes SQL analysis different from general code analysis?**
-   - Declarative vs imperative
-   - Query plan considerations
-   - Data volume impacts
+- Pattern-based issue detection
+- Complexity scoring
 
 ---
 
-## 10. Web and CLI Interfaces
+## 9. Web and CLI Interfaces
 
 ### What You'll Learn
 How to build effective user interfaces for AI systems, from command-line to web.
 
 ### Key Files to Study
 - `cli/adam_chat.py` - Main chat interface
-- `cli/adam_complete.py` - Full transparency mode
 - `web/adam_web.py` - Streamlit web interface
-
-### Recent Fixes
-
-#### Session Attribute Error
-```python
-# Fixed: ConversationSession uses 'start_time' not 'started_at'
-date = session.start_time.date()
-```
-
-#### Context Handling
-```python
-# Prioritize current conversation over memory search
-if conversation_context:
-    full_prompt += f"\n\n{conversation_context}"
-if memory_context and len(conversation_context) < 500:
-    full_prompt += f"{memory_context}"
-```
-
-### Interface Design Principles
-
-1. **Transparency**: Show what the AI is doing
-2. **Control**: Let users choose models and features
-3. **Performance**: Optimize for responsiveness
-4. **Context**: Maintain conversation flow
+- `frontend/AdamChat/` - Modern React frontend
 
 ---
 
-## 11. System Design and Architecture
-
-### What You'll Learn
-How to build production-grade AI systems that scale, perform, and maintain.
+## 10. System Design and Architecture
 
 ### Project Organization
-Recent reorganization for better maintainability:
-
 ```
 ADAM/
 ├── cli/                    # Command-line interfaces
-├── web/                    # Web interfaces
-├── src/adam/              # Core modules
+├── web/                    # Streamlit web interface
+├── frontend/              
+│   └── AdamChat/          # React + TypeScript frontend
+├── src/
+│   ├── adam/              # Core ADAM modules
+│   └── adam_v2/           # FastAPI backend
 ├── tests/                  # Test suite
 ├── examples/               # Demo scripts
-├── docs/                   # Documentation
-└── scripts/                # Utility scripts
+└── docs/                   # Documentation
 ```
 
-### Key Architecture Patterns
-- **Separation of Concerns**: Memory, conversation, and agents are independent
-- **Plugin Architecture**: Easy to add new LLM providers
-- **Event-Driven**: Activity tracking and memory lifecycle
-- **Cost-Aware**: Every operation tracks costs
+### Architecture Patterns
+- **Separation of Concerns**: Frontend, backend, and AI services are independent
+- **RESTful API**: Clean interface between frontend and backend
+- **WebSocket Support**: Real-time features (disabled for simplicity)
+- **Cost-Aware**: Every operation tracks costs and tokens
 
 ---
 
-## 12. Performance and Scalability
+## 11. Performance and Scalability
 
-### What You'll Learn
-Making AI systems fast and efficient at scale.
-
-### Performance Optimizations
-
-#### Memory Search
-- Reduced default search results from 5 to 3
-- Added optional memory search toggle
-- Implemented context size limits
-
-#### Model Selection
-- Automatic routing avoids expensive models
+### Performance Optimizations Implemented
+- Model selection based on query complexity
+- Reduced memory search results for efficiency
 - Streaming responses for perceived speed
-- Caching for repeated queries
-
-### Questions You Should Be Able to Answer
-
-1. **Where are the bottlenecks in RAG systems?**
-   - Embedding generation
-   - Vector search
-   - LLM inference
-
-2. **How do you optimize for cost vs performance?**
-   - Model routing strategies
-   - Caching policies
-   - Batch processing
+- Frontend state management with React Query
 
 ---
 
-## 13. Memory Lifecycle and Decay Systems
+## 12. Memory Lifecycle and Decay Systems
 
 ### What You'll Learn
 Psychology-inspired memory management with decay, reinforcement, and compression.
 
-### Key Files to Study
-- `src/adam/memory_lifecycle.py` - Complete implementation
-- `src/adam/activity_tracker.py` - Activity-based aging
-- `scripts/manage_memory_lifecycle.py` - Management tools
-
 ### Core Concepts
-
-#### Exponential Decay
-```python
-strength = initial_strength * (decay_rate ** active_days)
-```
-
-#### Activity-Based Aging
-```python
-# Only age memories on days the system is used
-if today not in self.activity_data["daily_activity"]:
-    self.activity_data["active_days"].append(today)
-```
-
-#### Multi-Tier Compression
-```python
-TIER_FULL = 7        # Full fidelity
-TIER_MODERATE = 30   # Important exchanges only
-TIER_HIGH = 90       # Key insights only
-```
-
-### Research Foundations
-- Ebbinghaus Forgetting Curve
-- Spaced Repetition (SM-2 algorithm)
-- Hebbian Learning Theory
+- Exponential decay based on activity
+- Multi-tier compression for old memories
+- Reinforcement through repeated access
 
 ---
 
-## 14. Production Engineering
+## 13. Production Engineering
+
+### Key Considerations Implemented
+- Error boundaries in frontend
+- Graceful degradation when models fail
+- API key management through environment variables
+- CORS configuration for frontend-backend communication
+
+---
+
+## 14. ADAM v2.0 - Full-Stack AI Application Development
 
 ### What You'll Learn
-Building reliable, secure, and observable AI systems.
+Building a complete project-based memory system with modern web technologies teaches full-stack development, async programming, and production architecture.
 
-### Key Considerations
+### Key Files to Study
+- `src/adam_v2/` - Complete FastAPI backend
+- `src/adam_v2/models.py` - SQLAlchemy async models
+- `src/adam_v2/routers/` - RESTful API endpoints
+- `src/adam_v2/services/` - Business logic layer
 
-#### Error Handling
-- Graceful degradation when models fail
-- Retry strategies with exponential backoff
-- Fallback to simpler models
+### Backend Architecture
 
-#### Security
-- API key management
-- Prompt injection defense
-- Data privacy compliance
+#### 1. FastAPI Application Structure
+```python
+# Main application setup (main.py)
+app = FastAPI(title="ADAM v2.0")
 
-#### Monitoring
-- Token usage tracking
-- Cost monitoring
-- Performance metrics
-- Error rates
+# CORS configuration for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-### Best Practices
+# API routes with /api prefix
+app.include_router(projects.router, prefix="/api", tags=["projects"])
+app.include_router(conversations.router, prefix="/api", tags=["conversations"])
+app.include_router(messages.router, prefix="/api", tags=["messages"])
+```
 
-1. **Always use environment variables for secrets**
-2. **Implement circuit breakers for external APIs**
-3. **Log everything but sanitize sensitive data**
-4. **Version your prompts and configurations**
+#### 2. Database Models (SQLAlchemy)
+```python
+class Project(Base):
+    """Project model - top level organization unit"""
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    settings = Column(JSON, default=dict)
+    
+class Conversation(Base):
+    """Conversation model - chat sessions within projects"""
+    id = Column(String, primary_key=True)
+    project_id = Column(String, ForeignKey("projects.id"))
+    title = Column(String, nullable=False)
+    
+class Message(Base):
+    """Message model - individual messages"""
+    id = Column(String, primary_key=True)
+    conversation_id = Column(String, ForeignKey("conversations.id"))
+    role = Column(String)  # user, assistant
+    content = Column(Text)
+    model = Column(String)  # Which AI model was used
+    tokens_used = Column(Integer)
+    cost = Column(Float)
+```
 
----
+#### 3. LLM Service Integration
+```python
+class LLMService:
+    """Service for LLM interactions with streaming support"""
+    
+    async def generate_response(
+        self,
+        message: str,
+        history: List[Any] = None,
+        memory_context: str = "",
+        model: Optional[str] = None,
+        image_data: Optional[str] = None
+    ) -> LLMResponse:
+        # Intelligent model selection
+        if not model:
+            complexity, _ = self.query_analyzer.analyze_query(message)
+            model = self._select_model_by_complexity(complexity)
+        
+        # Handle vision models for images
+        if image_data and model_config.supports_vision:
+            response = await self.llm_client.complete(
+                prompt=full_prompt,
+                model=final_model,
+                image_data=image_data
+            )
+```
 
-## Current Development Status (January 2025)
+### API Endpoints Implemented
 
-### ✅ Completed Components
-1. **Memory System** - Advanced worthiness evaluation, versioning, lifecycle
-2. **RAG System** - Three-stage retrieval with BM25 fix
-3. **Conversation System** - Session management with proper context
-4. **Memory Network** - Graph-based connections
-5. **LLM Integration** - Multi-provider with intelligent routing
-6. **SQL Tools** - Analysis and optimization
-7. **Web/CLI Interfaces** - Multiple interaction modes with error boundaries
-8. **File Organization** - Clean project structure
-9. **Enhanced Memory Search** - Intent-aware retrieval with technical term extraction
-10. **Session Persistence** - Auto-save conversations to disk
-11. **Vision/Multimodal Support** - Image analysis with Grok and GPT-4 vision models
-12. **Temporal Memory Scoring** - Time-aware retrieval prioritization
-13. **Intelligent Model Routing** - Automatic cost optimization (63-89% savings)
+#### Projects API
+- `GET /api/projects` - List all projects
+- `POST /api/projects` - Create new project
+- `GET /api/projects/{id}` - Get project details
+- `PUT /api/projects/{id}` - Update project
+- `DELETE /api/projects/{id}` - Delete project
 
-### 🚧 Recent Fixes and Improvements (Latest Sessions)
+#### Conversations API
+- `GET /api/projects/{project_id}/conversations` - List conversations
+- `POST /api/projects/{project_id}/conversations` - Create conversation
+- `DELETE /api/conversations/{id}` - Delete conversation
 
-#### Vision Model Integration (Day 023)
-1. **Proper Grok Vision API** - Using official xAI SDK format
-   ```python
-   from xai_sdk.chat import user, image
-   chat.append(
-       user("What's in this image?",
-            image(image_url=f"data:image/jpeg;base64,{base64_image}", detail="high"))
-   )
-   ```
-
-2. **Enhanced Web Interface** - Vision-aware UI
-   ```python
-   # Conditional image upload based on model capabilities
-   if model_config and model_config.supports_vision:
-       uploaded_file = st.file_uploader("Upload an image 🖼️")
-   ```
-
-3. **Accurate Cost Tracking** - Separate input/output pricing
-   ```python
-   # Grok-2 vision pricing
-   input_cost = (input_tokens / 1_000_000) * 2.00   # $2/million
-   output_cost = (output_tokens / 1_000_000) * 10.00 # $10/million
-   ```
-
-4. **Model Selector Improvements**
-   - Moved to top of page for visibility
-   - Visual indicators (🖼️) for vision support
-   - Real-time cost display
-
-#### Memory Retrieval Perfection (Day 022)
-1. **BM25 Empty Corpus** - Handle initialization with no documents
-   ```python
-   if tokenized_corpus and len(tokenized_corpus) > 0:
-       self.bm25 = BM25Okapi(tokenized_corpus, k1=self.k1, b=self.b)
-   else:
-       self.bm25 = None  # Graceful handling
-   ```
-
-2. **Web Interface Error Boundaries** - Comprehensive error handling
-   ```python
-   @error_boundary
-   def process_message(self, prompt: str, image_data: Optional[bytes] = None):
-       """Process with automatic error recovery"""
-   ```
-
-3. **Session Persistence** - Never lose conversations again
-   ```python
-   class SessionPersistence:
-       """Auto-saves to data/web_sessions.json with atomic writes"""
-       # Prevents corruption with temp file + rename pattern
-   ```
-
-4. **Memory Retrieval Enhancement** - Fixed "bring the code again" issue
-   ```python
-   class MemorySearchEnhancer:
-       """Detects user intent and extracts technical terms"""
-       RECALL_PATTERNS = [
-           r"we (?:were|was) (?:talking|discussing|working)",
-           r"(?:bring|show|give) (?:me|the) (?:code|example|dag) again",
-       ]
-   ```
-
-5. **Timestamp-Based Memory Boosting** - Prioritize recent memories
-   ```python
-   # Boost recent memories significantly for "last/latest/recent" queries
-   if hours_ago < 1:  # Within last hour
-       score *= 5.0
-   elif hours_ago < 24:  # Within last day
-       score *= 3.0
-   elif hours_ago < 168:  # Within last week
-       score *= 2.0
-   ```
-
-6. **Health Monitoring** - System status indicators
-   - Memory system status
-   - LLM availability
-   - Error count tracking
-
-7. **DateTime JSON Serialization Fix** - Handle datetime objects in session saves
-   ```python
-   # Convert datetime to ISO format before JSON serialization
-   if hasattr(msg_copy["timestamp"], "isoformat"):
-       msg_copy["timestamp"] = msg_copy["timestamp"].isoformat()
-   ```
-
-### 📋 Next Steps
-1. **URL Image Support** - Fetch images from web URLs
-2. **Multi-Image Queries** - Handle multiple images in one prompt
-3. **Voice Interface** - Complete implementation with vision
-4. **Agent System** - Move from archive to production
-5. **Performance** - Optimize for 100K+ memories
-6. **Screen Capture Integration** - ADAM as coworker watching your screen
-7. **Image Preprocessing** - Automatic optimization for cost/quality
-8. **dbt Integration** - Error parser and model analyzer
+#### Messages API
+- `POST /api/conversations/{conversation_id}/messages` - Send message & get AI response
+- Returns both user message and AI response with metadata
 
 ---
 
-## Learning Path Recommendations
+## 15. Frontend Integration - Modern React + TypeScript
 
-### Phase 1: Foundation (Weeks 1-2)
-1. Run all interfaces and understand the flow
-2. Study memory worthiness evaluation
-3. Understand the three-stage RAG system
-4. Configure and test different LLM providers
-5. Try SQL analysis on real queries
+### What We Built
+A complete modern frontend for ADAM using React, TypeScript, and Tailwind CSS with advanced features including file uploads, model selection, and real-time chat.
 
-### Phase 2: Deep Dive (Weeks 3-4)
-1. Implement a new memory type
-2. Add a new SQL anti-pattern detector
-3. Create custom embedding configuration
-4. Build memory visualization
-5. Extend the query analyzer
+### Technology Stack
+- **React 18** - UI library
+- **TypeScript** - Type safety
+- **Vite** - Build tool and dev server
+- **Tailwind CSS** - Utility-first styling
+- **Tanstack Query** - Server state management
+- **Radix UI** - Accessible component primitives
+- **Lucide Icons** - Modern icon set
 
-### Phase 3: Integration (Weeks 5-6)
-1. Connect ADAM to your data warehouse
-2. Build custom tools for your workflow
-3. Create domain-specific routing rules
-4. Implement team-specific memory policies
-5. Add monitoring and alerts
+### Key Features Implemented
 
-### Phase 4: Innovation (Weeks 7-8)
-1. Experiment with new retrieval methods
-2. Implement research papers
-3. Build multi-user support
-4. Create novel memory compression
-5. Contribute improvements back
+#### 1. Model Selection with Automatic Routing
+```typescript
+// Model selector component with visual indicators
+const models = [
+  {
+    value: "automatic",
+    name: "Automatic",
+    description: "Let ADAM choose the best model",
+    icon: Brain,
+    color: "text-purple-600",
+  },
+  {
+    value: "grok-4-reasoning",
+    name: "Grok 4 Reasoning",
+    description: "Most powerful for complex tasks",
+    icon: Sparkles,
+    color: "text-blue-600",
+  },
+  // ... more models
+];
+
+// Auto-select vision model for images
+if (attachedFile?.type.startsWith('image/') && selectedModel === "automatic") {
+  modelToUse = "grok-2-vision-1212";
+}
+```
+
+#### 2. File Upload System (up to 20MB)
+```typescript
+interface AttachedFile {
+  name: string;
+  type: string;
+  size: number;
+  data: string; // base64
+  preview?: string; // for images
+}
+
+// Handle multiple file types
+const handleFileSelect = async (file: File) => {
+  // Images sent as base64 to vision models
+  if (file.type.startsWith('image/')) {
+    requestBody.has_image = true;
+    requestBody.image_data = attachedFile.data;
+  } else {
+    // Code/text files included in message
+    const decodedContent = atob(attachedFile.data);
+    requestBody.content = `File: ${file.name}\n\`\`\`${extension}\n${decodedContent}\n\`\`\``;
+  }
+};
+```
+
+#### 3. Real-time Token and Cost Display
+```typescript
+// Display in message bubbles
+{message.metadata?.model && (
+  <div className="flex items-center gap-1">
+    <Cpu className="w-3 h-3" />
+    <span>{message.metadata.model}</span>
+  </div>
+)}
+{message.metadata?.tokens_used && (
+  <div className="flex items-center gap-1">
+    <Coins className="w-3 h-3" />
+    <span>{message.metadata.tokens_used} tokens</span>
+  </div>
+)}
+```
+
+#### 4. Loading States and UX Improvements
+```typescript
+// Show loading indicator while ADAM processes
+{isProcessing && (
+  <div className="flex items-center space-x-2">
+    <div className="flex space-x-1">
+      <div className="w-2 h-2 bg-foreground/60 rounded-full animate-bounce" />
+      <div className="w-2 h-2 bg-foreground/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+      <div className="w-2 h-2 bg-foreground/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+    </div>
+    <span className="text-sm text-muted-foreground">ADAM is thinking...</span>
+  </div>
+)}
+```
+
+### Frontend-Backend Integration
+
+#### 1. API Configuration
+```typescript
+// Vite proxy configuration for development
+export default defineConfig({
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      }
+    }
+  }
+});
+```
+
+#### 2. Message Flow
+1. User types message and/or attaches file
+2. Frontend sends POST to `/api/conversations/{id}/messages`
+3. Backend processes with selected/automatic model
+4. Response includes model used, tokens, and cost
+5. Frontend displays with proper formatting
+
+#### 3. Data Transformation
+```typescript
+// Transform backend format to frontend format
+export function transformMessage(backendMessage: any): MessageWithMetadata {
+  return {
+    id: backendMessage.id,
+    conversationId: backendMessage.conversation_id,
+    role: backendMessage.role,
+    content: backendMessage.content,
+    timestamp: backendMessage.created_at,
+    metadata: {
+      model: backendMessage.model,
+      tokens_used: backendMessage.tokens_used,
+      cost: backendMessage.cost,
+      has_image: backendMessage.has_image
+    }
+  };
+}
+```
+
+### Project Structure
+```
+frontend/AdamChat/
+├── client/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── chat/
+│   │   │   │   ├── chat-area.tsx       # Main chat interface
+│   │   │   │   ├── message-bubble.tsx  # Message display
+│   │   │   │   ├── message-input.tsx   # Input with file upload
+│   │   │   │   └── model-selector.tsx  # Model selection dropdown
+│   │   │   └── ui/                     # Reusable UI components
+│   │   ├── hooks/
+│   │   │   └── use-websocket.ts       # WebSocket hook (disabled)
+│   │   └── lib/
+│   │       ├── api-types.ts           # Type definitions
+│   │       └── queryClient.ts          # API client setup
+│   └── public/
+├── server/                             # Node.js server (unused)
+├── shared/
+│   └── schema.ts                       # Shared types
+├── package.json
+└── vite.config.ts                      # Vite configuration
+```
+
+### Key Technical Decisions
+
+#### 1. Disabled WebSocket for Simplicity
+```typescript
+// ADAM backend only supports REST API currently
+export function useWebSocket() {
+  const [isConnected] = useState(true); // Always "connected"
+  const [isTyping] = useState(false);
+  const [error] = useState<string | null>(null);
+  
+  // No-op implementations
+  return { isConnected, isTyping, error, sendMessage, onMessage, reconnect };
+}
+```
+
+#### 2. Smart File Handling
+- Images: Sent as base64 to vision-capable models
+- Code files: Content extracted and formatted with syntax highlighting
+- Binary files: Filename reference only
+
+#### 3. Frontend State Management
+- React Query for server state (conversations, messages)
+- Local state for UI (selected model, attached files)
+- Optimistic updates for better UX
+
+### Development Workflow
+
+#### 1. Start the Backend
+```bash
+cd src/adam_v2
+source ../../venv/bin/activate
+uvicorn main:app --reload --port 8000
+```
+
+#### 2. Start the Frontend
+```bash
+cd frontend/AdamChat
+npm install  # First time only
+npm run dev  # Starts Vite dev server on port 5173
+```
+
+#### 3. Environment Setup
+```bash
+# ADAM/.env file
+XAI_API_KEY=your-xai-api-key
+OPENAI_API_KEY=your-openai-api-key
+```
+
+### Features Available in the UI
+
+1. **Project Selection** - Switch between different projects
+2. **Conversation Management** - Create, view, and delete conversations
+3. **Model Selection** - Choose AI model or use automatic routing
+4. **File Uploads** - Attach images or code files up to 20MB
+5. **Real-time Feedback** - Loading states, token counts, costs
+6. **Dark/Light Mode** - Theme switching support
+7. **Responsive Design** - Works on mobile and desktop
+
+### Security Considerations
+
+1. **CORS Configuration** - Only allows specific origins
+2. **File Size Limits** - 20MB maximum upload
+3. **Base64 Encoding** - Secure file transmission
+4. **API Key Protection** - Keys only on backend
+
+### Performance Features
+
+1. **Message Batching** - Returns user and AI messages together
+2. **Query Caching** - React Query caches API responses
+3. **Optimistic Updates** - Show user message immediately
+4. **Lazy Loading** - Components load as needed
 
 ---
 
-## Key Research Papers to Read
+## Learning Path for Full-Stack AI Development
 
-### Foundational
-1. "Attention Is All You Need" (Vaswani et al., 2017)
-2. "BERT: Pre-training of Deep Bidirectional Transformers" (Devlin et al., 2019)
-3. "Language Models are Few-Shot Learners" (Brown et al., 2020)
+### Phase 1: Understanding the Stack (Week 1)
+1. **Backend Basics**
+   - Run the FastAPI backend
+   - Explore API documentation at http://localhost:8000/docs
+   - Test endpoints with curl or Postman
+   
+2. **Frontend Basics**
+   - Start the React dev server
+   - Explore component structure
+   - Understand the data flow
 
-### RAG and Retrieval
-1. "Retrieval-Augmented Generation" (Lewis et al., 2020)
-2. "Dense Passage Retrieval" (Karpukhin et al., 2020)
-3. "REALM: Retrieval-Augmented Language Model Pre-Training" (Guu et al., 2020)
-4. "Improving Language Models by Retrieving from Trillions of Tokens" (Borgeaud et al., 2022)
+3. **Integration**
+   - Trace a message from input to AI response
+   - Understand the API contract
+   - See how models are selected
 
-### Agents and Planning
-1. "ReAct: Synergizing Reasoning and Acting" (Yao et al., 2023)
-2. "Reflexion: Language Agents with Verbal Reinforcement Learning" (Shinn et al., 2023)
-3. "Tree of Thoughts" (Yao et al., 2023)
-4. "Chain-of-Thought Prompting" (Wei et al., 2022)
+### Phase 2: Making Changes (Week 2)
+1. **Add a New Feature**
+   - Add message editing capability
+   - Implement conversation search
+   - Add export functionality
 
-### Memory and Learning
-1. "Memory Networks" (Weston et al., 2015)
-2. "Neural Turing Machines" (Graves et al., 2014)
-3. "One-shot Learning with Memory-Augmented Neural Networks" (Santoro et al., 2016)
+2. **Improve UX**
+   - Add keyboard shortcuts
+   - Implement message reactions
+   - Create a command palette
 
-### System Design
-1. "The Datacenter as a Computer" (Barroso et al.)
-2. "Designing Data-Intensive Applications" (Kleppmann)
-3. "Building Microservices" (Newman)
+3. **Enhance Backend**
+   - Add response caching
+   - Implement rate limiting
+   - Add analytics endpoints
+
+### Phase 3: Advanced Features (Week 3-4)
+1. **Real-time Features**
+   - Implement proper WebSocket support
+   - Add typing indicators
+   - Live collaboration features
+
+2. **Advanced AI Features**
+   - Multi-turn planning
+   - Code execution sandbox
+   - Voice input/output
+
+3. **Production Features**
+   - User authentication
+   - Multi-tenancy
+   - Deployment pipeline
 
 ---
 
-## Questions You Should Be Able to Answer
+## Key Learnings from Our Implementation Session
 
-### Technical Understanding
-1. Why does ADAM use three retrieval methods instead of just vector search?
-2. How does the memory lifecycle prevent unbounded growth?
-3. What makes intelligent routing reduce costs by 63-89%?
-4. How does activity-based aging solve the vacation problem?
-5. Why is BM25 still relevant with modern embeddings?
-6. How do vision models process images into tokens?
-7. What are the cost implications of multimodal AI?
-8. How does temporal scoring improve retrieval relevance?
+### 1. Git Repository Management
+When integrating a new frontend into an existing project:
+- Remove nested `.git` directories to avoid tracking issues
+- Update `.gitignore` appropriately
+- Use proper directory structure to separate concerns
 
-### Recent Improvements Understanding
-1. **Why did BM25 fail with empty corpus and how was it fixed?**
-   - Understand ZeroDivisionError in BM25Okapi
-   - Learn about graceful initialization handling
-   - Know when to rebuild vs initialize indexes
+### 2. Frontend-Backend Integration Challenges
 
-2. **How does the error boundary pattern improve web interface reliability?**
-   - Understand decorator patterns in Python
-   - Learn about error isolation and recovery
-   - Know the difference between fail-fast and graceful degradation
+#### WebSocket vs REST API
+- **Challenge**: Frontend expected WebSocket, backend only had REST
+- **Solution**: Created mock WebSocket hook, used REST for all communication
+- **Learning**: Always verify API contracts before integration
 
-3. **Why was memory search failing to find specific conversations?**
-   - Understand the difference between semantic and intent-based search
-   - Learn about query enhancement techniques
-   - Know how technical term extraction improves retrieval
+#### Port Management
+- **Challenge**: "Port already in use" errors
+- **Solution**: Backend on 8000, frontend on 5173, proper proxy setup
+- **Learning**: Clear port allocation prevents conflicts
 
-4. **How does session persistence work and why is it important?**
-   - Understand state management in web applications
-   - Learn about JSON serialization patterns
-   - Know the tradeoffs of client vs server storage
+#### Environment Variables
+- **Challenge**: Frontend tried to access DATABASE_URL
+- **Solution**: Removed server-side rendering, used client-only mode
+- **Learning**: Separate frontend and backend concerns
 
-5. **What is user intent detection and how does it improve memory retrieval?**
-   - Understand regex pattern matching for intent
-   - Learn about contextual query enhancement
-   - Know when to prioritize recall vs precision
+### 3. Model Selection and Intelligence
+- Automatic routing based on query complexity
+- Vision model auto-selection for images
+- Cost optimization through smart model choice
+- User override capability for specific needs
 
-### Implementation Skills
-1. How would you add a new LLM provider to ADAM?
-2. What changes would you make to support 1M+ memories?
-3. How would you implement cross-user memory sharing?
-4. What monitoring would you add for production?
-5. How would you extend SQL analysis for NoSQL queries?
-6. How would you implement vision support for a new model?
-7. What image preprocessing would optimize costs?
-8. How would you build a screen capture integration?
+### 4. File Upload Implementation
+- Base64 encoding for secure transmission
+- Different handling for images vs text files
+- Preview functionality for better UX
+- Size limits for performance
 
-### Debugging Skills (From Today's Session)
-1. **How do you debug memory retrieval issues?**
-   - Check if memory search is enabled
-   - Verify query enhancement is working
-   - Test with known memory content
-   - Check relevance scoring logic
-
-2. **What are the signs of poor context handling?**
-   - Generic responses when specific info exists
-   - Ignoring conversation history
-   - Not using retrieved memories
-   - Hallucinating instead of searching
-
-3. **How do you implement graceful error recovery?**
-   - Use try-except with specific handlers
-   - Log errors with full context
-   - Provide user-friendly messages
-   - Maintain system state consistency
-
-### System Design
-1. How would you scale ADAM to 1000 concurrent users?
-2. What security measures would you implement?
-3. How would you handle multi-region deployment?
-4. What would you change for GDPR compliance?
-5. How would you implement memory federation?
-
-### AI Agent Architecture Questions
-1. **What's the difference between reactive and proactive agents?**
-   - Reactive: Responds to queries (current ADAM)
-   - Proactive: Initiates actions based on goals
-   - Hybrid: Can do both based on context
-
-2. **How do tool-using agents decide which tool to use?**
-   - Function descriptions and signatures
-   - Context-based selection
-   - Learning from success/failure
-
-3. **What are the key components of a production AI agent?**
-   - Perception (input processing)
-   - Memory (state management)
-   - Planning (action selection)
-   - Execution (tool use)
-   - Learning (improvement over time)
-
-### LLM Engineering Questions
-1. **Why is prompt engineering both an art and a science?**
-   - Science: Measurable improvements, A/B testing
-   - Art: Understanding model psychology, creative solutions
-   - Balance: Systematic experimentation with intuition
-
-2. **What are the tradeoffs in few-shot vs zero-shot prompting?**
-   - Few-shot: Better accuracy, higher token cost
-   - Zero-shot: Lower cost, more general
-   - Choice depends on task complexity and budget
-
-3. **How do you handle prompt injection attacks?**
-   - Input validation and sanitization
-   - System prompt isolation
-   - Output filtering
-   - Continuous monitoring
-
-### RAG System Questions
-1. **When should you use hybrid search vs pure vector search?**
-   - Hybrid: Technical content, specific terms matter
-   - Pure vector: General knowledge, concepts matter
-   - Consider: Domain, query types, user needs
-
-2. **How do you evaluate RAG system performance?**
-   - Retrieval metrics: Precision, Recall, MRR
-   - End-to-end metrics: Answer quality, user satisfaction
-   - Cost metrics: Tokens used, latency
-
-3. **What are the scaling challenges for RAG systems?**
-   - Index size and update frequency
-   - Query latency at scale
-   - Consistency across distributed systems
-   - Cost optimization
-
-### Innovation
-1. How could quantum computing improve memory search?
-2. What novel compression techniques could preserve searchability?
-3. How would you implement "memory dreams" (offline consolidation)?
-4. What would collaborative memory networks look like?
-5. How could ADAM learn optimal decay rates per user?
-6. How could multimodal embeddings improve retrieval?
-7. What would real-time screen analysis look like?
-8. How could ADAM learn optimal image detail levels per query type?
+### 5. Real-time UX Considerations
+- Immediate message display (optimistic updates)
+- Loading indicators during processing
+- Token and cost transparency
+- Error boundaries for graceful failures
 
 ---
 
 ## Your Action Items
 
 ### Immediate (Today)
-1. Run `python cli/adam_chat.py` and have a conversation
-2. Try `streamlit run web/adam_web.py` for the web interface
-3. Test SQL analysis with a complex query
-4. Read through one complete module (suggest: memory.py)
+1. Run both backend and frontend
+2. Send a message with an image
+3. Try different AI models
+4. Upload a Python file for analysis
 
 ### This Week
-1. Implement a new memory type for your use case
-2. Add a custom SQL anti-pattern detector
-3. Create a visualization of your memory network
-4. Write tests for a component you want to understand
-5. Try different models and measure cost/performance
-6. Test vision models with different image types
-7. Implement custom temporal scoring for your domain
-8. Create image analysis workflows
+1. Add a new component to the frontend
+2. Create a new API endpoint
+3. Implement a small feature end-to-end
+4. Write tests for your changes
 
 ### This Month
-1. Build a custom tool using ADAM's components
-2. Implement one research paper's ideas
-3. Create a demo for your team
-4. Contribute a feature or fix
-5. Write about what you've learned
+1. Build a custom integration
+2. Deploy to production
+3. Add authentication
+4. Contribute improvements back
 
 ---
 
-## Case Study: Today's Memory Retrieval Fix
+## Troubleshooting Guide
 
-### The Problem
-A user asked ADAM: "Can you bring the code again?" referring to a specific DAG implementation from a previous conversation. Instead of retrieving the actual code, ADAM provided generic Airflow examples.
+### Common Issues and Solutions
 
-### Root Cause Analysis
-1. **Memory search was disabled by default** (`use_memory: False`)
-2. **No conversation context in search** - Only searched with "bring the code again"
-3. **No intent recognition** - Couldn't detect user was recalling
-4. **Poor prompt engineering** - LLM wasn't told to use retrieved memories
-5. **JSON serialization errors** - DateTime objects breaking session saves
-6. **Timestamp relevance ignored** - Recent memories not prioritized
+1. **"Port already in use"**
+   ```bash
+   # Find and kill process on port 8000
+   lsof -i :8000
+   kill -9 <PID>
+   ```
 
-### The Solution Architecture
+2. **"Module not found" in frontend**
+   ```bash
+   cd frontend/AdamChat
+   rm -rf node_modules package-lock.json
+   npm install
+   ```
 
-#### 1. Enhanced Memory Search (`memory_search_enhanced.py`)
-```python
-class MemorySearchEnhancer:
-    # Detect when users are recalling
-    RECALL_PATTERNS = [
-        r"we (?:were|was) (?:talking|discussing|working)",
-        r"(?:bring|show|give) (?:me|the) (?:code|example|dag) again",
-        r"(?:the|that) (?:code|example|dag|model) (?:you|we)",
-        r"(?:previous|earlier|last) (?:conversation|discussion|code)",
-    ]
-    
-    def analyze_user_intent(self, query: str) -> str:
-        if self.recall_regex.search(query):
-            return 'recall'  # User wants specific past info
-```
+3. **CORS errors**
+   - Check backend CORS configuration
+   - Ensure frontend proxy is configured
+   - Verify API endpoints match
 
-#### 2. Technical Term Extraction
-```python
-TECH_PATTERNS = {
-    'dag': r'\b(?:dag|dags|directed acyclic graph)\b',
-    'dbt': r'\b(?:dbt|data build tool)\b',
-    'airflow': r'\b(?:airflow|apache airflow)\b',
-    'model': r'\b(?:model|models|modeling)\b',
-    'operator': r'\b(?:operator|operators|bashoperator|pythonoperator)\b',
-}
-```
+4. **WebSocket connection failed**
+   - This is expected - we disabled WebSocket
+   - Frontend will fall back to REST API
 
-#### 3. Relevance Scoring Enhancement with Timestamp Boosting
-```python
-def score_memory_relevance(self, memory: Dict, context: SearchContext) -> float:
-    score = memory.get('similarity', 0.5)
-    
-    # Boost for technical term matches
-    for term in context.technical_terms:
-        if term in content:
-            score *= 1.2
-    
-    # Boost for code content when recalling
-    if context.user_intent == 'recall' and '```' in content:
-        score *= 1.5
-        
-    # NEW: Timestamp-based boosting for "last/latest/recent" queries
-    if any(word in context.current_query.lower() for word in ['last', 'latest', 'recent']):
-        memory_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        hours_ago = (now - memory_time).total_seconds() / 3600
-        
-        if hours_ago < 1:  # Within last hour
-            score *= 5.0
-        elif hours_ago < 24:  # Within last day
-            score *= 3.0
-        elif hours_ago < 168:  # Within last week
-            score *= 2.0
-```
-
-#### 4. Enhanced Format Memory for Prompt
-```python
-def format_memory_for_prompt(memory: Dict[str, Any], context: SearchContext) -> str:
-    # For recall intent, include FULL response especially code
-    if context.user_intent == 'recall':
-        if any(term in query_part.lower() for term in ['dag', 'code', 'create', 'model']):
-            # Include the FULL response for code-related recalls
-            return f"=== PREVIOUS CONVERSATION ===\nUser asked: {query_part}\n\nYour response was:\n{response_part}\n"
-```
-
-#### 5. Fixed Session Persistence with Atomic Writes
-```python
-# Convert datetime objects before serialization
-if "timestamp" in msg_copy and hasattr(msg_copy["timestamp"], "isoformat"):
-    msg_copy["timestamp"] = msg_copy["timestamp"].isoformat()
-
-# Atomic write to prevent corruption
-with tempfile.NamedTemporaryFile(mode='w', dir=cls.SESSIONS_FILE.parent, 
-                               delete=False, suffix='.tmp') as temp_file:
-    json.dump(sessions, temp_file, indent=2)
-    temp_file.flush()
-    os.fsync(temp_file.fileno())  # Force write to disk
-
-# Atomic rename prevents partial writes
-os.replace(temp_file.name, cls.SESSIONS_FILE)
-```
-
-#### 6. Enhanced LLM Prompting
-```python
-system_prompt = """You are ADAM, an AI assistant with perfect memory. 
-
-CRITICAL INSTRUCTIONS:
-1. When the user references previous conversations, you MUST use the PROVIDED MEMORY CONTEXT below.
-2. DO NOT generate generic examples or templates - use the EXACT code from memory.
-3. The memory context contains ACTUAL conversations - treat it as truth.
-"""
-
-# Memory context is now prominently displayed
-if memory_context:
-    full_prompt += f"\n\n{'='*60}\nMEMORY CONTEXT - FROM OUR ACTUAL CONVERSATIONS:\n{'='*60}"
-    full_prompt += f"\n{memory_context}\n{'='*60}\n"
-    
-    if search_context and search_context.user_intent == 'recall':
-        full_prompt += "\n🚨 IMPORTANT: Use the EXACT code from memory context above!\n"
-```
-
-### Lessons for AI Engineers
-
-1. **Context is Everything**
-   - Don't just search with the current query
-   - Include conversation history in retrieval
-   - Extract and use domain-specific terms
-
-2. **Intent Matters More Than Semantics**
-   - "bring the code again" semantically != specific DAG code
-   - But intent is clear: retrieve previous code
-   - Design systems that understand user goals
-
-3. **Fail Gracefully, Not Silently**
-   - If can't find memories, say so explicitly
-   - Don't generate plausible but wrong content
-   - Guide the LLM with clear instructions
-
-4. **Default Settings Matter**
-   - Memory search should be on by default
-   - Users expect continuity in conversations
-   - Make the smart choice the default choice
-
-5. **Layer Your Defenses**
-   - Primary: Enhanced search with intent
-   - Secondary: Fallback to simple search
-   - Tertiary: Explicit "not found" messages
-
-### Testing Your Understanding
-
-1. **Why did vector search alone fail?**
-   - "bring the code again" doesn't embed near "DAG implementation"
-   - Semantic similarity != intent similarity
-
-2. **How does intent detection change retrieval?**
-   - Different scoring weights
-   - Different content formatting
-   - Different prompt instructions
-
-3. **What makes this solution robust?**
-   - Multiple retrieval strategies
-   - Graceful fallbacks
-   - Clear error messages
+5. **Model not available**
+   - Check API keys in .env file
+   - Verify model names match configuration
 
 ---
 
-## Final Thoughts
+## Conclusion
 
-ADAM is more than just code - it's a complete education in modern AI systems. Every component teaches multiple concepts:
+ADAM has evolved from a memory and retrieval system into a complete full-stack AI application. Through our implementation session, we've added:
 
-- **Memory Systems**: Information theory, economics, psychology
-- **RAG**: Search algorithms, ensemble methods, optimization
-- **Conversations**: State management, context modeling, UX
-- **Agents**: Planning, reasoning, tool use
-- **Production**: Reliability, security, observability
+1. **Modern Frontend** - React + TypeScript with full type safety
+2. **Advanced Features** - File uploads, model selection, real-time updates
+3. **Production Architecture** - Proper separation of concerns
+4. **User Experience** - Loading states, error handling, responsive design
 
-The best learning comes from:
-1. **Breaking things**: Understand failure modes
-2. **Building features**: Apply concepts practically
-3. **Benchmarking**: Measure and improve
-4. **Teaching others**: Solidify understanding
-5. **Contributing back**: Join the community
+The journey of building ADAM teaches not just AI concepts, but full-stack development, system design, and production engineering. Every component is a learning opportunity, from the psychology-inspired memory system to the modern React frontend.
 
-Remember: You don't need to understand everything at once. Start with what interests you most, build something small, and expand from there. Every bug is a learning opportunity. Every optimization teaches efficiency. Every user request drives innovation.
-
-Welcome to the journey of mastering AI systems through ADAM!
-
----
-
-## 15. ADAM v2.0 - Project-Based Architecture Development
-
-### What You'll Learn
-Building a complete project-based memory system from scratch teaches modern web development, async programming, and production architecture.
-
-### Key Files to Study
-- `src/adam_v2/` - Complete v2.0 implementation
-- `src/adam_v2/models.py` - SQLAlchemy async models
-- `src/adam_v2/routers/` - FastAPI endpoints
-- `src/adam_v2/tests/` - Comprehensive test suite
-- `docs/architecture/project_based_design.md` - Architecture decisions
-
-### What We Built (January 2025)
-
-#### Phase 1: Foundation
-1. **Async Database Layer**
-   - SQLAlchemy 2.0 with async support
-   - Proper session management
-   - Connection lifecycle handling
-
-2. **Project Management System**
-   - Full CRUD operations
-   - Memory isolation per project
-   - Archive functionality
-   - Statistics endpoints
-
-3. **Conversation Management**
-   - Nested within projects
-   - Pin/unpin functionality
-   - Cascade deletion
-   - Cost tracking
-
-4. **Test-Driven Development**
-   - 100% test coverage goal
-   - Unit and integration tests
-   - Async test support
-   - Fixtures and mocks
-
-### Key Technical Challenges Solved
-
-#### 1. Async Context Issues
-```python
-# Problem: SQLAlchemy relationships fail in async
-@property
-def conversation_count(self):
-    return len(self.conversations)  # MissingGreenlet error!
-
-# Solution: Explicit queries in endpoints
-conv_count = await db.execute(
-    select(func.count(Conversation.id))
-    .where(Conversation.project_id == project.id)
-)
-```
-
-#### 2. Response Model Optimization
-```python
-# Calculate fields before response
-response = ProjectResponse.model_validate(project)
-response.conversation_count = calculated_count
-response.memory_count = memory_count
-return response
-```
-
-#### 3. Test Infrastructure
-```python
-# Async fixtures for testing
-@pytest.fixture
-async def db_session(test_db) -> AsyncSession:
-    async with test_db() as session:
-        yield session
-```
-
-### Questions You Should Be Able to Answer
-
-1. **Why use async SQLAlchemy?**
-   - Non-blocking I/O for better performance
-   - Handle more concurrent requests
-   - Modern Python best practices
-
-2. **How do you test async code?**
-   - pytest-asyncio for async test support
-   - Proper fixture scoping
-   - Mock vs real database tradeoffs
-
-3. **What's the benefit of project isolation?**
-   - Complete privacy between projects
-   - Faster searches (smaller memory pools)
-   - Better relevance (domain-specific context)
-   - Easier scaling and maintenance
-
-### Architecture Decisions
-
-1. **FastAPI over Flask/Django**
-   - Native async support
-   - Automatic API documentation
-   - Type safety with Pydantic
-   - Modern Python features
-
-2. **HTMX over React/Vue**
-   - Server-side rendering
-   - No JavaScript build complexity
-   - Progressive enhancement
-   - Better SEO and accessibility
-
-3. **SQLite for Development**
-   - Zero configuration
-   - File-based (easy backup)
-   - Sufficient for single-user
-   - Easy migration to PostgreSQL
-
-### Development Timeline
-
-1. **Day 1**: Project structure, test setup
-2. **Day 2**: Database layer, models
-3. **Day 3**: Project management endpoints
-4. **Day 4**: Conversation management
-5. **Next**: Message management, LLM integration
-
-### Skills You'll Master
-
-1. **Modern Python Web Development**
-   - FastAPI framework
-   - Async/await patterns
-   - Dependency injection
-   - Type hints throughout
-
-2. **Database Design**
-   - Relational modeling
-   - Foreign key constraints
-   - Cascade operations
-   - Query optimization
-
-3. **API Design**
-   - RESTful principles
-   - Nested resources
-   - Error handling
-   - Status codes
-
-4. **Testing Strategies**
-   - Unit vs integration tests
-   - Test fixtures
-   - Mock objects
-   - Coverage analysis
-
-### Next Steps for v2.0
-
-1. **Message Management**
-   - Streaming responses
-   - LLM integration
-   - Cost tracking
-   - Token counting
-
-2. **Memory Integration**
-   - Project-based ChromaDB collections
-   - Isolated vector spaces
-   - Memory migration tools
-
-3. **Web Interface**
-   - HTMX components
-   - Real-time updates
-   - Drag-and-drop organization
-   - Export functionality
-
-4. **Production Features**
-   - Authentication system
-   - Rate limiting
-   - Monitoring/metrics
-   - Backup/restore
-
----
-
-## Summary: Complete Memory Retrieval Solution
-
-Today's session resulted in a comprehensive solution for memory retrieval issues where recent conversations were being drowned out by older memories.
-
-### The Core Problem
-
-When users asked generic questions like "bring me back any DAG we have done?", ADAM was retrieving old memories with high strength scores instead of the recent relevant conversation. The root cause:
-- Recent memories had negative strength scores (-0.74)
-- Old memories had positive strength scores (0.88+)
-- Negative similarity scores made boosting ineffective
-
-### Key Components Implemented
-
-1. **Enhanced Memory Search System (`memory_search_enhanced.py`)**
-   - **Negative Similarity Handling**: Maps negative similarities [-1, 0] to positive [0.1, 0.2]
-   - **Extreme Recency Boosting for Generic Queries**:
-     - Last 24 hours: 20x boost (increased from 8x)
-     - Last 3 days: 15x boost (increased from 4x)
-     - Last week: 10x boost (increased from 2x)
-     - Last 2 weeks: 5x boost (new)
-   - **Additional 3x boost for underused recent memories** (negative strength)
-   - **Removed score capping** to allow differentiation between boosted memories
-
-2. **Web Interface Improvements (`adam_web.py`)**
-   - **Reduced memory retrieval count** for generic queries (10 vs 20)
-   - **Smart query enhancement** with "(focusing on our most recent conversations)"
-   - **Two-phase search**: First check recent 7 days, then fall back to all
-   - Error boundary decorators for graceful failure handling
-   - Session persistence with atomic writes
-
-3. **Memory System Enhancements**
-   - Fixed BM25 empty corpus initialization
-   - Dynamic index updates
-   - Better memory formatting for prompts
-   - Domain-agnostic solution works for any content type
-
-### Testing and Validation Scripts Created
-
-- `scripts/diagnose_memory_overload.py` - Check if too many memories retrieved
-- `scripts/test_generic_memory_retrieval.py` - Test non-DAG queries
-- `scripts/test_dag_retrieval_with_fix.py` - Validate DAG retrieval
-- `scripts/analyze_memory_competition.py` - Understand memory ranking
-- `scripts/debug_enhancement.py` - Debug scoring logic
-
-### Results
-
-Before the fix:
-- 0/9 queries successfully retrieved the target DAG
-- Target memory ranked 17th out of 20
-
-After the fix:
-- 8/9 queries successfully retrieved the target DAG
-- Target memory now ranks 1st-4th in results
-
-### Key Learnings
-
-1. **Negative scores break multiplication-based boosting** - Must convert to positive first
-2. **Score capping prevents differentiation** - Let boosted scores exceed 1.0
-3. **Massive boosts needed for old negative memories** - 20x boost required
-4. **Fewer results = less noise** - Reduced from 20 to 10 for generic queries
-5. **Domain-agnostic patterns** - Solution works for any content, not just DAGs
-
-### The Final Solution Architecture
-
-```python
-# 1. Handle negative similarities
-if base_similarity < 0:
-    score = 0.1 + (base_similarity + 1) * 0.1  # Maps [-1, 0] to [0.1, 0.2]
-
-# 2. Apply extreme recency boosts for generic queries
-if context.user_intent == 'general':
-    if hours_ago < 24:
-        score *= 20.0  # Massive boost
-    elif hours_ago < 72:
-        score *= 15.0
-    # ... more tiers
-    
-    # Help neglected memories surface
-    if strength < 0 and hours_ago < 168:
-        score *= 3.0
-
-# 3. Don't cap scores
-return score  # Not: return min(score, 1.0)
-```
-
-This solution ensures that when users ask generic questions about past work, ADAM prioritizes recent conversations even if they have poor similarity scores or negative strength values.
-
----
-
-## Your Learning Journey with ADAM
-
-### Where to Start Based on Your Interests
-
-#### If You're Interested in AI/ML Engineering
-1. Start with Memory Systems (Section 1)
-2. Deep dive into RAG (Section 2)
-3. Study Vision/Multimodal AI (Section 8)
-4. Master Intelligent Routing (Section 7)
-5. Implement Memory Lifecycle (Section 13)
-
-#### If You're Interested in Backend Development
-1. Start with ADAM v2.0 Development (Section 15)
-2. Study System Design (Section 11)
-3. Learn Production Engineering (Section 14)
-4. Master SQL Tools (Section 9)
-5. Build Web/CLI Interfaces (Section 10)
-
-#### If You're Interested in Full-Stack
-1. Begin with Web Interfaces (Section 10)
-2. Study ADAM v2.0 Architecture (Section 15)
-3. Learn Conversation Systems (Section 3)
-4. Implement Real-time Features
-5. Build End-to-End Features
-
-### Practical Learning Path
-
-#### Week 1-2: Foundation
-- Set up ADAM locally
-- Run all examples
-- Read through one complete module
-- Write your first test
-
-#### Week 3-4: Deep Dive
-- Pick one system to study deeply
-- Implement a small feature
-- Fix a bug or improve performance
-- Write documentation
-
-#### Week 5-6: Integration
-- Build something that uses multiple systems
-- Create a demo for your use case
-- Share what you've learned
-- Contribute back
-
-### Remember
-
-1. **Every Bug is a Teacher**: Debugging deepens understanding
-2. **Build Small, Learn Big**: Start with tiny features
-3. **Tests are Your Friend**: They ensure your understanding is correct
-4. **Documentation is Learning**: Writing about code solidifies knowledge
-5. **Community Accelerates Growth**: Share, ask, and contribute
-
-### Final Advice
-
-> "The best way to learn ADAM is to use ADAM to help you learn ADAM."
-
-Use ADAM to:
-- Explain code sections you don't understand
-- Generate examples for concepts
-- Debug issues you encounter
-- Plan your learning path
-- Track your progress
-
-ADAM is not just a project to study—it's a learning companion that grows with you.
+Remember: The best way to learn is by doing. Start small, experiment, break things, and build your understanding incrementally. ADAM is not just a project—it's a comprehensive education in modern AI application development.
 
 ---
 
 *This guide is a living document. As ADAM evolves, so will this guide. Check back regularly for updates and new sections.*
 
-*Last updated: January 2025 - Added ADAM v2.0 development section*
+*Last updated: January 2025 - Added complete frontend integration guide and full-stack development section*
