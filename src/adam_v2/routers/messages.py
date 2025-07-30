@@ -55,7 +55,7 @@ async def send_message(
         role="user",
         content=message_data.content,
         has_image=message_data.has_image,
-        image_url=message_data.image_data if message_data.has_image else None
+        image_url=f"data:image/jpeg;base64,{message_data.image_data}" if message_data.has_image and message_data.image_data else None
     )
     
     db.add(user_message)
@@ -132,7 +132,11 @@ async def send_message(
         await db.refresh(assistant_message)
         
         # Store in memory if worthy
-        if message_data.use_memory and response.cost > 0.001:  # Store if cost > $0.001
+        # Lower threshold for valuable content like code
+        is_code_content = "```" in response.content or "def " in response.content or "import " in response.content
+        cost_threshold = 0.0001 if is_code_content else 0.001
+        
+        if message_data.use_memory and (response.cost > cost_threshold or response.tokens_used > 1000):
             try:
                 memory_service = ProjectMemoryService(project.id, project.name)
                 await memory_service.store_memory(
@@ -194,7 +198,7 @@ async def send_message_stream(
         role="user",
         content=message_data.content,
         has_image=message_data.has_image,
-        image_url=message_data.image_data if message_data.has_image else None
+        image_url=f"data:image/jpeg;base64,{message_data.image_data}" if message_data.has_image and message_data.image_data else None
     )
     
     db.add(user_message)
@@ -291,7 +295,11 @@ async def send_message_stream(
             yield f"data: {json.dumps({'type': 'complete', 'id': assistant_message.id, 'tokens': tokens_used, 'cost': cost, 'model': model_used})}\n\n"
             
             # Store in memory if worthy
-            if message_data.use_memory and cost > 0.001:
+            # Lower threshold for valuable content like code
+            is_code_content = "```" in full_response or "def " in full_response or "import " in full_response
+            cost_threshold = 0.0001 if is_code_content else 0.001
+            
+            if message_data.use_memory and (cost > cost_threshold or tokens_used > 1000):
                 try:
                     memory_service = ProjectMemoryService(project.id, project.name)
                     await memory_service.store_memory(
