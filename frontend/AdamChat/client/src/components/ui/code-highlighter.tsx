@@ -99,10 +99,9 @@ export function CodeBlock({ code, language, inline = false, className }: CodeBlo
   if (inline) {
     return (
       <code className={cn(
-        'relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm',
-        'before:content-[""] before:absolute before:inset-0 before:rounded before:bg-gradient-to-r',
-        'before:from-blue-500/10 before:to-purple-500/10 before:opacity-50',
-        isValidLanguage && 'text-blue-600 dark:text-blue-400',
+        'inline-block rounded bg-muted/80 px-[0.3rem] py-[0.1rem] font-mono text-sm',
+        'border border-border/50',
+        'text-foreground',
         className
       )}>
         {code}

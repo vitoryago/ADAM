@@ -59,8 +59,8 @@ export function parseMessageContent(content: string): ParsedContent[] {
       continue;
     }
     
-    // Check for bold text
-    const boldMatch = remaining.match(/^\*\*(.*?)\*\*/);
+    // Check for bold text (non-greedy, single line)
+    const boldMatch = remaining.match(/^\*\*([^*\n]+)\*\*/);
     if (boldMatch) {
       const [fullMatch, text] = boldMatch;
       parts.push({
@@ -71,9 +71,9 @@ export function parseMessageContent(content: string): ParsedContent[] {
       continue;
     }
     
-    // Check for italic text
-    const italicMatch = remaining.match(/^\*(.*?)\*/);
-    if (italicMatch) {
+    // Check for italic text (non-greedy, avoid list items)
+    const italicMatch = remaining.match(/^\*([^*\n]+)\*/);
+    if (italicMatch && !remaining.match(/^[\*\-\+]\s/)) {  // Avoid list items
       const [fullMatch, text] = italicMatch;
       parts.push({
         type: 'italic',
@@ -119,7 +119,7 @@ export function parseMessageContent(content: string): ParsedContent[] {
     }
     
     // Find the next special character or just take the next character
-    const nextSpecialIndex = remaining.search(/[`*\[\-\n]/);
+    const nextSpecialIndex = remaining.search(/[`*\[\-\n#]/);
     if (nextSpecialIndex === -1) {
       // No more special characters, add the rest as text
       parts.push({
@@ -188,15 +188,32 @@ export function MessageContent({ content, className }: MessageContentProps) {
         
       case 'inline-code':
         elements.push(
-          <InlineCode key={key}>
+          <code 
+            key={key} 
+            className="inline-code"
+            style={{
+              display: 'inline-block',
+              borderRadius: '0.375rem',
+              backgroundColor: 'hsl(var(--muted))',
+              paddingLeft: '0.3rem',
+              paddingRight: '0.3rem',
+              paddingTop: '0.1rem',
+              paddingBottom: '0.1rem',
+              fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
+              fontSize: '0.875rem'
+            }}
+          >
             {part.content}
-          </InlineCode>
+          </code>
         );
         break;
         
       case 'bold':
         elements.push(
-          <strong key={key} className="font-semibold">
+          <strong 
+            key={key} 
+            style={{ fontWeight: 700 }}
+          >
             {part.content}
           </strong>
         );
@@ -244,8 +261,44 @@ export function MessageContent({ content, className }: MessageContentProps) {
         break;
         
       case 'list':
+        // Parse the list item content for markdown
+        const listContent = parseMessageContent(part.content);
+        const listElements: React.ReactNode[] = [];
+        
+        listContent.forEach((listPart, i) => {
+          const listKey = `${key}-${i}`;
+          switch (listPart.type) {
+            case 'bold':
+              listElements.push(<strong key={listKey} style={{ fontWeight: 700 }}>{listPart.content}</strong>);
+              break;
+            case 'inline-code':
+              listElements.push(
+                <code 
+                  key={listKey}
+                  className="inline-code"
+                  style={{
+                    display: 'inline-block',
+                    borderRadius: '0.375rem',
+                    backgroundColor: 'hsl(var(--muted))',
+                    paddingLeft: '0.3rem',
+                    paddingRight: '0.3rem',
+                    paddingTop: '0.1rem',
+                    paddingBottom: '0.1rem',
+                    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  {listPart.content}
+                </code>
+              );
+              break;
+            default:
+              listElements.push(listPart.content);
+          }
+        });
+        
         listItems.push(
-          <span key={key}>{part.content}</span>
+          <span key={key}>{listElements}</span>
         );
         break;
         

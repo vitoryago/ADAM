@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTheme } from "@/components/theme-provider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Brain, Plus, Moon, Sun, Settings, Trash2, X, MessageSquare } from "lucide-react";
+import { Brain, Plus, Moon, Sun, Settings, Trash2, X, MessageSquare, Edit2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Conversation, Project } from "@shared/schema";
 
@@ -27,6 +28,8 @@ export function Sidebar({
 }: SidebarProps) {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
 
   const { data: conversations = [], isLoading } = useQuery<Conversation[]>({
     queryKey: ["/api/projects", project.id, "conversations"],
@@ -36,8 +39,12 @@ export function Sidebar({
     mutationFn: async (id: string) => {
       await apiRequest("DELETE", `/api/conversations/${id}`);
     },
-    onSuccess: () => {
+    onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", project.id, "conversations"] });
+      // If we deleted the current conversation, navigate to a new chat
+      if (currentConversationId === deletedId) {
+        onNewChat();
+      }
       toast({
         title: "Conversation deleted",
         description: "The conversation has been removed.",
@@ -72,6 +79,43 @@ export function Sidebar({
       });
     },
   });
+
+  const renameConversationMutation = useMutation({
+    mutationFn: async ({ id, title }: { id: string; title: string }) => {
+      await apiRequest("PATCH", `/api/conversations/${id}`, { title });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", project.id, "conversations"] });
+      setEditingId(null);
+      toast({
+        title: "Conversation renamed",
+        description: "The conversation title has been updated.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to rename conversation.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleStartEdit = (conversation: Conversation) => {
+    setEditingId(conversation.id);
+    setEditTitle(conversation.title);
+  };
+
+  const handleSaveEdit = (id: string) => {
+    if (editTitle.trim()) {
+      renameConversationMutation.mutate({ id, title: editTitle.trim() });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditTitle("");
+  };
 
   const formatTimestamp = (date: Date | string | null) => {
     if (!date) return "";
@@ -142,31 +186,79 @@ export function Sidebar({
                 <div
                   key={conversation.id}
                   className={cn(
-                    "p-3 rounded-lg cursor-pointer transition-colors group hover:bg-muted",
+                    "p-3 rounded-lg cursor-pointer transition-colors group hover:bg-muted relative",
                     currentConversationId === conversation.id && "bg-muted"
                   )}
-                  onClick={() => onConversationSelect(conversation.id)}
+                  onClick={() => editingId !== conversation.id && onConversationSelect(conversation.id)}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {conversation.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {formatTimestamp(conversation.updatedAt || conversation.createdAt)}
-                      </p>
+                      {editingId === conversation.id ? (
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              handleSaveEdit(conversation.id);
+                            } else if (e.key === "Escape") {
+                              handleCancelEdit();
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full px-2 py-1 text-sm bg-background border rounded"
+                          autoFocus
+                        />
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium truncate">
+                            {conversation.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatTimestamp(conversation.updatedAt || conversation.createdAt)}
+                          </p>
+                        </>
+                      )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="opacity-0 group-hover:opacity-100 h-6 w-6 shrink-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteConversationMutation.mutate(conversation.id);
-                      }}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
+                    <div className={cn(
+                      "flex items-center gap-1 flex-shrink-0 transition-opacity",
+                      editingId === conversation.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    )}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (editingId === conversation.id) {
+                            handleCancelEdit();
+                          } else {
+                            handleStartEdit(conversation);
+                          }
+                        }}
+                        title="Edit conversation name"
+                      >
+                        {editingId === conversation.id ? (
+                          <X className="w-4 h-4" />
+                        ) : (
+                          <Edit2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 hover:bg-destructive/20 hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm('Are you sure you want to delete this conversation?')) {
+                            deleteConversationMutation.mutate(conversation.id);
+                          }
+                        }}
+                        title="Delete conversation"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))

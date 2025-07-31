@@ -90,7 +90,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             ) : (
               <MessageContent 
                 content={message.content}
-                className="prose prose-sm max-w-none dark:prose-invert"
+                className=""
               />
             )}
           </div>

@@ -39,16 +39,23 @@ const models = [
   {
     value: "grok-3-mini-high",
     name: "Grok 3 Mini (High)",
-    description: "Fast responses with reasoning",
+    description: "Balanced speed with high quality",
     icon: Zap,
     color: "text-yellow-600",
   },
   {
     value: "grok-3-mini-fast",
     name: "Grok 3 Mini (Fast)",
-    description: "Fastest responses",
+    description: "Fastest responses with reasoning",
     icon: Zap,
     color: "text-orange-600",
+  },
+  {
+    value: "grok-3-mini-fast-high",
+    name: "Grok 3 Mini (Fast High)",
+    description: "Fast responses with live search",
+    icon: Zap,
+    color: "text-pink-600",
   },
   {
     value: "gpt-4",

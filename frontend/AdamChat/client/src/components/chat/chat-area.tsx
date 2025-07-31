@@ -6,6 +6,7 @@ import { MessageBubble } from "./message-bubble";
 import { MessageInput } from "./message-input";
 import { TypingIndicator } from "./typing-indicator";
 import { ModelSelector } from "./model-selector";
+import { SearchToggle } from "./search-toggle";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useTheme } from "@/components/theme-provider";
 import { useToast } from "@/hooks/use-toast";
@@ -28,6 +29,8 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("automatic");
+  const [searchEnabled, setSearchEnabled] = useState(false);
+  const [searchMode, setSearchMode] = useState<string>("auto");
   
   const { isConnected, isTyping, error, sendMessage, onMessage, reconnect } = useWebSocket();
 
@@ -157,7 +160,9 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
       const requestBody: any = {
         content,
         use_memory: true,
-        model: modelToUse === "automatic" ? null : modelToUse
+        model: modelToUse === "automatic" ? null : modelToUse,
+        use_search: searchEnabled,
+        search_mode: searchEnabled ? searchMode : null
       };
 
       // Handle file attachments
@@ -422,14 +427,25 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
         </div>
       )}
 
-      {/* Model Selector */}
-      <div className="px-4 py-2 border-t border-border flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">Model:</div>
-        <ModelSelector 
-          value={selectedModel} 
-          onChange={setSelectedModel} 
-          disabled={!isConnected || isProcessing}
-        />
+      {/* Model Selector and Search Toggle */}
+      <div className="px-4 py-2 border-t border-border">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-muted-foreground">Model:</div>
+            <ModelSelector 
+              value={selectedModel} 
+              onChange={setSelectedModel} 
+              disabled={!isConnected || isProcessing}
+            />
+          </div>
+          <SearchToggle
+            enabled={searchEnabled}
+            onEnabledChange={setSearchEnabled}
+            searchMode={searchMode}
+            onSearchModeChange={setSearchMode}
+            disabled={!isConnected || isProcessing}
+          />
+        </div>
       </div>
 
       {/* Message Input */}

@@ -98,7 +98,7 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
   }, [message]);
 
   const characterCount = message.length;
-  const maxCharacters = 4000;
+  const maxCharacters = 100000; // Increased from 4000 to 100k characters
   const isOverLimit = characterCount > maxCharacters;
   const canSend = (message.trim().length > 0 || attachedFile) && !disabled && !isOverLimit;
 
