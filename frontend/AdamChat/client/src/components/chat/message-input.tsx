@@ -4,6 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Send, Paperclip, X, FileImage, FileCode, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CodeDemoButton } from "./code-demo-button";
+import { VoiceInput } from "./voice-input";
 
 interface AttachedFile {
   name: string;
@@ -173,6 +174,12 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
           <div className="flex items-center justify-between mt-3">
             <div className="flex items-center gap-2">
               <CodeDemoButton onSendMessage={onSendMessage} />
+              <VoiceInput 
+                onTranscription={(text) => {
+                  setMessage(text);
+                }}
+                disabled={disabled}
+              />
               <Button
                 variant="ghost"
                 size="sm"

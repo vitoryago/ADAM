@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Brain, User, Copy, Check, Cpu, Coins, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MessageContent } from "@/lib/message-parser";
+import { VoicePlayer } from "./voice-player";
 import type { Message } from "@shared/schema";
 
 interface MessageBubbleProps {
@@ -120,19 +121,25 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                   )}
                   <span>{formatTimestamp(message.timestamp)}</span>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="opacity-0 group-hover:opacity-100 h-6 w-6"
-                  onClick={handleCopy}
-                  title="Copy message"
-                >
-                  {copied ? (
-                    <Check className="w-3 h-3 text-green-500" />
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <VoicePlayer 
+                    text={message.content}
+                    autoPlay={false}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="opacity-0 group-hover:opacity-100 h-6 w-6"
+                    onClick={handleCopy}
+                    title="Copy message"
+                  >
+                    {copied ? (
+                      <Check className="w-3 h-3 text-green-500" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           )}

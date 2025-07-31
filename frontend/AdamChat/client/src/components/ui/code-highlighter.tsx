@@ -1,5 +1,5 @@
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { atomOneDark as oneDark, atomOneLight as oneLight } from 'react-syntax-highlighter/dist/styles';
 import { useState } from 'react';
 import { Copy, Check, Code2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
