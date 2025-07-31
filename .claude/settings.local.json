@@ -51,7 +51,8 @@
       "Bash(kill:*)",
       "Bash(git checkout:*)",
       "Bash(unzip:*)",
-      "Bash(uvicorn:*)"
+      "Bash(uvicorn:*)",
+      "Bash(PYTHONPATH=/Users/vitoryago/ADAM/src python -m adam_v2.main)"
     ],
     "deny": []
   }
