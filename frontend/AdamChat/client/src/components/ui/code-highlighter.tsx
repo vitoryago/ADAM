@@ -1,11 +1,12 @@
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { atomOneDark as oneDark, atomOneLight as oneLight } from 'react-syntax-highlighter/dist/styles';
+import SyntaxHighlighter from 'react-syntax-highlighter';
+import * as darkStyle from 'react-syntax-highlighter/dist/styles/dark';
+import * as doccoStyle from 'react-syntax-highlighter/dist/styles/docco';
 import { useState } from 'react';
 import { Copy, Check, Code2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { useTheme } from 'next-themes';
+import { useTheme } from '@/components/theme-provider';
 
 interface CodeBlockProps {
   code: string;
@@ -139,7 +140,7 @@ export function CodeBlock({ code, language, inline = false, className }: CodeBlo
         {isValidLanguage ? (
           <SyntaxHighlighter
             language={detectedLanguage}
-            style={theme === 'dark' ? oneDark : oneLight}
+            style={theme === 'dark' ? darkStyle.default : doccoStyle.default}
             customStyle={{
               margin: 0,
               borderRadius: 0,

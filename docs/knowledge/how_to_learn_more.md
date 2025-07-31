@@ -21,6 +21,7 @@ This document is your complete guide to understanding every aspect of ADAM - fro
 13. [Production Engineering](#13-production-engineering)
 14. [ADAM v2.0 - Full-Stack AI Application Development](#14-adam-v20---full-stack-ai-application-development)
 15. [Frontend Integration - Modern React + TypeScript](#15-frontend-integration---modern-react--typescript)
+16. [Voice Integration - Speech-to-Text and Text-to-Speech](#16-voice-integration---speech-to-text-and-text-to-speech)
 
 ---
 
@@ -802,6 +803,360 @@ When integrating a new frontend into an existing project:
 
 ---
 
+## 16. Voice Integration - Speech-to-Text and Text-to-Speech
+
+### What You'll Learn
+Building a complete voice interface teaches audio processing, real-time streaming, API integration, and creating natural conversational experiences with AI.
+
+### Technology Stack
+- **OpenAI Whisper** - Speech-to-Text (STT)
+- **ElevenLabs** - Text-to-Speech (TTS) with natural voices
+- **WebSockets** - Real-time audio streaming
+- **Web Audio API** - Browser audio recording
+
+### Key Files to Study
+- `src/adam_v2/services/voice_service.py` - Core voice service
+- `src/adam_v2/services/voice_websocket.py` - WebSocket streaming
+- `src/adam_v2/routers/voice.py` - Voice API endpoints
+- `frontend/AdamChat/client/src/components/chat/voice-input.tsx` - Voice recording UI
+- `frontend/AdamChat/client/src/components/chat/voice-player.tsx` - Audio playback UI
+- `docs/VOICE_INTEGRATION.md` - Complete integration guide
+
+### Architecture Overview
+
+```
+User Speech → Microphone → Web Audio API → Base64 Audio → 
+→ Whisper STT → Text → ADAM Processing (Grok/OpenAI) → 
+→ Response Text → ElevenLabs TTS → Audio Stream → Speaker
+```
+
+### Voice Service Implementation
+
+#### 1. Speech-to-Text with Whisper
+```python
+async def transcribe_audio(
+    self, 
+    audio_data: Union[bytes, str],
+    format: str = "webm",
+    language: Optional[str] = None
+) -> TranscriptionResult:
+    # Convert base64 to bytes if needed
+    if isinstance(audio_data, str):
+        audio_data = base64.b64decode(audio_data)
+        
+    # Use OpenAI Whisper API
+    audio_file = io.BytesIO(audio_data)
+    audio_file.name = f"audio.{format}"
+    
+    response = await client.audio.transcriptions.create(
+        model="whisper-1",
+        file=audio_file,
+        language=language
+    )
+    
+    return TranscriptionResult(
+        text=response.text,
+        language=language
+    )
+```
+
+#### 2. Text-to-Speech with ElevenLabs
+```python
+async def synthesize_speech(
+    self,
+    text: str,
+    voice_id: Optional[str] = None,
+    stream: bool = False
+) -> Union[AudioResponse, AsyncGenerator[bytes, None]]:
+    # Use ElevenLabs API
+    voice_id = voice_id or "ZthjuvLPty3kTMaNKVKb"  # Default voice
+    
+    if stream:
+        # Return streaming audio chunks
+        audio_stream = elevenlabs_client.text_to_speech.stream(
+            text=text,
+            voice_id=voice_id,
+            model_id="eleven_multilingual_v2"
+        )
+        return stream_generator()
+    else:
+        # Return complete audio
+        audio = elevenlabs_client.text_to_speech.convert(
+            text=text,
+            voice_id=voice_id
+        )
+        return AudioResponse(audio_data=audio_bytes)
+```
+
+### Frontend Voice Components
+
+#### 1. Voice Input Component
+```typescript
+export function VoiceInput({ onTranscription, disabled }: VoiceInputProps) {
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  
+  const startRecording = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    const chunks: Blob[] = [];
+    
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = async () => {
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      const base64 = await blobToBase64(blob);
+      
+      // Send to transcription API
+      const response = await fetch('/api/voice/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio_data: base64 })
+      });
+      
+      const { text } = await response.json();
+      onTranscription(text);
+    };
+    
+    recorder.start();
+  };
+}
+```
+
+#### 2. Voice Player Component
+```typescript
+export function VoicePlayer({ text, autoPlay }: VoicePlayerProps) {
+  const synthesizeAndPlay = async () => {
+    const response = await fetch('/api/voice/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, stream: false })
+    });
+    
+    const audioBlob = await response.blob();
+    const audio = new Audio(URL.createObjectURL(audioBlob));
+    await audio.play();
+  };
+  
+  return (
+    <Button onClick={synthesizeAndPlay}>
+      <Volume2 className="w-4 h-4" />
+    </Button>
+  );
+}
+```
+
+### API Endpoints
+
+#### Voice Endpoints
+- `POST /api/voice/transcribe` - Convert audio to text
+- `POST /api/voice/synthesize` - Convert text to speech
+- `GET /api/voice/voices` - List available voices
+- `POST /api/voice/voice-chat` - Complete voice conversation
+- `WS /api/voice/ws/voice-stream` - Real-time voice streaming
+
+### WebSocket Streaming
+
+#### Real-time Voice Streaming
+```python
+class ElevenLabsWebSocket:
+    """Handle WebSocket connection to ElevenLabs for real-time TTS"""
+    
+    async def connect(self):
+        ws_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input"
+        self.websocket = await websockets.connect(
+            ws_url,
+            extra_headers={"xi-api-key": self.api_key}
+        )
+        
+    async def send_text(self, text: str, flush: bool = False):
+        message = {
+            "text": text,
+            "try_trigger_generation": flush
+        }
+        await self.websocket.send(json.dumps(message))
+        
+    async def receive_audio(self) -> AsyncGenerator[Dict[str, Any], None]:
+        while True:
+            message = await self.websocket.recv()
+            data = json.loads(message)
+            
+            if "audio" in data:
+                audio_bytes = base64.b64decode(data["audio"])
+                yield {
+                    "audio": audio_bytes,
+                    "is_final": data.get("isFinal", False),
+                    "alignment": data.get("alignment")
+                }
+```
+
+### Complete Voice Pipeline
+
+#### Voice Chat Endpoint
+```python
+@router.post("/voice-chat")
+async def voice_chat_endpoint(
+    audio: UploadFile,
+    conversation_id: str,
+    model: Optional[str] = None,
+    voice_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    # Step 1: Transcribe audio to text
+    transcription = await voice_service.transcribe_audio(
+        audio_data=await audio.read(),
+        format="webm"
+    )
+    
+    # Step 2: Process through ADAM chat
+    llm_service = LLMService(project_settings=project.settings)
+    response = await llm_service.generate_response(
+        message=transcription.text,
+        history=history,
+        model=model
+    )
+    
+    # Step 3: Synthesize response to speech
+    audio_response = await voice_service.synthesize_speech(
+        text=response.content,
+        voice_id=voice_id
+    )
+    
+    return Response(
+        content=audio_response.audio_data,
+        media_type="audio/mp3",
+        headers={
+            "X-Transcription": transcription.text,
+            "X-Response-Text": response.content
+        }
+    )
+```
+
+### Voice Models and Costs
+
+#### Speech-to-Text Options
+1. **OpenAI Whisper** (Implemented)
+   - High accuracy, multi-language
+   - Cost: ~$0.006/minute
+   - Good with accents and noise
+
+2. **Local Whisper** (Alternative)
+   - No API costs
+   - Requires GPU
+   - Privacy-friendly
+
+#### Text-to-Speech Options
+1. **ElevenLabs** (Implemented)
+   - Most natural voices
+   - Voice cloning capability
+   - Cost: ~$0.18/1000 chars
+   - Models: multilingual_v2, turbo_v2
+
+2. **OpenAI TTS** (Alternative)
+   - Good quality
+   - Lower cost
+   - Limited voice options
+
+3. **Local XTTS-v2** (Alternative)
+   - Open source
+   - No API costs
+   - Requires GPU
+
+### Security and Performance
+
+#### Security Considerations
+- API keys stored in environment variables
+- Audio file size limits (10MB)
+- Rate limiting on endpoints
+- Secure WebSocket connections
+
+#### Performance Optimizations
+- Audio streaming for long responses
+- Caching for repeated phrases
+- Voice activity detection
+- Compression for audio transmission
+
+### Development Workflow
+
+#### 1. Environment Setup
+```bash
+# Add to .env file
+OPENAI_API_KEY=your-openai-key
+ELEVENLABS_API_KEY=your-elevenlabs-key
+
+# Install dependencies
+pip install elevenlabs websockets
+```
+
+#### 2. Testing Voice Features
+```bash
+# Test transcription
+curl -X POST http://localhost:8000/api/voice/transcribe \
+  -F "file=@recording.webm"
+
+# Test synthesis
+curl -X POST http://localhost:8000/api/voice/synthesize \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello from ADAM!"}' \
+  -o response.mp3
+```
+
+### Key Technical Decisions
+
+#### 1. Voice as Input/Output Layer
+- Voice models handle only speech conversion
+- Core reasoning stays with Grok/OpenAI
+- Clean separation of concerns
+
+#### 2. Format Choices
+- WebM for recording (browser native)
+- MP3 for playback (universal support)
+- Base64 for transmission (JSON compatible)
+
+#### 3. Streaming vs Batch
+- Batch for short responses (<500 chars)
+- Streaming for long responses
+- WebSocket for real-time conversation
+
+### Troubleshooting Voice Features
+
+1. **"Microphone permission denied"**
+   - Check browser permissions
+   - Ensure HTTPS in production
+
+2. **"Voice synthesis failed"**
+   - Verify API keys
+   - Check voice ID exists
+   - Install elevenlabs package
+
+3. **"Audio playback issues"**
+   - Check audio format support
+   - Verify CORS headers
+   - Test with different browsers
+
+### Future Enhancements
+
+1. **Voice Activity Detection**
+   - Automatic recording start/stop
+   - Reduce silence in recordings
+
+2. **Wake Word Detection**
+   - "Hey ADAM" activation
+   - Hands-free operation
+
+3. **Multi-language Support**
+   - Language detection
+   - Automatic translation
+
+4. **Voice Cloning**
+   - Custom voice creation
+   - Personalized responses
+
+5. **Emotion Detection**
+   - Sentiment from voice tone
+   - Adaptive response style
+
+---
+
 ## Conclusion
 
 ADAM has evolved from a memory and retrieval system into a complete full-stack AI application. Through our implementation session, we've added:
@@ -819,4 +1174,4 @@ Remember: The best way to learn is by doing. Start small, experiment, break thin
 
 *This guide is a living document. As ADAM evolves, so will this guide. Check back regularly for updates and new sections.*
 
-*Last updated: January 2025 - Added complete frontend integration guide and full-stack development section*
+*Last updated: July 2025 - Added Voice Integration with Speech-to-Text and Text-to-Speech capabilities*
