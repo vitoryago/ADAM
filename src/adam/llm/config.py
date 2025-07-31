@@ -142,6 +142,24 @@ class LLMConfig:
                 cost_per_1k_output_tokens=0.004    # $4.00/1M
             ),
             
+            "grok-3-mini-fast-high": ModelConfig(
+                name="grok-3-mini-fast-high",
+                provider=ModelProvider.GROK,
+                api_name="grok-3-mini-fast-high",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA,
+                    ModelCapability.REASONING
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",
+                max_tokens=4096,
+                supports_streaming=True,
+                cost_per_1k_tokens=0.0035,  # Estimated higher cost for live search
+                cost_per_1k_input_tokens=0.001,
+                cost_per_1k_output_tokens=0.006
+            ),
+            
             "grok-2-vision-1212": ModelConfig(
                 name="grok-2-vision-1212",
                 provider=ModelProvider.GROK,

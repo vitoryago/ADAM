@@ -4,9 +4,10 @@ Conversation management endpoints for ADAM v2.0
 
 from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from typing import List
 import logging
+from datetime import datetime
 
 from database import get_db
 from models import (
@@ -222,6 +223,79 @@ async def delete_conversation(
     await db.commit()
     
     logger.info(f"Deleted conversation {conversation_id}")
+
+
+@router.delete("/projects/{project_id}/conversations", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_all_conversations(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete all conversations for a project"""
+    # Verify project exists
+    project_result = await db.execute(
+        select(Project).where(Project.id == project_id)
+    )
+    project = project_result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Delete all conversations for the project (cascades to messages)
+    await db.execute(
+        delete(Conversation).where(Conversation.project_id == project_id)
+    )
+    await db.commit()
+    
+    logger.info(f"Cleared all conversations for project {project_id}")
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationResponse)
+async def update_conversation(
+    conversation_id: str,
+    update_data: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update conversation details (e.g., title)"""
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )
+    conversation = result.scalar_one_or_none()
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+    
+    # Update allowed fields
+    if "title" in update_data:
+        conversation.title = update_data["title"]
+    
+    conversation.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(conversation)
+    
+    # Calculate counts for response
+    msg_count_result = await db.execute(
+        select(func.count(Message.id))
+        .where(Message.conversation_id == conversation.id)
+    )
+    message_count = msg_count_result.scalar() or 0
+    
+    cost_result = await db.execute(
+        select(func.sum(Message.cost))
+        .where(Message.conversation_id == conversation.id)
+    )
+    total_cost = float(cost_result.scalar() or 0)
+    
+    response = ConversationResponse.model_validate(conversation)
+    response.message_count = message_count
+    response.total_cost = total_cost
+    
+    return response
 
 
 @router.post("/conversations/{conversation_id}/pin", response_model=ConversationResponse)

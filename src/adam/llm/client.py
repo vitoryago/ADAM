@@ -77,7 +77,8 @@ class UnifiedLLMClient:
         max_tokens: Optional[int] = None,
         reasoning_effort: Optional[str] = None,  # 'low', 'medium', 'high'
         stream: bool = False,
-        image_data: Optional[bytes] = None
+        image_data: Optional[bytes] = None,
+        search_parameters: Optional[Dict] = None  # For live search
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """
         Get completion from any configured model
@@ -91,6 +92,7 @@ class UnifiedLLMClient:
             reasoning_effort: How hard to think ('low', 'medium', 'high')
             stream: Whether to stream response
             image_data: Optional image bytes for vision models
+            search_parameters: Optional dict for live search (e.g., {"enabled": True, "include_sources": ["web"]})
             
         Returns:
             LLMResponse object or async generator if streaming
@@ -169,7 +171,7 @@ class UnifiedLLMClient:
         if model_config.provider == ModelProvider.GROK:
             return await self._complete_grok(
                 prompt, model_config, system_prompt, temperature, 
-                max_tokens, reasoning_effort, stream, image_data, routing_decision
+                max_tokens, reasoning_effort, stream, image_data, routing_decision, search_parameters
             )
         elif model_config.provider == ModelProvider.OPENAI:
             return await self._complete_openai(
@@ -189,7 +191,8 @@ class UnifiedLLMClient:
         reasoning_effort: Optional[str],
         stream: bool,
         image_data: Optional[bytes] = None,
-        routing_decision: Optional[Dict] = None
+        routing_decision: Optional[Dict] = None,
+        search_parameters: Optional[Dict] = None
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """Handle Grok model completion"""
         client = self.clients[ModelProvider.GROK]
@@ -199,6 +202,15 @@ class UnifiedLLMClient:
             "model": model_config.api_name,
             "temperature": temperature
         }
+        
+        # Add search parameters if provided
+        if search_parameters:
+            # Import SearchParameters from xai_sdk
+            from xai_sdk.search import SearchParameters
+            # Create SearchParameters object with mode="on"
+            search_params = SearchParameters(mode="on")
+            chat_params["search_parameters"] = search_params
+            logger.info(f"Search enabled for model {model_config.api_name}")
         
         # Add reasoning effort for models that support it
         if reasoning_effort and model_config.reasoning_param:
@@ -275,6 +287,11 @@ class UnifiedLLMClient:
             # Add routing decision if automatic model was used
             if routing_decision:
                 raw_response_data['routing_decision'] = routing_decision
+            
+            # Add citations if search was used
+            if hasattr(response, 'citations') and response.citations:
+                raw_response_data['citations'] = response.citations
+                logger.info(f"Found {len(response.citations)} citations in response")
             
             return LLMResponse(
                 content=response.content,

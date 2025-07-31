@@ -163,12 +163,7 @@
   margin: 0.25em 0;
 }
 
-.prose-chat code {
-  background-color: hsl(var(--muted));
-  padding: 0.125em 0.25em;
-  border-radius: 0.25em;
-  font-size: 0.875em;
-}
+/* Code styles handled by components */
 
 .prose-chat pre {
   background-color: hsl(var(--muted));
@@ -184,7 +179,8 @@
 }
 
 .prose-chat strong {
-  font-weight: 600;
+  font-weight: 700;
+  color: hsl(var(--foreground));
 }
 
 .prose-chat h1, .prose-chat h2, .prose-chat h3, .prose-chat h4, .prose-chat h5, .prose-chat h6 {
@@ -199,32 +195,7 @@
   font-style: italic;
 }
 
-/* Enhanced inline code styling with gradient background */
-.prose-chat code:not(pre code) {
-  background: linear-gradient(135deg, hsl(210, 100%, 97%) 0%, hsl(280, 100%, 97%) 100%);
-  border: 1px solid hsl(210, 50%, 90%);
-  color: hsl(210, 90%, 40%);
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.375rem;
-  font-size: 0.875em;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.dark .prose-chat code:not(pre code) {
-  background: linear-gradient(135deg, hsl(210, 30%, 8%) 0%, hsl(280, 30%, 8%) 100%);
-  border: 1px solid hsl(210, 30%, 20%);
-  color: hsl(210, 80%, 70%);
-}
-
-.prose-chat code:not(pre code):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.dark .prose-chat code:not(pre code):hover {
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
+/* Inline code styles handled by InlineCode component */
 
 /* Enhanced link styling */
 .prose-chat a {
@@ -274,4 +245,34 @@
 .message-bubble-content code[class*="language-"] {
   display: block;
   overflow-x: auto;
+}
+
+/* Ensure group hover works properly */
+.group:hover .group-hover\:opacity-100 {
+  opacity: 1 !important;
+}
+
+/* Ensure inline code styles */
+.inline-code {
+  display: inline-block;
+  border-radius: 0.375rem;
+  background-color: hsl(var(--muted));
+  padding: 0.1rem 0.3rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+/* Force styles for markdown elements in message bubbles */
+.message-bubble-content strong {
+  font-weight: 700 !important;
+}
+
+.message-bubble-content code {
+  display: inline-block;
+  border-radius: 0.375rem;
+  background-color: hsl(var(--muted));
+  padding: 0.1rem 0.3rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.875rem;
 }

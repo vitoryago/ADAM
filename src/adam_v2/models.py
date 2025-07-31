@@ -176,6 +176,10 @@ class MessageCreate(BaseModel):
     # For image attachments
     has_image: bool = False
     image_data: Optional[str] = None  # Base64 encoded image
+    
+    # For live search
+    use_search: bool = False
+    search_mode: Optional[str] = None  # auto, web, x, news, rss
 
 
 class MessageResponse(MessageBase):

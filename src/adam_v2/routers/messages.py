@@ -84,9 +84,10 @@ async def send_message(
                 memory_service = AdvancedMemoryService(project.id, project.name)
                 
                 # Use advanced search if available
+                # Don't filter by conversation_id to get memories across all conversations
                 memories = await memory_service.advanced_search(
                     query=message_data.content,
-                    conversation_id=conversation_id,
+                    conversation_id=None,  # Search across all conversations in the project
                     limit=5,
                     use_bm25=True,
                     use_semantic=True
@@ -96,7 +97,7 @@ async def send_message(
                 memory_service = ProjectMemoryService(project.id, project.name)
                 memories = await memory_service.search_memories(
                     query=message_data.content,
-                    conversation_id=conversation_id,
+                    conversation_id=None,  # Search across all conversations in the project
                     limit=5
                 )
             
@@ -114,7 +115,9 @@ async def send_message(
             history=history,
             memory_context=memory_context,
             model=message_data.model,
-            image_data=message_data.image_data if message_data.has_image else None
+            image_data=message_data.image_data if message_data.has_image else None,
+            use_search=message_data.use_search,
+            search_mode=message_data.search_mode
         )
         
         # Create assistant message
@@ -127,6 +130,16 @@ async def send_message(
             cost=response.cost
         )
         
+        # If response includes citations, store them in metadata (would need schema update)
+        # For now, we'll include citations in the response content if available
+        if response.metadata and 'citations' in response.metadata:
+            citations = response.metadata['citations']
+            if citations:
+                citation_text = "\n\n---\n**Sources:**\n"
+                for i, citation in enumerate(citations, 1):
+                    citation_text += f"{i}. [{citation.get('title', 'Source')}]({citation.get('url', '#')})\n"
+                assistant_message.content += citation_text
+        
         db.add(assistant_message)
         await db.commit()
         await db.refresh(assistant_message)
@@ -134,9 +147,16 @@ async def send_message(
         # Store in memory if worthy
         # Lower threshold for valuable content like code
         is_code_content = "```" in response.content or "def " in response.content or "import " in response.content
-        cost_threshold = 0.0001 if is_code_content else 0.001
+        # Check for substantial content (DBT, models, etc.)
+        is_substantial = len(response.content.split()) > 100 or any(term in response.content.upper() for term in ["DBT", "PDT", "MODEL", "SQL", "CREATE", "SELECT"])
         
-        if message_data.use_memory and (response.cost > cost_threshold or response.tokens_used > 1000):
+        # Much lower thresholds to ensure memory storage
+        cost_threshold = 0.00001 if (is_code_content or is_substantial) else 0.0001
+        token_threshold = 200 if is_substantial else 500
+        
+        logger.info(f"Memory check - use_memory: {message_data.use_memory}, cost: {response.cost}, threshold: {cost_threshold}, tokens: {response.tokens_used}, substantial: {is_substantial}")
+        
+        if message_data.use_memory and (response.cost > cost_threshold or response.tokens_used > token_threshold):
             try:
                 memory_service = ProjectMemoryService(project.id, project.name)
                 await memory_service.store_memory(
@@ -227,9 +247,10 @@ async def send_message_stream(
                 memory_service = AdvancedMemoryService(project.id, project.name)
                 
                 # Use advanced search if available
+                # Don't filter by conversation_id to get memories across all conversations
                 memories = await memory_service.advanced_search(
                     query=message_data.content,
-                    conversation_id=conversation_id,
+                    conversation_id=None,  # Search across all conversations in the project
                     limit=5,
                     use_bm25=True,
                     use_semantic=True
@@ -239,7 +260,7 @@ async def send_message_stream(
                 memory_service = ProjectMemoryService(project.id, project.name)
                 memories = await memory_service.search_memories(
                     query=message_data.content,
-                    conversation_id=conversation_id,
+                    conversation_id=None,  # Search across all conversations in the project
                     limit=5
                 )
             
@@ -267,7 +288,9 @@ async def send_message_stream(
                 history=history,
                 memory_context=memory_context,
                 model=message_data.model,
-                image_data=message_data.image_data if message_data.has_image else None
+                image_data=message_data.image_data if message_data.has_image else None,
+                use_search=message_data.use_search,
+                search_mode=message_data.search_mode
             ):
                 full_response += chunk.content
                 tokens_used = chunk.tokens_used
@@ -297,9 +320,16 @@ async def send_message_stream(
             # Store in memory if worthy
             # Lower threshold for valuable content like code
             is_code_content = "```" in full_response or "def " in full_response or "import " in full_response
-            cost_threshold = 0.0001 if is_code_content else 0.001
+            # Check for substantial content (DBT, models, etc.)
+            is_substantial = len(full_response.split()) > 100 or any(term in full_response.upper() for term in ["DBT", "PDT", "MODEL", "SQL", "CREATE", "SELECT"])
             
-            if message_data.use_memory and (cost > cost_threshold or tokens_used > 1000):
+            # Much lower thresholds to ensure memory storage
+            cost_threshold = 0.00001 if (is_code_content or is_substantial) else 0.0001
+            token_threshold = 200 if is_substantial else 500
+            
+            logger.info(f"Memory check (streaming) - use_memory: {message_data.use_memory}, cost: {cost}, threshold: {cost_threshold}, tokens: {tokens_used}, substantial: {is_substantial}")
+            
+            if message_data.use_memory and (cost > cost_threshold or tokens_used > token_threshold):
                 try:
                     memory_service = ProjectMemoryService(project.id, project.name)
                     await memory_service.store_memory(

@@ -12,7 +12,20 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(url, {
+  // Ensure trailing slash for API endpoints (FastAPI behavior)
+  let finalUrl = url;
+  if (url.startsWith('/api/') && !url.endsWith('/') && !url.includes('?')) {
+    // Don't add trailing slash to URLs with IDs like /api/projects/123
+    const parts = url.split('/');
+    const lastPart = parts[parts.length - 1];
+    // If the last part doesn't look like an ID (no dashes, not 'health'), add trailing slash
+    // Exception: Don't add trailing slash for DELETE requests with IDs
+    if (!lastPart.includes('-') && lastPart !== 'health' && !(method === 'DELETE' && parts.length > 3)) {
+      finalUrl = url + '/';
+    }
+  }
+  
+  const res = await fetch(finalUrl, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
@@ -29,7 +42,19 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    let url = queryKey.join("/") as string;
+    
+    // Ensure trailing slash for API endpoints (FastAPI behavior)
+    if (url.startsWith('/api/') && !url.endsWith('/') && !url.includes('?')) {
+      const parts = url.split('/');
+      const lastPart = parts[parts.length - 1];
+      // If the last part doesn't look like an ID (no dashes, not 'health'), add trailing slash
+      if (!lastPart.includes('-') && lastPart !== 'health') {
+        url = url + '/';
+      }
+    }
+    
+    const res = await fetch(url, {
       credentials: "include",
     });
 
