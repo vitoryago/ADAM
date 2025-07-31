@@ -6,11 +6,12 @@ Handles Speech-to-Text (STT) and Text-to-Speech (TTS) operations
 import os
 import asyncio
 import logging
-from typing import Optional, Union, AsyncGenerator
+from typing import Optional, Union, AsyncGenerator, List, Dict
 from dataclasses import dataclass
 import base64
 import httpx
 from enum import Enum
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,8 @@ class TTSModel(Enum):
     """Available TTS models based on our research"""
     ELEVENLABS_MULTILINGUAL = "eleven_multilingual_v2"
     ELEVENLABS_TURBO = "eleven_turbo_v2"
+    ELEVENLABS_TURBO_V2_5 = "eleven_turbo_v2_5"
+    ELEVENLABS_V3 = "eleven_v3"  # For dialogue
     XTTS_V2 = "xtts_v2"
     AZURE_NEURAL = "azure_neural"
 
@@ -38,6 +41,10 @@ class VoiceConfig:
     language: str = "en"
     speaking_rate: float = 1.0
     pitch: float = 0.0
+    stability: float = 0.5
+    similarity_boost: float = 0.8
+    style: float = 0.0
+    use_speaker_boost: bool = True
 
 @dataclass
 class TranscriptionResult:
@@ -54,11 +61,21 @@ class AudioResponse:
     format: str = "mp3"  # Audio format
     sample_rate: int = 44100
     
+@dataclass
+class TimingInfo:
+    """Character timing information"""
+    characters: List[str]
+    character_start_times_seconds: List[float]
+    character_end_times_seconds: List[float]
+    
 class VoiceService:
     """Unified voice service for ADAM"""
     
     def __init__(self, config: Optional[VoiceConfig] = None):
         self.config = config or VoiceConfig()
+        # Set default voice ID if not provided
+        if not self.config.voice_id:
+            self.config.voice_id = "ZthjuvLPty3kTMaNKVKb"  # Your provided voice ID
         self._setup_clients()
         
     def _setup_clients(self):
@@ -78,10 +95,17 @@ class VoiceService:
                     
         # ElevenLabs client
         if self.config.tts_provider == VoiceProvider.ELEVENLABS:
-            elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+            elevenlabs_key = os.getenv("ELEVENLABS_API_KEY", "sk_314914abf445bf785fc32d48d544e5271b0c1511cfb74adc")
             if elevenlabs_key:
-                self.clients["elevenlabs_key"] = elevenlabs_key
-                logger.info("ElevenLabs API key configured")
+                try:
+                    from elevenlabs.client import ElevenLabs
+                    self.clients["elevenlabs"] = ElevenLabs(api_key=elevenlabs_key)
+                    self.clients["elevenlabs_key"] = elevenlabs_key
+                    logger.info("ElevenLabs client initialized")
+                except ImportError:
+                    logger.warning("ElevenLabs SDK not installed. Install with: pip install elevenlabs")
+                    # Fallback to HTTP client
+                    self.clients["elevenlabs_key"] = elevenlabs_key
                 
     async def transcribe_audio(
         self, 
@@ -146,8 +170,9 @@ class VoiceService:
         self,
         text: str,
         voice_id: Optional[str] = None,
-        stream: bool = False
-    ) -> Union[AudioResponse, AsyncGenerator[bytes, None]]:
+        stream: bool = False,
+        with_timing: bool = False
+    ) -> Union[AudioResponse, AsyncGenerator[bytes, None], Dict]:
         """
         Convert text to speech
         
@@ -155,12 +180,13 @@ class VoiceService:
             text: Text to synthesize
             voice_id: Optional voice ID override
             stream: Whether to stream audio chunks
+            with_timing: Whether to include character timing information
             
         Returns:
-            AudioResponse or async generator of audio chunks
+            AudioResponse, async generator of audio chunks, or dict with timing
         """
         if self.config.tts_provider == VoiceProvider.ELEVENLABS:
-            return await self._synthesize_elevenlabs(text, voice_id, stream)
+            return await self._synthesize_elevenlabs(text, voice_id, stream, with_timing)
         else:
             raise NotImplementedError(f"TTS provider {self.config.tts_provider} not implemented")
             
@@ -168,18 +194,77 @@ class VoiceService:
         self,
         text: str,
         voice_id: Optional[str],
-        stream: bool
-    ) -> Union[AudioResponse, AsyncGenerator[bytes, None]]:
+        stream: bool,
+        with_timing: bool = False
+    ) -> Union[AudioResponse, AsyncGenerator[bytes, None], Dict]:
         """Synthesize using ElevenLabs"""
+        # Use provided voice_id or default
+        voice_id = voice_id or self.config.voice_id
+        
+        # Try to use SDK first
+        elevenlabs_client = self.clients.get("elevenlabs")
+        if elevenlabs_client:
+            try:
+                if stream:
+                    # Use SDK streaming
+                    from elevenlabs import stream as elevenlabs_stream
+                    audio_stream = elevenlabs_client.text_to_speech.stream(
+                        text=text,
+                        voice_id=voice_id,
+                        model_id=self.config.tts_model.value,
+                        voice_settings={
+                            "stability": self.config.stability,
+                            "similarity_boost": self.config.similarity_boost,
+                            "style": self.config.style,
+                            "use_speaker_boost": self.config.use_speaker_boost
+                        }
+                    )
+                    
+                    async def stream_generator():
+                        for chunk in audio_stream:
+                            if isinstance(chunk, bytes):
+                                yield chunk
+                    
+                    return stream_generator()
+                else:
+                    # Use SDK for regular synthesis
+                    audio = elevenlabs_client.text_to_speech.convert(
+                        text=text,
+                        voice_id=voice_id,
+                        model_id=self.config.tts_model.value,
+                        voice_settings={
+                            "stability": self.config.stability,
+                            "similarity_boost": self.config.similarity_boost,
+                            "style": self.config.style,
+                            "use_speaker_boost": self.config.use_speaker_boost
+                        }
+                    )
+                    
+                    # Convert generator to bytes
+                    audio_bytes = b''.join(chunk for chunk in audio)
+                    
+                    return AudioResponse(
+                        audio_data=audio_bytes,
+                        format="mp3",
+                        sample_rate=44100
+                    )
+            except Exception as e:
+                logger.warning(f"ElevenLabs SDK failed, falling back to HTTP: {e}")
+        
+        # Fallback to HTTP API
         api_key = self.clients.get("elevenlabs_key")
         if not api_key:
             raise ValueError("ElevenLabs API key not configured")
             
-        # Use provided voice_id or default
-        voice_id = voice_id or self.config.voice_id or "21m00Tcm4TlvDq8ikWAM"  # Rachel voice
-        
-        # ElevenLabs API endpoint
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        # Choose endpoint based on options
+        if with_timing:
+            endpoint = f"/with-timestamps"
+        elif stream:
+            endpoint = "/stream"
+        else:
+            endpoint = ""
+            
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}{endpoint}"
         
         headers = {
             "xi-api-key": api_key,
@@ -190,16 +275,22 @@ class VoiceService:
             "text": text,
             "model_id": self.config.tts_model.value,
             "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.5,
-                "style": 0.0,
-                "use_speaker_boost": True
+                "stability": self.config.stability,
+                "similarity_boost": self.config.similarity_boost,
+                "style": self.config.style,
+                "use_speaker_boost": self.config.use_speaker_boost
             }
         }
         
         if stream:
             # Return async generator for streaming
-            return self._stream_elevenlabs(url, headers, data)
+            return self._stream_elevenlabs_http(url, headers, data)
+        elif with_timing:
+            # Return response with timing data
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=data, headers=headers)
+                response.raise_for_status()
+                return response.json()
         else:
             # Return complete audio
             async with httpx.AsyncClient() as client:
@@ -212,12 +303,8 @@ class VoiceService:
                     sample_rate=44100
                 )
                 
-    async def _stream_elevenlabs(self, url: str, headers: dict, data: dict):
-        """Stream audio from ElevenLabs"""
-        # Add stream parameter
-        data["stream"] = True
-        url += "/stream"
-        
+    async def _stream_elevenlabs_http(self, url: str, headers: dict, data: dict):
+        """Stream audio from ElevenLabs via HTTP"""
         async with httpx.AsyncClient() as client:
             async with client.stream("POST", url, json=data, headers=headers) as response:
                 response.raise_for_status()

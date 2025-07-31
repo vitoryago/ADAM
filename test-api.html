@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>ADAM API Test</h1>
+    <button onclick="testProjects()">Test Get Projects</button>
+    <button onclick="createProject()">Test Create Project</button>
+    <div id="result"></div>
+
+    <script>
+        async function testProjects() {
+            try {
+                const response = await fetch('http://localhost:8000/api/projects/');
+                const data = await response.json();
+                document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                document.getElementById('result').innerHTML = 'Error: ' + error.message;
+            }
+        }
+
+        async function createProject() {
+            try {
+                const response = await fetch('http://localhost:8000/api/projects/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: 'Test from HTML',
+                        description: 'Testing API connection'
+                    })
+                });
+                const data = await response.json();
+                document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                document.getElementById('result').innerHTML = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

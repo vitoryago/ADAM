@@ -24,7 +24,7 @@ load_dotenv()
 from database import init_db, close_db
 
 # Import routers
-from routers import projects, conversations, messages, memories
+from routers import projects, conversations, messages, memories, voice
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -72,12 +72,23 @@ app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(conversations.router, prefix="/api", tags=["conversations"])
 app.include_router(messages.router, prefix="/api", tags=["messages"])
 app.include_router(memories.router, prefix="/api", tags=["memories"])
+app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 
 
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "version": "2.0.0", "type": "api"}
+
+
+@app.get("/api/debug/cors")
+async def debug_cors(request: Request):
+    """Debug CORS headers"""
+    return {
+        "origin": request.headers.get("origin"),
+        "headers": dict(request.headers),
+        "url": str(request.url)
+    }
 
 
 if __name__ == "__main__":

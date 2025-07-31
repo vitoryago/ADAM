@@ -3,14 +3,21 @@ Voice endpoints for ADAM v2.0
 Handles audio transcription and synthesis
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Response, WebSocket, WebSocketDisconnect, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+from typing import Optional, List
 import logging
+import json
+import asyncio
+import base64
 
 from database import get_db
 from services.voice_service import VoiceService, VoiceConfig, VoiceProvider, TTSModel
+from services.voice_websocket import ElevenLabsWebSocket, WebSocketVoiceConfig
+from services.llm_service import LLMService
+from models import MessageCreate, Conversation, Project, Message
+from sqlalchemy import select
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -156,7 +163,10 @@ async def voice_chat_endpoint(
     conversation_id: Optional[str] = Form(None),
     use_memory: bool = Form(True),
     model: Optional[str] = Form(None),
-    voice_id: Optional[str] = Form(None)
+    voice_id: Optional[str] = Form(None),
+    use_search: bool = Form(False),
+    search_mode: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Complete voice chat endpoint:
@@ -174,17 +184,124 @@ async def voice_chat_endpoint(
             format=format
         )
         
-        # Step 2: Process through ADAM chat (simplified for now)
-        # In production, this would call the existing message endpoint
         user_text = transcription.text
+        logger.info(f"Transcribed text: {user_text}")
         
-        # TODO: Call message processing service here
-        # For now, return a placeholder response
-        assistant_response = f"I heard you say: '{user_text}'. This is where ADAM would process and respond."
+        # Step 2: Process through ADAM chat
+        if not conversation_id:
+            # If no conversation_id provided, we need to either create one or error
+            raise HTTPException(
+                status_code=400,
+                detail="conversation_id is required for voice chat"
+            )
+        
+        # Verify conversation exists and get project
+        conv_result = await db.execute(
+            select(Conversation).where(Conversation.id == conversation_id)
+        )
+        conversation = conv_result.scalar_one_or_none()
+        
+        if not conversation:
+            raise HTTPException(
+                status_code=404,
+                detail="Conversation not found"
+            )
+        
+        # Get project for settings
+        project_result = await db.execute(
+            select(Project).where(Project.id == conversation.project_id)
+        )
+        project = project_result.scalar_one_or_none()
+        
+        # Create user message
+        user_message = Message(
+            conversation_id=conversation_id,
+            role="user",
+            content=user_text
+        )
+        
+        db.add(user_message)
+        await db.commit()
+        await db.refresh(user_message)
+        
+        # Get conversation history
+        history_result = await db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.asc())
+            .limit(10)
+        )
+        history = history_result.scalars().all()
+        
+        # Initialize LLM service
+        llm_service = LLMService(project_settings=project.settings, project_id=project.id)
+        
+        # Get memory context if enabled
+        memory_context = ""
+        if use_memory:
+            try:
+                from services.memory_service import ProjectMemoryService, ADAM_MEMORY_AVAILABLE
+                if ADAM_MEMORY_AVAILABLE:
+                    memory_service = ProjectMemoryService(project.id, project.name)
+                    memories = await memory_service.search_memories(
+                        query=user_text,
+                        conversation_id=None,
+                        limit=5
+                    )
+                    
+                    if memories:
+                        memory_context = "\n\n=== Relevant Memories ===\n"
+                        for mem in memories[:3]:
+                            memory_context += f"- {mem.content[:200]}...\n"
+            except Exception as e:
+                logger.error(f"Error retrieving memories: {e}")
+        
+        # Generate AI response
+        response = await llm_service.generate_response(
+            message=user_text,
+            history=history,
+            memory_context=memory_context,
+            model=model,
+            use_search=use_search,
+            search_mode=search_mode
+        )
+        
+        # Create assistant message
+        assistant_message = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=response.content,
+            model=response.model_used,
+            tokens_used=response.tokens_used,
+            cost=response.cost
+        )
+        
+        db.add(assistant_message)
+        await db.commit()
+        
+        # Store in memory if worthy
+        if use_memory and response.cost > 0.0001:
+            try:
+                from services.memory_service import ProjectMemoryService
+                memory_service = ProjectMemoryService(project.id, project.name)
+                await memory_service.store_memory(
+                    content=f"Q: {user_text}\n\nA: {response.content}",
+                    memory_type="voice_conversation",
+                    metadata={
+                        "model": response.model_used,
+                        "cost": response.cost,
+                        "tokens": response.tokens_used,
+                        "voice": True
+                    },
+                    conversation_id=conversation_id,
+                    cost=response.cost
+                )
+            except Exception as e:
+                logger.error(f"Error storing memory: {e}")
         
         # Step 3: Synthesize response
         audio_response = await voice_service.synthesize_speech(
-            text=assistant_response,
+            text=response.content,
             voice_id=voice_id,
             stream=False
         )
@@ -194,10 +311,136 @@ async def voice_chat_endpoint(
             media_type=f"audio/{audio_response.format}",
             headers={
                 "X-Transcription": user_text,
-                "X-Response-Text": assistant_response
+                "X-Response-Text": response.content,
+                "X-Model-Used": response.model_used,
+                "X-Tokens": str(response.tokens_used)
             }
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Voice chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.websocket("/ws/voice-stream")
+async def voice_stream_websocket(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time voice streaming
+    Handles bidirectional audio streaming
+    """
+    await websocket.accept()
+    
+    # Initialize ElevenLabs WebSocket
+    ws_config = WebSocketVoiceConfig()
+    elevenlabs_ws = ElevenLabsWebSocket(ws_config)
+    
+    try:
+        # Connect to ElevenLabs
+        await elevenlabs_ws.connect()
+        
+        # Create tasks for handling incoming and outgoing data
+        receive_task = asyncio.create_task(receive_from_client(websocket, elevenlabs_ws))
+        send_task = asyncio.create_task(send_to_client(websocket, elevenlabs_ws))
+        
+        # Wait for either task to complete
+        done, pending = await asyncio.wait(
+            [receive_task, send_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # Cancel pending tasks
+        for task in pending:
+            task.cancel()
+            
+    except WebSocketDisconnect:
+        logger.info("Client disconnected from voice stream")
+    except Exception as e:
+        logger.error(f"Voice stream error: {e}")
+    finally:
+        await elevenlabs_ws.close()
+        
+
+async def receive_from_client(websocket: WebSocket, elevenlabs_ws: ElevenLabsWebSocket):
+    """Receive text/audio from client and forward to ElevenLabs"""
+    try:
+        while True:
+            data = await websocket.receive_json()
+            
+            if data.get("type") == "text":
+                # Send text to ElevenLabs for synthesis
+                text = data.get("text", "")
+                flush = data.get("flush", False)
+                await elevenlabs_ws.send_text(text, flush)
+                
+            elif data.get("type") == "audio":
+                # Handle audio transcription
+                audio_data = data.get("data", "")
+                format = data.get("format", "webm")
+                
+                if audio_data:
+                    try:
+                        # Transcribe the audio chunk
+                        transcription = await voice_service.transcribe_audio(
+                            audio_data=audio_data,
+                            format=format
+                        )
+                        
+                        # Send transcription back to client
+                        await websocket.send_json({
+                            "type": "transcription",
+                            "text": transcription.text,
+                            "language": transcription.language
+                        })
+                        
+                        # Forward transcribed text to ElevenLabs
+                        await elevenlabs_ws.send_text(transcription.text, flush=True)
+                        
+                    except Exception as e:
+                        logger.error(f"Error transcribing audio: {e}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Transcription failed"
+                        })
+                
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"Error receiving from client: {e}")
+        
+
+async def send_to_client(websocket: WebSocket, elevenlabs_ws: ElevenLabsWebSocket):
+    """Receive audio from ElevenLabs and forward to client"""
+    try:
+        async for audio_data in elevenlabs_ws.receive_audio():
+            # Send audio chunk to client
+            await websocket.send_json({
+                "type": "audio",
+                "data": base64.b64encode(audio_data["audio"]).decode(),
+                "is_final": audio_data["is_final"],
+                "alignment": audio_data.get("alignment"),
+                "normalized_alignment": audio_data.get("normalized_alignment")
+            })
+            
+    except Exception as e:
+        logger.error(f"Error sending to client: {e}")
+        
+
+@router.post("/synthesize/with-timing")
+async def synthesize_with_timing(request: TTSRequest):
+    """
+    Synthesize speech with character-level timing information
+    """
+    try:
+        result = await voice_service.synthesize_speech(
+            text=request.text,
+            voice_id=request.voice_id,
+            stream=False,
+            with_timing=True
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Synthesis with timing error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
