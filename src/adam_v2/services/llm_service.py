@@ -111,7 +111,9 @@ class LLMService:
         history: List[Any] = None,
         memory_context: str = "",
         model: Optional[str] = None,
-        image_data: Optional[str] = None
+        image_data: Optional[str] = None,
+        use_search: bool = False,
+        search_mode: Optional[str] = None
     ) -> LLMResponse:
         """Generate a response using ADAM's LLM client"""
         
@@ -144,7 +146,7 @@ class LLMService:
             model = self._select_model_by_complexity(complexity)
         
         # Use the specified model or default
-        final_model = model or self.default_model or "grok-3-mini-high"
+        final_model = model or self.default_model or "grok-3-mini-fast"
         
         try:
             # Check if model supports vision
@@ -160,6 +162,21 @@ class LLMService:
                     history_lines.append(f"{role}: {msg['content']}")
                 if history_lines:
                     system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
+            
+            # Build kwargs for complete call
+            complete_kwargs = {
+                "prompt": full_prompt,
+                "model": final_model,
+                "system_prompt": system_prompt,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens
+            }
+            
+            # Add search parameters if enabled
+            if use_search and final_model in ["grok-3-mini-high", "grok-3-mini-fast-high", "grok-4", "grok-4-reasoning"]:
+                # Simple boolean flag - the API will handle the search internally
+                complete_kwargs["search_parameters"] = True
+                logger.info(f"Live search enabled for model: {final_model}")
             
             if image_data and model_config and model_config.supports_vision:
                 # Convert base64 string to bytes if needed
@@ -177,24 +194,10 @@ class LLMService:
                 else:
                     image_bytes = image_data
                 
-                # Use vision-capable model
-                response = await self.llm_client.complete(
-                    prompt=full_prompt,
-                    model=final_model,
-                    system_prompt=system_prompt,
-                    image_data=image_bytes,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens
-                )
-            else:
-                # Text-only query
-                response = await self.llm_client.complete(
-                    prompt=full_prompt,
-                    model=final_model,
-                    system_prompt=system_prompt,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens
-                )
+                complete_kwargs["image_data"] = image_bytes
+            
+            # Make the API call
+            response = await self.llm_client.complete(**complete_kwargs)
             
             # Calculate cost based on tokens
             # Simple cost estimation - you may want to adjust these rates
@@ -205,15 +208,23 @@ class LLMService:
                 cost_per_1k = 0.002  # Default fallback
             estimated_cost = (response.total_tokens / 1000) * cost_per_1k
             
+            # Check if response includes citations from search
+            metadata = {
+                "complexity": complexity.value if 'complexity' in locals() else None,
+                "has_image": bool(image_data)
+            }
+            
+            # Add citations if present
+            if hasattr(response, 'raw_response') and response.raw_response and 'citations' in response.raw_response:
+                metadata["citations"] = response.raw_response['citations']
+                logger.info(f"Response includes {len(response.raw_response['citations'])} citations")
+            
             llm_response = LLMResponse(
                 content=response.content,
                 model_used=response.model,
                 tokens_used=response.total_tokens,
                 cost=response.cost if hasattr(response, 'cost') else estimated_cost,
-                metadata={
-                    "complexity": complexity.value if 'complexity' in locals() else None,
-                    "has_image": bool(image_data)
-                }
+                metadata=metadata
             )
             
             # Store valuable responses in memory
@@ -269,7 +280,9 @@ class LLMService:
         history: List[Any] = None,
         memory_context: str = "",
         model: Optional[str] = None,
-        image_data: Optional[str] = None
+        image_data: Optional[str] = None,
+        use_search: bool = False,
+        search_mode: Optional[str] = None
     ) -> AsyncGenerator[StreamChunk, None]:
         """Stream a response using ADAM's LLM client"""
         
@@ -311,7 +324,7 @@ class LLMService:
             complexity, _ = self.query_analyzer.analyze_query(message)
             model = self._select_model_by_complexity(complexity)
         
-        final_model = model or self.default_model or "grok-3-mini-high"
+        final_model = model or self.default_model or "grok-3-mini-fast"
         
         try:
             # Check if model supports vision
@@ -330,6 +343,22 @@ class LLMService:
                 if history_lines:
                     system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
             
+            # Build kwargs for complete call
+            complete_kwargs = {
+                "prompt": full_prompt,
+                "model": final_model,
+                "system_prompt": system_prompt,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "stream": True  # Enable streaming
+            }
+            
+            # Add search parameters if enabled
+            if use_search and final_model in ["grok-3-mini-high", "grok-3-mini-fast-high", "grok-4", "grok-4-reasoning"]:
+                # Simple boolean flag - the API will handle the search internally
+                complete_kwargs["search_parameters"] = True
+                logger.info(f"Live search enabled for streaming with model: {final_model}")
+            
             if image_data and model_config and model_config.supports_vision:
                 # Convert base64 string to bytes if needed
                 if isinstance(image_data, str):
@@ -345,56 +374,84 @@ class LLMService:
                         raise ValueError("Invalid image data format")
                 else:
                     image_bytes = image_data
-                    
-                response = await self.llm_client.complete(
-                    prompt=full_prompt,
-                    model=final_model,
-                    system_prompt=system_prompt,
-                    image_data=image_bytes,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens
-                )
+                
+                complete_kwargs["image_data"] = image_bytes
+            
+            # Make the API call
+            stream_response = await self.llm_client.complete(**complete_kwargs)
+            
+            # Stream the actual chunks from the LLM
+            accumulated_content = ""
+            token_count = 0
+            chunk_count = 0
+            
+            logger.info(f"Starting streaming for model {final_model}")
+            
+            # Check if we got an async generator or a regular response
+            if hasattr(stream_response, '__aiter__'):
+                # It's an async generator, use real streaming
+                async for chunk in stream_response:
+                    if chunk:  # Only process non-empty chunks
+                        chunk_count += 1
+                        accumulated_content += chunk
+                        # Estimate tokens (rough approximation)
+                        token_count = len(accumulated_content.split()) * 1.3
+                        
+                        logger.debug(f"Streaming chunk {chunk_count}: {len(chunk)} chars")
+                        
+                        yield StreamChunk(
+                            content=chunk,
+                            model_used=final_model,
+                            tokens_used=0,  # Will be set in final chunk
+                            cost=0.0
+                        )
             else:
-                response = await self.llm_client.complete(
-                    prompt=full_prompt,
-                    model=final_model,
-                    system_prompt=system_prompt,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens
-                )
-            
-            # Simulate streaming by yielding chunks (preserve formatting)
-            content = response.content
-            chunk_size = 50  # Characters per chunk
-            
-            # Stream character by character to preserve formatting
-            for i in range(0, len(content), chunk_size):
-                chunk_text = content[i:i + chunk_size]
+                # Fallback: Got a regular response, simulate streaming
+                logger.warning("Streaming not supported, falling back to chunking")
+                content = stream_response.content if hasattr(stream_response, 'content') else str(stream_response)
                 
-                yield StreamChunk(
-                    content=chunk_text,
-                    model_used=response.model,
-                    tokens_used=0,  # Will be set in final chunk
-                    cost=0.0
-                )
+                # Use word-based chunking for more natural streaming
+                words = content.split(' ')
+                words_per_chunk = 3  # Send 3 words at a time
                 
-                # Small delay for more natural streaming feel
-                await asyncio.sleep(0.03)  # 30ms between chunks
+                for i in range(0, len(words), words_per_chunk):
+                    chunk_count += 1
+                    chunk_words = words[i:i + words_per_chunk]
+                    chunk = ' '.join(chunk_words)
+                    if i + words_per_chunk < len(words):
+                        chunk += ' '  # Add space if not last chunk
+                    
+                    accumulated_content += chunk
+                    token_count = len(accumulated_content.split()) * 1.3
+                    
+                    yield StreamChunk(
+                        content=chunk,
+                        model_used=final_model,
+                        tokens_used=0,
+                        cost=0.0
+                    )
+                    
+                    await asyncio.sleep(0.015)  # 15ms delay for natural feel
             
-            # Calculate cost
+            logger.info(f"Streaming complete: {chunk_count} chunks, {len(accumulated_content)} total chars")
+            
+            # Calculate cost based on accumulated content
             model_config = MODEL_CONFIGS.get(final_model)
             if model_config and hasattr(model_config, 'cost_per_1k_tokens'):
                 cost_per_1k = model_config.cost_per_1k_tokens
             else:
                 cost_per_1k = 0.002  # Default fallback
-            estimated_cost = (response.total_tokens / 1000) * cost_per_1k
+            
+            # Estimate final token count
+            final_token_count = int(token_count * 1.1)  # Add 10% for more accurate estimation
+            estimated_cost = (final_token_count / 1000) * cost_per_1k
             
             # Final chunk with metadata
             yield StreamChunk(
                 content="",
-                model_used=response.model,
-                tokens_used=response.total_tokens,
-                cost=response.cost if hasattr(response, 'cost') else estimated_cost,
+                model_used=final_model,
+                tokens_used=final_token_count,
+                cost=estimated_cost,
                 is_final=True
             )
             
@@ -411,14 +468,14 @@ class LLMService:
     def _select_model_by_complexity(self, complexity: 'QueryComplexity') -> str:
         """Select model based on query complexity"""
         if not QueryComplexity:
-            return "grok-3-mini-high"
+            return "grok-3-mini-fast"
             
         if complexity == QueryComplexity.HIGH:
             return "grok-4-reasoning"
         elif complexity == QueryComplexity.MEDIUM:
             return "grok-4"
         else:
-            return "grok-3-mini-high"
+            return "grok-3-mini-fast"
     
     def estimate_cost(
         self,
