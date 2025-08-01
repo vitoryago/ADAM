@@ -21,10 +21,10 @@ if parent_env.exists():
 load_dotenv()
 
 # Import database
-from database import init_db, close_db
+from src.adam_v2.database import init_db, close_db
 
 # Import routers
-from routers import projects, conversations, messages, memories, voice
+from src.adam_v2.routers import projects, conversations, messages, memories, voice, voice_streaming
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -73,6 +73,7 @@ app.include_router(conversations.router, prefix="/api", tags=["conversations"])
 app.include_router(messages.router, prefix="/api", tags=["messages"])
 app.include_router(memories.router, prefix="/api", tags=["memories"])
 app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
+app.include_router(voice_streaming.router, tags=["voice-streaming"])
 
 
 @app.get("/api/health")

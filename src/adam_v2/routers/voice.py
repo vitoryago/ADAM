@@ -16,6 +16,7 @@ from database import get_db
 from services.voice_service import VoiceService, VoiceConfig, VoiceProvider, TTSModel
 from services.voice_websocket import ElevenLabsWebSocket, WebSocketVoiceConfig
 from services.llm_service import LLMService
+from services.voice_conversation_handler import VoiceConversationHandler
 from models import MessageCreate, Conversation, Project, Message
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize voice service
 voice_service = VoiceService()
+voice_handler = VoiceConversationHandler()
 
 class TranscriptionRequest(BaseModel):
     """Request model for audio transcription"""
@@ -256,8 +258,27 @@ async def voice_chat_endpoint(
             except Exception as e:
                 logger.error(f"Error retrieving memories: {e}")
         
-        # Generate AI response
-        response = await llm_service.generate_response(
+        # Define async callback for LLM
+        async def llm_callback(messages, system_prompt):
+            return await llm_service.generate_response(
+                message=messages[-1]['content'] if messages else user_text,
+                history=history,
+                memory_context=memory_context,
+                model=model,
+                use_search=use_search,
+                search_mode=search_mode,
+                system_prompt=system_prompt
+            )
+        
+        # Process through voice conversation handler
+        voice_response = await voice_handler.process_voice_input(
+            transcribed_text=user_text,
+            conversation_id=conversation_id,
+            llm_callback=llm_callback
+        )
+        
+        # Get the full response for database storage
+        full_response = await llm_service.generate_response(
             message=user_text,
             history=history,
             memory_context=memory_context,
@@ -266,54 +287,61 @@ async def voice_chat_endpoint(
             search_mode=search_mode
         )
         
-        # Create assistant message
+        # Create assistant message with full content
         assistant_message = Message(
             conversation_id=conversation_id,
             role="assistant",
-            content=response.content,
-            model=response.model_used,
-            tokens_used=response.tokens_used,
-            cost=response.cost
+            content=full_response.content,
+            model=full_response.model_used,
+            tokens_used=full_response.tokens_used,
+            cost=full_response.cost
         )
         
         db.add(assistant_message)
         await db.commit()
         
         # Store in memory if worthy
-        if use_memory and response.cost > 0.0001:
+        if use_memory and full_response.cost > 0.0001:
             try:
                 from services.memory_service import ProjectMemoryService
                 memory_service = ProjectMemoryService(project.id, project.name)
                 await memory_service.store_memory(
-                    content=f"Q: {user_text}\n\nA: {response.content}",
+                    content=f"Q: {user_text}\n\nA: {full_response.content}",
                     memory_type="voice_conversation",
                     metadata={
-                        "model": response.model_used,
-                        "cost": response.cost,
-                        "tokens": response.tokens_used,
-                        "voice": True
+                        "model": full_response.model_used,
+                        "cost": full_response.cost,
+                        "tokens": full_response.tokens_used,
+                        "voice": True,
+                        "spoken_response": voice_response['spoken_text']
                     },
                     conversation_id=conversation_id,
-                    cost=response.cost
+                    cost=full_response.cost
                 )
             except Exception as e:
                 logger.error(f"Error storing memory: {e}")
         
-        # Step 3: Synthesize response
+        # Step 3: Synthesize only the spoken response
         audio_response = await voice_service.synthesize_speech(
-            text=response.content,
+            text=voice_response['spoken_text'],
             voice_id=voice_id,
             stream=False
         )
+        
+        # Include both spoken and visual content in headers (safely encoded)
+        import urllib.parse
         
         return Response(
             content=audio_response.audio_data,
             media_type=f"audio/{audio_response.format}",
             headers={
-                "X-Transcription": user_text,
-                "X-Response-Text": response.content,
-                "X-Model-Used": response.model_used,
-                "X-Tokens": str(response.tokens_used)
+                "X-Transcription": urllib.parse.quote(user_text, safe=''),
+                "X-Response-Text": urllib.parse.quote(voice_response['spoken_text'], safe=''),
+                "X-Full-Response": urllib.parse.quote(full_response.content[:500], safe=''),  # Limit size
+                "X-Model-Used": full_response.model_used,
+                "X-Tokens": str(full_response.tokens_used),
+                "X-Has-Code": str(bool(voice_response.get('code_blocks'))),
+                "X-Wait-For-Response": str(voice_response.get('wait_for_response', False))
             }
         )
         

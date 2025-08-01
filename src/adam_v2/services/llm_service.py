@@ -113,7 +113,8 @@ class LLMService:
         model: Optional[str] = None,
         image_data: Optional[str] = None,
         use_search: bool = False,
-        search_mode: Optional[str] = None
+        search_mode: Optional[str] = None,
+        system_prompt: Optional[str] = None
     ) -> LLMResponse:
         """Generate a response using ADAM's LLM client"""
         
@@ -152,8 +153,12 @@ class LLMService:
             # Check if model supports vision
             model_config = MODEL_CONFIGS.get(final_model)
             
-            # Build system prompt with ADAM identity
-            system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
+            # Use provided system prompt or build default
+            if system_prompt:
+                final_system_prompt = system_prompt
+            else:
+                final_system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
+                
             if messages and len(messages) > 1:
                 # Create a conversation context from history
                 history_lines = []
@@ -161,13 +166,13 @@ class LLMService:
                     role = msg['role'].capitalize()
                     history_lines.append(f"{role}: {msg['content']}")
                 if history_lines:
-                    system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
+                    final_system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
             
             # Build kwargs for complete call
             complete_kwargs = {
                 "prompt": full_prompt,
                 "model": final_model,
-                "system_prompt": system_prompt,
+                "system_prompt": final_system_prompt,
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens
             }
@@ -282,7 +287,8 @@ class LLMService:
         model: Optional[str] = None,
         image_data: Optional[str] = None,
         use_search: bool = False,
-        search_mode: Optional[str] = None
+        search_mode: Optional[str] = None,
+        system_prompt: Optional[str] = None
     ) -> AsyncGenerator[StreamChunk, None]:
         """Stream a response using ADAM's LLM client"""
         
@@ -332,8 +338,12 @@ class LLMService:
             
             # For now, we'll simulate streaming by breaking up the response
             # In a real implementation, you'd use the actual streaming API
-            # Build system prompt with ADAM identity
-            system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
+            # Use provided system prompt or build default
+            if system_prompt:
+                final_system_prompt = system_prompt
+            else:
+                final_system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
+                
             if messages and len(messages) > 1:
                 # Create a conversation context from history
                 history_lines = []
@@ -341,13 +351,13 @@ class LLMService:
                     role = msg['role'].capitalize()
                     history_lines.append(f"{role}: {msg['content']}")
                 if history_lines:
-                    system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
+                    final_system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
             
             # Build kwargs for complete call
             complete_kwargs = {
                 "prompt": full_prompt,
                 "model": final_model,
-                "system_prompt": system_prompt,
+                "system_prompt": final_system_prompt,
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
                 "stream": True  # Enable streaming

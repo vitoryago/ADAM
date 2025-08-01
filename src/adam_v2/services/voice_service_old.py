@@ -12,13 +12,6 @@ import base64
 import httpx
 from enum import Enum
 import io
-import tempfile
-import subprocess
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-load_dotenv('.env.local')  # Override with local settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +36,7 @@ class VoiceConfig:
     """Configuration for voice services"""
     stt_provider: VoiceProvider = VoiceProvider.OPENAI_WHISPER
     tts_provider: VoiceProvider = VoiceProvider.ELEVENLABS
-    tts_model: TTSModel = TTSModel.ELEVENLABS_TURBO_V2_5  # Use turbo model which is more accessible
+    tts_model: TTSModel = TTSModel.ELEVENLABS_V3  # Better for natural dialogue
     voice_id: Optional[str] = None  # For ElevenLabs voice selection
     language: str = "en"
     speaking_rate: float = 0.85  # Slower speech rate
@@ -142,11 +135,8 @@ class VoiceService:
                 logger.error(f"Failed to decode base64 audio: {e}")
                 raise ValueError(f"Invalid base64 audio data: {e}")
         
-        # Log first few bytes to check format
-        logger.info(f"First 20 bytes of audio (hex): {audio_data[:20].hex() if len(audio_data) >= 20 else 'too small'}")
-        
-        # Check minimum size - be more lenient for testing
-        min_size = 500  # Reduced for testing
+        # Check minimum size - WebM files need more data
+        min_size = 5000 if format == "webm" else 1000
         if len(audio_data) < min_size:
             logger.warning(f"Audio data too small: {len(audio_data)} bytes (minimum: {min_size})")
             raise ValueError(f"Audio data too small for transcription. Received {len(audio_data)} bytes, need at least {min_size}")
@@ -170,96 +160,146 @@ class VoiceService:
         if not client:
             raise ValueError("OpenAI client not initialized")
             
-        # Create temp file
-        temp_path = None
-        wav_path = None
-        
         try:
-            # Save audio to temp file
-            with tempfile.NamedTemporaryFile(mode='wb', suffix=f'.{format}', delete=False) as tmp_file:
-                tmp_file.write(audio_data)
-                temp_path = tmp_file.name
-                logger.info(f"Created temp file: {temp_path}, size: {len(audio_data)} bytes")
+            # Create a file-like object for the API
+            import io
+            import tempfile
+            import os
             
-            # For WebM, always convert to WAV for better compatibility
-            # Check multiple possible ffmpeg locations
-            ffmpeg_paths = ["/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg", "ffmpeg"]
-            ffmpeg_path = None
-            for path in ffmpeg_paths:
-                if os.path.exists(path) or path == "ffmpeg":  # Allow system PATH lookup
-                    ffmpeg_path = path
-                    break
+            # Log file details for debugging
+            logger.info(f"Processing {format} file, first 20 bytes (hex): {audio_data[:20].hex()}")
+            logger.info(f"First 4 bytes (raw): {audio_data[:4]}")
+            
+            # Check for common file signatures
+            if audio_data[:4] == b'RIFF':
+                logger.info("Detected WAV file signature")
+            elif audio_data[:4] == b'\x1a\x45\xdf\xa3':
+                logger.info("Detected WebM/Matroska file signature")
+            elif audio_data[:3] == b'ID3':
+                logger.info("Detected MP3 file signature")
+            else:
+                logger.warning(f"Unknown file signature: {audio_data[:4].hex()}")
+            
+            # For WebM from browser, we need special handling
+            if format == "webm" and not (audio_data[:4] == b'\x1a\x45\xdf\xa3'):
+                # Browser WebM might have different structure
+                logger.info("Browser-generated WebM detected, using special handling")
+                
+                # Try to fix the WebM header or use as-is
+                # Sometimes browser WebM has a slightly different structure
+                format = "webm"  # Keep format as webm
+                
+            # Always use temp file approach for reliability
+            temp_path = None
+            try:
+                # Create temp file with proper extension
+                with tempfile.NamedTemporaryFile(mode='wb', suffix=f'.{format}', delete=False) as tmp_file:
+                    tmp_file.write(audio_data)
+                    temp_path = tmp_file.name
+                    logger.info(f"Created temp file: {temp_path}, size: {len(audio_data)} bytes")
+                
+                # First attempt: Try with the original format
+                try:
+                    with open(temp_path, 'rb') as audio_file_handle:
+                        response = await client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=audio_file_handle,
+                            language=language or self.config.language,
+                            response_format="text"
+                        )
+                        logger.info("Transcription successful with original format")
+                except Exception as first_error:
+                    logger.warning(f"First attempt failed: {first_error}")
                     
-            if format == "webm" and ffmpeg_path:
-                wav_path = temp_path.replace(f'.{format}', '.wav')
-                
-                # Convert to WAV using ffmpeg
-                cmd = [
-                    ffmpeg_path,
-                    '-i', temp_path,
-                    '-acodec', 'pcm_s16le',  # 16-bit PCM
-                    '-ar', '16000',           # 16kHz sample rate
-                    '-ac', '1',               # Mono
-                    '-f', 'wav',
-                    '-y',                     # Overwrite
-                    wav_path
-                ]
-                
-                logger.info(f"Converting WebM to WAV using ffmpeg at: {ffmpeg_path}")
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                
-                if result.returncode == 0:
-                    logger.info(f"Successfully converted WebM to WAV, output file: {wav_path}")
-                    # Verify the WAV file was created
-                    if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
-                        logger.info(f"WAV file size: {os.path.getsize(wav_path)} bytes")
-                        # Use WAV file for transcription
-                        file_to_transcribe = wav_path
+                    # Second attempt: Force WAV conversion for any format
+                    if os.path.exists("/usr/local/bin/ffmpeg"):
+                        logger.info(f"Converting {format} to WAV using ffmpeg")
+                        wav_path = temp_path.replace(f'.{format}', '.wav')
+                        
+                        import subprocess
+                        # Use more compatible ffmpeg settings
+                        result = subprocess.run(
+                            [
+                                '/usr/local/bin/ffmpeg',
+                                '-i', temp_path,
+                                '-acodec', 'pcm_s16le',  # 16-bit PCM
+                                '-ar', '16000',           # 16kHz sample rate
+                                '-ac', '1',               # Mono
+                                '-f', 'wav',
+                                wav_path
+                            ],
+                            capture_output=True,
+                            text=True
+                        )
+                        
+                        if result.returncode == 0:
+                            logger.info(f"Converted to WAV successfully")
+                            with open(wav_path, 'rb') as wav_file:
+                                response = await client.audio.transcriptions.create(
+                                    model="whisper-1",
+                                    file=wav_file,
+                                    language=language or self.config.language,
+                                    response_format="text"
+                                )
+                                logger.info("Transcription successful with converted WAV")
+                            os.unlink(wav_path)
+                        else:
+                            logger.error(f"FFmpeg conversion failed: {result.stderr}")
+                            raise Exception(f"Audio conversion failed: {result.stderr}")
                     else:
-                        logger.error("WAV file was not created or is empty")
-                        file_to_transcribe = temp_path
+                        raise first_error
+                    
+            except Exception as e:
+                logger.error(f"Whisper API error: {e}")
+                
+                # If WebM fails, try converting to WAV using ffmpeg
+                if format == "webm" and os.path.exists("/usr/local/bin/ffmpeg"):
+                    logger.info("Attempting to convert WebM to WAV using ffmpeg")
+                    wav_path = None
+                    try:
+                        # Convert WebM to WAV
+                        wav_path = temp_path.replace('.webm', '.wav')
+                        import subprocess
+                        result = subprocess.run(
+                            ['/usr/local/bin/ffmpeg', '-i', temp_path, '-ar', '16000', '-ac', '1', '-f', 'wav', wav_path],
+                            capture_output=True,
+                            text=True
+                        )
+                        
+                        if result.returncode == 0:
+                            logger.info(f"Converted to WAV successfully: {wav_path}")
+                            # Try again with WAV
+                            with open(wav_path, 'rb') as wav_file:
+                                response = await client.audio.transcriptions.create(
+                                    model="whisper-1",
+                                    file=wav_file,
+                                    language=language or self.config.language,
+                                    response_format="text"
+                                )
+                                logger.info("Transcription successful with converted WAV")
+                        else:
+                            logger.error(f"FFmpeg conversion failed: {result.stderr}")
+                            raise Exception(f"Audio conversion failed: {result.stderr}")
+                            
+                    finally:
+                        if wav_path and os.path.exists(wav_path):
+                            os.unlink(wav_path)
                 else:
-                    logger.error(f"FFmpeg conversion failed with code {result.returncode}")
-                    logger.error(f"FFmpeg stderr: {result.stderr}")
-                    logger.error(f"FFmpeg stdout: {result.stdout}")
-                    # Fall back to original file
-                    file_to_transcribe = temp_path
-            else:
-                # Use original file for non-WebM formats
-                file_to_transcribe = temp_path
+                    raise
+                    
+            finally:
+                # Clean up temp file
+                if temp_path and os.path.exists(temp_path):
+                    os.unlink(temp_path)
             
-            # Transcribe with Whisper
-            with open(file_to_transcribe, 'rb') as audio_file:
-                response = await client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language=language or self.config.language,
-                    response_format="text"
-                )
-                
-            logger.info("Transcription successful")
-            
-            # Handle response format
-            if isinstance(response, str):
-                text = response
-            else:
-                text = response.text if hasattr(response, 'text') else str(response)
-                
             return TranscriptionResult(
-                text=text,
+                text=response.text if isinstance(response, object) and hasattr(response, 'text') else response,
                 language=language or self.config.language
             )
             
         except Exception as e:
             logger.error(f"Whisper transcription error: {e}")
             raise
-            
-        finally:
-            # Clean up temp files
-            if temp_path and os.path.exists(temp_path):
-                os.unlink(temp_path)
-            if wav_path and os.path.exists(wav_path):
-                os.unlink(wav_path)
             
     async def synthesize_speech(
         self,
@@ -427,18 +467,19 @@ class VoiceService:
             # OpenAI voice options: alloy, echo, fable, onyx, nova, shimmer
             voice = voice_id or "nova"  # Default to nova voice
             
-            # Generate complete audio first
-            response = await client.audio.speech.create(
-                model="tts-1",  # or "tts-1-hd" for higher quality
-                voice=voice,
-                input=text,
-                response_format="mp3",
-                speed=1.0
-            )
-            
             if stream:
-                # Stream the audio in chunks
+                # Stream audio
                 async def stream_generator():
+                    response = await client.audio.speech.create(
+                        model="tts-1",  # or "tts-1-hd" for higher quality
+                        voice=voice,
+                        input=text,
+                        response_format="mp3",
+                        speed=1.0
+                    )
+                    
+                    # OpenAI returns the full audio, not chunks
+                    # So we'll chunk it ourselves for streaming
                     audio_bytes = response.content
                     chunk_size = 4096
                     
@@ -448,6 +489,15 @@ class VoiceService:
                 
                 return stream_generator()
             else:
+                # Generate complete audio
+                response = await client.audio.speech.create(
+                    model="tts-1",
+                    voice=voice,
+                    input=text,
+                    response_format="mp3",
+                    speed=1.0
+                )
+                
                 return AudioResponse(
                     audio_data=response.content,
                     format="mp3",
