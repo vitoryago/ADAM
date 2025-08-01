@@ -1,6 +1,32 @@
-import SyntaxHighlighter from 'react-syntax-highlighter';
-import * as darkStyle from 'react-syntax-highlighter/dist/styles/dark';
-import * as doccoStyle from 'react-syntax-highlighter/dist/styles/docco';
+import { PrismAsyncLight as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+// Import common language syntaxes
+import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
+import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
+import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
+import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
+import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
+import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
+import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
+import sql from 'react-syntax-highlighter/dist/esm/languages/prism/sql';
+import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
+import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
+import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
+
+// Register languages
+SyntaxHighlighter.registerLanguage('javascript', javascript);
+SyntaxHighlighter.registerLanguage('typescript', typescript);
+SyntaxHighlighter.registerLanguage('python', python);
+SyntaxHighlighter.registerLanguage('jsx', jsx);
+SyntaxHighlighter.registerLanguage('tsx', tsx);
+SyntaxHighlighter.registerLanguage('css', css);
+SyntaxHighlighter.registerLanguage('json', json);
+SyntaxHighlighter.registerLanguage('sql', sql);
+SyntaxHighlighter.registerLanguage('bash', bash);
+SyntaxHighlighter.registerLanguage('yaml', yaml);
+SyntaxHighlighter.registerLanguage('markdown', markdown);
 import { useState } from 'react';
 import { Copy, Check, Code2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -140,7 +166,7 @@ export function CodeBlock({ code, language, inline = false, className }: CodeBlo
         {isValidLanguage ? (
           <SyntaxHighlighter
             language={detectedLanguage}
-            style={theme === 'dark' ? darkStyle.default : doccoStyle.default}
+            style={theme === 'dark' ? oneDark : oneLight}
             customStyle={{
               margin: 0,
               borderRadius: 0,

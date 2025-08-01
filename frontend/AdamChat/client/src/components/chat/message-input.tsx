@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Paperclip, X, FileImage, FileCode, FileText } from "lucide-react";
+import { Send, Paperclip, X, FileImage, FileCode, FileText, Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CodeDemoButton } from "./code-demo-button";
 import { VoiceInput } from "./voice-input";
+import { StreamingVoiceConversation } from "./streaming-voice-conversation";
 
 interface AttachedFile {
   name: string;
@@ -17,11 +18,21 @@ interface AttachedFile {
 interface MessageInputProps {
   onSendMessage: (content: string, attachedFile?: AttachedFile) => void;
   disabled?: boolean;
+  conversationId?: string;
+  model?: string;
+  useSearch?: boolean;
 }
 
-export function MessageInput({ onSendMessage, disabled = false }: MessageInputProps) {
+export function MessageInput({ 
+  onSendMessage, 
+  disabled = false,
+  conversationId,
+  model,
+  useSearch = false
+}: MessageInputProps) {
   const [message, setMessage] = useState("");
   const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
+  const [voiceMode, setVoiceMode] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -106,6 +117,42 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
   return (
     <div className="border-t border-border bg-background p-4">
       <div className="max-w-4xl mx-auto">
+        {/* Voice Mode Toggle */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Button
+              variant={voiceMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => setVoiceMode(!voiceMode)}
+              disabled={disabled || !conversationId}
+              className="h-8"
+            >
+              {voiceMode ? (
+                <>
+                  <MicOff className="w-4 h-4 mr-2" />
+                  Exit Voice Mode
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4 mr-2" />
+                  Voice Mode
+                </>
+              )}
+            </Button>
+            {voiceMode && (
+              <span className="text-sm text-muted-foreground">
+                Click the mic button below to start talking
+              </span>
+            )}
+          </div>
+        </div>
+
+        {voiceMode && conversationId ? (
+          <StreamingVoiceConversation
+            conversationId={conversationId}
+            className="mb-4"
+          />
+        ) : (
         <div className="relative">
           {/* File Preview */}
           {attachedFile && (
@@ -211,6 +258,7 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

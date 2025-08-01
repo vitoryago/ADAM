@@ -449,7 +449,13 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
       </div>
 
       {/* Message Input */}
-      <MessageInput onSendMessage={handleSendMessage} disabled={!isConnected} />
+      <MessageInput 
+        onSendMessage={handleSendMessage} 
+        disabled={!isConnected}
+        conversationId={conversationId || undefined}
+        model={selectedModel}
+        useSearch={searchEnabled}
+      />
     </div>
   );
 }

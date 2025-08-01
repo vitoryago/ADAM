@@ -1,5 +1,5 @@
 import React from 'react';
-import { CodeBlock } from '@/components/ui/simple-code-block';
+import { CodeBlock } from '@/components/ui/code-highlighter';
 const InlineCode = ({ children }: { children: React.ReactNode }) => (
   <code className="inline-block rounded bg-muted/80 px-[0.3rem] py-[0.1rem] font-mono text-sm border border-border/50 text-foreground">
     {children}
