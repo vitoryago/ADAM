@@ -53,7 +53,14 @@
       "Bash(unzip:*)",
       "Bash(uvicorn:*)",
       "Bash(PYTHONPATH=/Users/vitoryago/ADAM/src python -m adam_v2.main)",
-      "Bash(./start-backend-simple.sh:*)"
+      "Bash(./start-backend-simple.sh:*)",
+      "Bash(brew install:*)",
+      "Bash(export OPENAI_API_KEY)",
+      "Bash(ffmpeg:*)",
+      "Bash(npm run server:*)",
+      "Bash(export USE_OPENAI_TTS=true)",
+      "Bash(export LOG_LEVEL=DEBUG)",
+      "Bash(USE_OPENAI_TTS=true python /Users/vitoryago/ADAM/test_voice_complete.py)"
     ],
     "deny": []
   }
