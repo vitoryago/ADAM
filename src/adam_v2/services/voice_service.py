@@ -43,13 +43,13 @@ class VoiceConfig:
     """Configuration for voice services"""
     stt_provider: VoiceProvider = VoiceProvider.OPENAI_WHISPER
     tts_provider: VoiceProvider = VoiceProvider.ELEVENLABS
-    tts_model: TTSModel = TTSModel.ELEVENLABS_TURBO_V2_5  # Use turbo model which is more accessible
+    tts_model: TTSModel = TTSModel.ELEVENLABS_MULTILINGUAL  # Use standard model for better quality
     voice_id: Optional[str] = None  # For ElevenLabs voice selection
     language: str = "en"
-    speaking_rate: float = 0.85  # Slower speech rate
+    speaking_rate: float = 1.0  # Normal speech rate
     pitch: float = 0.0
-    stability: float = 0.75  # More stable for clearer speech
-    similarity_boost: float = 0.75  # Slightly less boost for naturalness
+    stability: float = 0.5  # Balanced for natural speech
+    similarity_boost: float = 0.75  # Good balance
     style: float = 0.0
     use_speaker_boost: bool = True
 
@@ -409,7 +409,8 @@ class VoiceService:
         async with httpx.AsyncClient() as client:
             async with client.stream("POST", url, json=data, headers=headers) as response:
                 response.raise_for_status()
-                async for chunk in response.aiter_bytes():
+                # Stream in larger chunks for smoother playback
+                async for chunk in response.aiter_bytes(chunk_size=4096):
                     yield chunk
                     
     async def _synthesize_openai(
@@ -425,7 +426,7 @@ class VoiceService:
             
         try:
             # OpenAI voice options: alloy, echo, fable, onyx, nova, shimmer
-            voice = voice_id or "nova"  # Default to nova voice
+            voice = voice_id or "alloy"  # Default to alloy voice (smoother)
             
             # Generate complete audio first
             response = await client.audio.speech.create(
@@ -437,14 +438,14 @@ class VoiceService:
             )
             
             if stream:
-                # Stream the audio in chunks
+                # Stream the audio in larger chunks for smoother playback
                 async def stream_generator():
                     audio_bytes = response.content
-                    chunk_size = 4096
+                    chunk_size = 16384  # Larger chunks for smoother playback
                     
                     for i in range(0, len(audio_bytes), chunk_size):
                         yield audio_bytes[i:i + chunk_size]
-                        await asyncio.sleep(0.01)  # Small delay between chunks
+                        # No delay between chunks for continuous playback
                 
                 return stream_generator()
             else:

@@ -44,6 +44,10 @@ class StreamingVoiceSession:
         self.current_audio_queue = asyncio.Queue()
         self.sentence_buffer = ""
         self.audio_buffer = []  # Buffer for streaming audio chunks
+        self.spoken_sentences = set()  # Track sentences already sent for TTS
+        self.tts_queue = asyncio.Queue()  # Queue for TTS tasks to maintain order
+        self.tts_worker_task = None
+        self.actual_model_used = None  # Track the actual model used
         
     async def initialize(self):
         """Initialize the session with conversation data"""
@@ -85,7 +89,8 @@ class StreamingVoiceSession:
                 
             transcription = await voice_service.transcribe_audio(
                 audio_data=audio_data,
-                format=format
+                format=format,
+                language="en"  # Specify English for better accuracy
             )
             
             await self.send_message({
@@ -165,6 +170,11 @@ class StreamingVoiceSession:
             # Start streaming LLM response
             sentence_count = 0
             full_response = ""
+            self.sentence_buffer = ""  # Clear buffer at start
+            self.spoken_sentences.clear()  # Clear spoken sentences for new response
+            
+            # Start TTS worker to process sentences in order
+            self.tts_worker_task = asyncio.create_task(self._tts_worker())
             
             # Add a simple system prompt for voice
             voice_messages = [{"role": "system", "content": VOICE_SYSTEM_PROMPT}]
@@ -176,33 +186,45 @@ class StreamingVoiceSession:
             
             logger.info(f"Starting LLM stream for user text: {user_text[:50]}...")
             
-            async for chunk in self.llm_service.stream_response(
+            # Stream response and capture model info
+            stream_generator = self.llm_service.stream_response(
                 message=user_text,
                 history=history,
                 system_prompt=VOICE_SYSTEM_PROMPT
-            ):
+            )
+            
+            async for chunk in stream_generator:
                 if chunk.content:
                     self.sentence_buffer += chunk.content
                     full_response += chunk.content
+                    logger.info(f"Added to buffer: '{chunk.content}' | Buffer now: '{self.sentence_buffer[:100]}...'")
+                    
+                # Capture model info from chunk
+                if hasattr(chunk, 'model_used') and chunk.model_used:
+                    self.actual_model_used = chunk.model_used
                     
                     # Check for complete sentences
                     sentences = self.extract_complete_sentences()
                     
                     for sentence in sentences:
+                        # Check if we've already spoken this sentence
+                        sentence_hash = hash(sentence.strip())
+                        if sentence_hash in self.spoken_sentences:
+                            logger.warning(f"Skipping duplicate sentence: '{sentence}'")
+                            continue
+                            
                         sentence_count += 1
-                        logger.info(f"Extracted sentence {sentence_count}: {sentence[:50]}...")
+                        logger.info(f"Processing sentence {sentence_count}: '{sentence}'")
                         
                         # Skip code blocks and technical content for voice
                         if self.should_speak_sentence(sentence):
-                            logger.info(f"Speaking sentence {sentence_count}")
-                            # Start TTS for this sentence immediately
-                            asyncio.create_task(
-                                self.synthesize_and_send(sentence, sentence_count)
-                            )
-                            # Add small pause between sentences for natural flow
-                            await asyncio.sleep(0.1)  # Reduced for smoother flow
+                            logger.info(f"Will speak sentence {sentence_count}: '{sentence}'")
+                            # Mark as spoken
+                            self.spoken_sentences.add(sentence_hash)
+                            # Add to TTS queue to maintain order
+                            await self.tts_queue.put((sentence, sentence_count))
                         else:
-                            logger.info(f"Skipping sentence {sentence_count} (not suitable for speech)")
+                            logger.info(f"Skipping sentence {sentence_count} (not suitable for speech): '{sentence}'")
                     
                     # Send text chunk to frontend
                     await self.send_message({
@@ -212,16 +234,37 @@ class StreamingVoiceSession:
             
             # Process any remaining text
             if self.sentence_buffer.strip():
-                if self.should_speak_sentence(self.sentence_buffer):
-                    await self.synthesize_and_send(self.sentence_buffer, sentence_count + 1)
+                remaining_text = self.sentence_buffer.strip()
+                logger.info(f"Processing remaining buffer text: '{remaining_text}'")
+                
+                # Check if we've already spoken this
+                remaining_hash = hash(remaining_text)
+                if remaining_hash not in self.spoken_sentences and self.should_speak_sentence(remaining_text):
+                    sentence_count += 1
+                    logger.info(f"Will speak final sentence {sentence_count}: '{remaining_text}'")
+                    self.spoken_sentences.add(remaining_hash)
+                    await self.tts_queue.put((remaining_text, sentence_count))
+                else:
+                    logger.info(f"Skipping final text: already spoken={remaining_hash in self.spoken_sentences}, suitable={self.should_speak_sentence(remaining_text)}")
+            
+            # Signal end of TTS queue
+            await self.tts_queue.put((None, None))
+            
+            # Wait for TTS worker to finish
+            if self.tts_worker_task:
+                await self.tts_worker_task
             
             # Save to database
             await self.save_messages(user_text, full_response)
             
-            # Signal completion
+            # Signal completion with full text and model info
+            use_openai_tts = os.getenv("USE_OPENAI_TTS", "false").lower() == "true"
             await self.send_message({
                 "type": "completion",
-                "full_text": full_response
+                "full_text": full_response,
+                "user_text": user_text,  # Include user text for display
+                "model": self.actual_model_used or self.llm_service.default_model or "grok-3-mini-fast",  # Include actual model used
+                "tts_provider": "ElevenLabs" if not use_openai_tts else "OpenAI"  # Include TTS provider
             })
             
         except Exception as e:
@@ -235,27 +278,28 @@ class StreamingVoiceSession:
         """Extract complete sentences from buffer"""
         sentences = []
         
-        # Look for sentence endings but be more careful about abbreviations
-        # Only split if followed by space and capital letter or end of text
-        pattern = r'([.!?]+)(\s+)(?=[A-Z]|$)'
+        # Only split on clear sentence boundaries with proper spacing
+        # This pattern is more conservative to avoid breaking up speech
+        pattern = r'([.!?]+)\s+(?=[A-Z])'
         
-        matches = list(re.finditer(pattern, self.sentence_buffer))
+        # Check if we have at least one clear sentence boundary
+        match = re.search(pattern, self.sentence_buffer)
         
-        if matches:
-            last_end = 0
-            for match in matches:
-                # Get the sentence including the punctuation
-                sentence = self.sentence_buffer[last_end:match.end()].strip()
-                if len(sentence) > 10:  # Only add meaningful sentences
-                    sentences.append(sentence)
-                last_end = match.end()
-            
-            # Keep remaining text in buffer
-            self.sentence_buffer = self.sentence_buffer[last_end:]
+        if match:
+            # Extract only the first complete sentence
+            sentence = self.sentence_buffer[:match.end()].strip()
+            if len(sentence) > 10:  # Only add meaningful sentences
+                sentences.append(sentence)
+                logger.info(f"Extracted sentence from buffer: '{sentence}'")
+                # Keep remaining text in buffer
+                self.sentence_buffer = self.sentence_buffer[match.end():]
+                logger.info(f"Remaining buffer after extraction: '{self.sentence_buffer}'")
         
         # If buffer is getting too long without sentence end, treat as complete
-        elif len(self.sentence_buffer) > 150:
-            sentences.append(self.sentence_buffer.strip())
+        elif len(self.sentence_buffer) > 300:  # Increased threshold
+            sentence = self.sentence_buffer.strip()
+            sentences.append(sentence)
+            logger.info(f"Buffer exceeded limit, treating as complete sentence: '{sentence}'")
             self.sentence_buffer = ""
             
         return sentences
@@ -275,6 +319,17 @@ class StreamingVoiceSession:
             return False
             
         return True
+    
+    async def _tts_worker(self) -> None:
+        """Worker to process TTS queue in order"""
+        while True:
+            try:
+                text, sequence = await self.tts_queue.get()
+                if text is None:  # End signal
+                    break
+                await self.synthesize_and_send(text, sequence)
+            except Exception as e:
+                logger.error(f"TTS worker error: {e}")
     
     async def synthesize_and_send(self, text: str, sequence: int) -> None:
         """Synthesize speech and send audio chunks"""
@@ -305,8 +360,8 @@ class StreamingVoiceSession:
                     "text": text if chunk_number == 1 else None
                 })
                 
-                # Small delay to prevent overwhelming the client
-                await asyncio.sleep(0.02)  # Balanced for smooth streaming
+                # No delay - let the client handle buffering
+                # await asyncio.sleep(0.02)  # Removed for smoother playback
             
             logger.info(f"Sent {chunk_number} audio chunks, total {total_bytes} bytes for sentence {sequence}")
                 
@@ -316,6 +371,8 @@ class StreamingVoiceSession:
     async def save_messages(self, user_text: str, assistant_text: str) -> None:
         """Save messages to database"""
         try:
+            logger.info(f"Saving messages to database - User: '{user_text[:50]}...', Assistant: '{assistant_text[:50]}...'")
+            
             # Save user message
             user_msg = Message(
                 conversation_id=self.conversation_id,
@@ -329,14 +386,16 @@ class StreamingVoiceSession:
                 conversation_id=self.conversation_id,
                 role="assistant",
                 content=assistant_text,
-                model=self.llm_service.default_model
+                model=self.actual_model_used or self.llm_service.default_model or "grok-3-mini-fast"
             )
             self.db.add(assistant_msg)
             
             await self.db.commit()
+            logger.info("Messages saved successfully")
             
         except Exception as e:
             logger.error(f"Error saving messages: {e}")
+            await self.db.rollback()
     
     async def send_message(self, data: dict) -> None:
         """Send JSON message to client"""
