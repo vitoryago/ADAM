@@ -21,10 +21,10 @@ if parent_env.exists():
 load_dotenv()
 
 # Import database
-from src.adam_v2.database import init_db, close_db
+from database import init_db, close_db
 
 # Import routers
-from src.adam_v2.routers import projects, conversations, messages, memories, voice, voice_streaming
+from routers import projects, conversations, messages, memories, voice, voice_streaming
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

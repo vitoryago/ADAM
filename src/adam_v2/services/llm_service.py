@@ -71,7 +71,9 @@ class LLMService:
     def __init__(self, project_settings: Optional[Dict[str, Any]] = None, project_id: Optional[str] = None):
         self.project_settings = project_settings or {}
         self.project_id = project_id
-        self.default_model = self.project_settings.get("model", None)
+        # Use project model, then env default, then hardcoded default
+        env_default = os.getenv("DEFAULT_MODEL", "grok-3-mini-fast")
+        self.default_model = self.project_settings.get("model", env_default)
         self.temperature = self.project_settings.get("temperature", 0.7)
         self.max_tokens = self.project_settings.get("max_tokens", 2000)
         
