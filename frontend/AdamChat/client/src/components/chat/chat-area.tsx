@@ -455,6 +455,12 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
         conversationId={conversationId || undefined}
         model={selectedModel}
         useSearch={searchEnabled}
+        onConversationComplete={() => {
+          // Refresh messages when voice conversation completes
+          queryClient.invalidateQueries({ 
+            queryKey: ["/api/conversations", conversationId, "messages"] 
+          });
+        }}
       />
     </div>
   );

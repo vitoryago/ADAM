@@ -8,11 +8,13 @@ import { useToast } from "@/hooks/use-toast";
 interface StreamingVoiceConversationProps {
   conversationId: string;
   className?: string;
+  onConversationComplete?: () => void;
 }
 
 export function StreamingVoiceConversation({ 
   conversationId, 
-  className 
+  className,
+  onConversationComplete 
 }: StreamingVoiceConversationProps) {
   const { toast } = useToast();
   
@@ -23,6 +25,7 @@ export function StreamingVoiceConversation({
   const [streamingTranscription, setStreamingTranscription] = useState("");
   const [currentResponse, setCurrentResponse] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
+  const [modelInfo, setModelInfo] = useState<{ model?: string; tts?: string } | null>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -38,8 +41,11 @@ export function StreamingVoiceConversation({
     
     return () => {
       disconnectWebSocket();
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
+      // Safely close audio context
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(() => {
+          // Ignore errors when closing
+        });
       }
     };
   }, [conversationId]);
@@ -89,6 +95,7 @@ export function StreamingVoiceConversation({
         setCurrentTranscription(data.text);
         setStreamingTranscription("");
         setCurrentResponse(""); // Clear previous response
+        setModelInfo(null); // Clear previous model info
         break;
         
       case "text_chunk":
@@ -105,7 +112,17 @@ export function StreamingVoiceConversation({
         
       case "completion":
         setIsProcessing(false);
-        console.log("Response complete");
+        console.log("Response complete", data);
+        // Set model info
+        setModelInfo({
+          model: data.model,
+          tts: data.tts_provider
+        });
+        // The conversation history is saved on the backend
+        // Notify parent to refresh messages
+        if (onConversationComplete) {
+          onConversationComplete();
+        }
         break;
         
       case "error":
@@ -130,17 +147,28 @@ export function StreamingVoiceConversation({
     isPlayingRef.current = true;
     setIsPlaying(true);
     
-    const { data, sequence } = playQueueRef.current.shift()!;
+    // Process multiple chunks at once for smoother playback
+    const chunksToProcess = [];
+    const targetSequence = playQueueRef.current[0].sequence;
+    
+    // Collect all chunks for the same sentence
+    while (playQueueRef.current.length > 0 && playQueueRef.current[0].sequence === targetSequence) {
+      chunksToProcess.push(playQueueRef.current.shift()!);
+    }
     
     try {
-      // Decode base64 audio
-      const binaryString = atob(data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      // Combine all chunks for this sentence
+      const combinedData = chunksToProcess.map(chunk => {
+        const binaryString = atob(chunk.data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes;
+      });
       
-      const blob = new Blob([bytes], { type: 'audio/mp3' });
+      // Create a single blob from all chunks
+      const blob = new Blob(combinedData, { type: 'audio/mp3' });
       const url = URL.createObjectURL(blob);
       
       const audio = new Audio(url);
@@ -161,14 +189,11 @@ export function StreamingVoiceConversation({
         };
       });
       
-      // Small gap between chunks
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Process next chunk
+      // Process next sentence immediately
       processAudioQueue();
       
     } catch (error) {
-      console.error("Error playing audio chunk:", error);
+      console.error("Error playing audio:", error);
       processAudioQueue();
     }
   };
@@ -187,8 +212,10 @@ export function StreamingVoiceConversation({
       
       streamRef.current = stream;
       
-      // Create audio context for processing
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // Create audio context for processing if not already created
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
       
       // Use simple WAV recording approach
       const mediaRecorder = new MediaRecorder(stream);
@@ -224,7 +251,12 @@ export function StreamingVoiceConversation({
   };
   
   const setupSilenceDetection = (stream: MediaStream) => {
-    const audioContext = audioContextRef.current!;
+    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+      console.error('AudioContext not available for silence detection');
+      return;
+    }
+    
+    const audioContext = audioContextRef.current;
     const source = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 2048;
@@ -265,8 +297,8 @@ export function StreamingVoiceConversation({
           const silenceDuration = Date.now() - silenceStart;
           const totalRecordingTime = Date.now() - recordingStartTime;
           
-          // Stop after 1 second of silence and minimum 2 seconds recording
-          if (silenceDuration >= 1000 && totalRecordingTime >= 2000) {
+          // Stop after 1.5 seconds of silence and minimum 2 seconds recording
+          if (silenceDuration >= 1500 && totalRecordingTime >= 2000) {
             console.log(`Stopping after ${silenceDuration}ms of silence`);
             stopRecording();
             return;
@@ -376,6 +408,12 @@ export function StreamingVoiceConversation({
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
+    
+    // Clean up stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
   };
   
   const toggleRecording = () => {
@@ -388,7 +426,7 @@ export function StreamingVoiceConversation({
   
   const getStatusText = () => {
     if (!isConnected) return "Connecting...";
-    if (isRecording) return "Listening... (stop talking for 1 second to send)";
+    if (isRecording) return "Listening... (pause for 1.5 seconds to send)";
     if (isProcessing) return "Processing...";
     if (isPlaying) return "ADAM is speaking...";
     return "Click to start talking";
@@ -455,10 +493,18 @@ export function StreamingVoiceConversation({
         {/* Response */}
         {currentResponse && (
           <div className="space-y-2 border-t pt-4">
-            <h4 className="text-sm font-medium flex items-center gap-2">
-              {isPlaying && <Volume2 className="w-4 h-4 animate-pulse" />}
-              ADAM:
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                {isPlaying && <Volume2 className="w-4 h-4 animate-pulse" />}
+                ADAM:
+              </h4>
+              {modelInfo && (
+                <div className="text-xs text-muted-foreground flex items-center gap-2">
+                  <span className="px-2 py-1 bg-muted rounded-md">{modelInfo.model || 'Unknown'}</span>
+                  <span className="px-2 py-1 bg-muted rounded-md">🔊 {modelInfo.tts || 'ElevenLabs'}</span>
+                </div>
+              )}
+            </div>
             <div className="text-sm whitespace-pre-wrap">{currentResponse}</div>
           </div>
         )}

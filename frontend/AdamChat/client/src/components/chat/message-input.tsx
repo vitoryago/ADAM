@@ -21,6 +21,7 @@ interface MessageInputProps {
   conversationId?: string;
   model?: string;
   useSearch?: boolean;
+  onConversationComplete?: () => void;
 }
 
 export function MessageInput({ 
@@ -28,7 +29,8 @@ export function MessageInput({
   disabled = false,
   conversationId,
   model,
-  useSearch = false
+  useSearch = false,
+  onConversationComplete
 }: MessageInputProps) {
   const [message, setMessage] = useState("");
   const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
@@ -151,6 +153,7 @@ export function MessageInput({
           <StreamingVoiceConversation
             conversationId={conversationId}
             className="mb-4"
+            onConversationComplete={onConversationComplete}
           />
         ) : (
         <div className="relative">
