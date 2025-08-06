@@ -282,11 +282,16 @@ class VoiceService:
         Returns:
             AudioResponse, async generator of audio chunks, or dict with timing
         """
-        # Allow override to use OpenAI TTS
-        if use_openai and self.clients.get("openai"):
+        # Check environment variable for OpenAI TTS preference
+        use_openai_tts = os.getenv("USE_OPENAI_TTS", "false").lower() == "true"
+        
+        # Use OpenAI TTS if either explicitly requested or configured via environment
+        if (use_openai or use_openai_tts) and self.clients.get("openai"):
+            logger.info(f"Using OpenAI TTS (use_openai={use_openai}, USE_OPENAI_TTS={use_openai_tts})")
             return await self._synthesize_openai(text, voice_id, stream)
         
         if self.config.tts_provider == VoiceProvider.ELEVENLABS:
+            logger.info("Using ElevenLabs TTS")
             return await self._synthesize_elevenlabs(text, voice_id, stream, with_timing)
         else:
             raise NotImplementedError(f"TTS provider {self.config.tts_provider} not implemented")
@@ -437,10 +442,21 @@ class VoiceService:
                 speed=1.0
             )
             
+            # Handle the response properly - OpenAI returns an HttpxBinaryResponseContent object
+            # We need to read the content properly
+            if hasattr(response, 'read'):
+                audio_bytes = response.read()
+            elif hasattr(response, 'content'):
+                audio_bytes = response.content
+            else:
+                # Try to iterate if it's an async iterator
+                audio_bytes = b''
+                async for chunk in response:
+                    audio_bytes += chunk
+            
             if stream:
                 # Stream the audio in larger chunks for smoother playback
                 async def stream_generator():
-                    audio_bytes = response.content
                     chunk_size = 16384  # Larger chunks for smoother playback
                     
                     for i in range(0, len(audio_bytes), chunk_size):
@@ -450,7 +466,7 @@ class VoiceService:
                 return stream_generator()
             else:
                 return AudioResponse(
-                    audio_data=response.content,
+                    audio_data=audio_bytes,
                     format="mp3",
                     sample_rate=24000  # OpenAI TTS sample rate
                 )

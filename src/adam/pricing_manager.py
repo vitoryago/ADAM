@@ -52,9 +52,10 @@ class PricingManager:
         # Fallback prices if API calls fail (per 1K tokens)
         # These match the actual pricing as of 2024
         self._default_prices = {
-            "grok-3-mini-reasoning-high": {"input": 0.15, "output": 0.60},   # ~$0.20/1K avg
-            "o3": {"input": 15.0, "output": 60.0},                          # ~$37.50/1K avg
-            "claude-opus-4": {"input": 15.0, "output": 75.0}                # ~$45/1K avg
+            "grok-3-mini-fast-high": {"input": 0.15, "output": 0.60},       # ~$0.20/1K avg
+            "grok-4-reasoning": {"input": 5.0, "output": 15.0},             # ~$10/1K avg
+            "o3": {"input": 15.0, "output": 60.0},                          # ~$37.50/1K avg (kept for compatibility)
+            "claude-opus-4": {"input": 15.0, "output": 75.0}                # ~$45/1K avg (kept for compatibility)
         }
         
         # API endpoints for pricing
@@ -341,28 +342,19 @@ class CostOptimizer:
         
         # High memory confidence allows using cheaper model
         if memory_confidence > 0.9:
-            return "grok-3-mini-reasoning-high"
+            return "grok-3-mini-fast-high"
         
-        # Coding tasks need Claude
-        if is_coding and complexity == "complex":
-            claude_cost = self.pricing_manager.estimate_query_cost("claude-opus-4", 2000)
-            if claude_cost <= remaining_daily_budget:
-                return "claude-opus-4"
+        # Complex tasks (including coding) use Grok-4-reasoning
+        if complexity == "complex" or (is_coding and complexity in ["moderate", "complex"]):
+            grok4_cost = self.pricing_manager.estimate_query_cost("grok-4-reasoning", 2000)
+            if grok4_cost <= remaining_daily_budget:
+                return "grok-4-reasoning"
             else:
-                logger.warning(f"Claude cost ${claude_cost:.3f} exceeds budget, falling back to O3")
-                return "o3"
+                logger.warning(f"Grok-4 cost ${grok4_cost:.3f} exceeds budget, falling back to Grok-3")
+                return "grok-3-mini-fast-high"
         
-        # Complex non-coding tasks
-        if complexity == "complex":
-            o3_cost = self.pricing_manager.estimate_query_cost("o3", 1500)
-            if o3_cost <= remaining_daily_budget:
-                return "o3"
-            else:
-                logger.warning(f"O3 cost ${o3_cost:.3f} exceeds budget, falling back to Grok")
-                return "grok-3-mini-reasoning-high"
-        
-        # Simple and moderate tasks use Grok
-        return "grok-3-mini-reasoning-high"
+        # Simple and moderate tasks use Grok-3
+        return "grok-3-mini-fast-high"
     
     def should_alert_cost(self, query_cost: float, daily_total: float) -> Tuple[bool, Optional[str]]:
         """

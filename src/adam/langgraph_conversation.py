@@ -57,7 +57,7 @@ class ConversationState(TypedDict):
     should_use_memory: bool  # Final decision on whether to use the found memory
     
     # LLM routing
-    selected_model: Literal["grok-3-mini-reasoning-high", "o3", "claude-opus-4"]  # Model selected based on complexity
+    selected_model: Literal["grok-3-mini-fast-high", "grok-4-reasoning"]  # Model selected based on complexity
     
     # Response and metadata
     response: Optional[str]  # The final response from the LLM
@@ -432,15 +432,12 @@ def generate_response_node(state: ConversationState) -> ConversationState:
         context = f"\nRelevant previous knowledge:\n{state['memory_content']}\n"
     
     # Craft model-specific prompts for optimal results
-    if state["selected_model"] == "grok-3-mini-reasoning-high":
-        # Grok excels at clear explanations with step-by-step reasoning
+    if state["selected_model"] == "grok-3-mini-fast-high":
+        # Grok-3 excels at clear explanations with step-by-step reasoning
         prompt = f"{context}\nQuestion: {state['query']}\nProvide a clear, accurate answer with reasoning."
-    elif state["selected_model"] == "o3":
-        # O3 is best for complex analysis and deep technical discussions
-        prompt = f"{context}\nQuestion: {state['query']}\nProvide deep analysis and comprehensive reasoning."
-    else:  # claude-opus-4
-        # Claude Opus 4 specializes in production-quality code
-        prompt = f"{context}\nQuestion: {state['query']}\nProvide expert-level code implementation with best practices."
+    else:  # grok-4-reasoning
+        # Grok-4 is best for complex analysis and deep technical discussions
+        prompt = f"{context}\nQuestion: {state['query']}\nProvide deep analysis and comprehensive reasoning with expert-level implementation."
     
     # TODO: Replace with actual LLM integration
     # In production:
@@ -474,12 +471,9 @@ def handle_error_node(state: ConversationState) -> ConversationState:
     
     # Implement model fallback strategy
     # Move to simpler, more reliable models on error
-    if state["selected_model"] == "claude-opus-4":
-        # Claude failed, try O3
-        state["selected_model"] = "o3"
-    elif state["selected_model"] == "o3":
-        # O3 failed, try Grok (most reliable)
-        state["selected_model"] = "grok-3-mini-reasoning-high"
+    if state["selected_model"] == "grok-4-reasoning":
+        # Grok-4 failed, try simpler model
+        state["selected_model"] = "grok-3-mini-fast-high"
     else:
         # Already at simplest model, just retry
         pass
@@ -686,7 +680,7 @@ class LangGraphConversationSystem:
             memory_age_days=None,
             should_verify=False,
             should_use_memory=False,
-            selected_model="grok-3-mini-reasoning-high",  # Default model
+            selected_model="grok-3-mini-fast-high",  # Default model
             response=None,
             total_cost=0.0,
             retry_count=0,

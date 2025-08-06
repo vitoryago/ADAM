@@ -41,9 +41,9 @@ class ADAMConfig:
         
         # Model Configuration
         self.embedding_model = os.getenv('EMBEDDING_MODEL', 'sentence-transformers/all-mpnet-base-v2')
-        self.default_simple_model = os.getenv('DEFAULT_SIMPLE_MODEL', 'grok-3-mini-reasoning-high')
-        self.default_complex_model = os.getenv('DEFAULT_COMPLEX_MODEL', 'o1-mini-high')
-        self.default_coding_model = os.getenv('DEFAULT_CODING_MODEL', 'claude-opus-4')
+        self.default_simple_model = os.getenv('DEFAULT_SIMPLE_MODEL', 'grok-3-mini-fast-high')
+        self.default_complex_model = os.getenv('DEFAULT_COMPLEX_MODEL', 'grok-4-reasoning')
+        self.default_coding_model = os.getenv('DEFAULT_CODING_MODEL', 'grok-4-reasoning')
         
         # Voice Configuration
         self.enable_voice = os.getenv('ENABLE_VOICE', 'true').lower() == 'true'
@@ -66,7 +66,8 @@ class ADAMConfig:
         
         # Model costs (per 1K tokens)
         self.model_costs = {
-            'grok-3-mini-reasoning-high': 0.0002,
+            'grok-3-mini-fast-high': 0.0002,
+            'grok-4-reasoning': 0.5,
             'o1-mini-high': 1.5,
             'claude-opus-4': 2.5
         }
