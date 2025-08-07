@@ -65,24 +65,52 @@ export class ADAMChatProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ type: 'typing', isTyping: true });
 
         try {
-            // Check if user is asking to read a file - improved regex to capture full paths
-            const filePathMatch = content.match(/([\/\w\-\._]+\.(?:sql|py|ts|js|json|md|yaml|yml))/i);
-            if (filePathMatch && (content.toLowerCase().includes('read') || 
-                                 content.toLowerCase().includes('explain') || 
-                                 content.toLowerCase().includes('analyze') ||
-                                 content.toLowerCase().includes('review'))) {
-                const filePath = filePathMatch[1];
-                console.log('Attempting to read file:', filePath);
+            // Check if user is asking to read a file
+            const readPattern = /(?:read|show|display|explain|analyze|review|look at|open)\s+(?:the\s+)?(?:file\s+)?([^\s]+\.(?:sql|py|ts|js|json|md|yaml|yml|txt|csv))/i;
+            const fileMatch = content.match(readPattern);
+            
+            if (fileMatch) {
+                const requestedFile = fileMatch[1];
+                console.log('User requested file:', requestedFile);
                 
                 try {
-                    // Try to read the file
+                    // First try to find the file in the workspace
+                    let filePath: string | undefined;
+                    
+                    // If it's an absolute path, use it directly
+                    if (requestedFile.startsWith('/')) {
+                        filePath = requestedFile;
+                    } else {
+                        // Search for the file in the workspace
+                        const files = await vscode.workspace.findFiles(`**/${requestedFile}`, '**/node_modules/**', 10);
+                        if (files.length > 0) {
+                            filePath = files[0].fsPath;
+                            console.log('Found file in workspace:', filePath);
+                            
+                            // If multiple matches, let user know
+                            if (files.length > 1) {
+                                console.log(`Found ${files.length} matches, using first: ${filePath}`);
+                            }
+                        }
+                    }
+                    
+                    if (!filePath) {
+                        // File not found, send message to ADAM to handle
+                        const response = await this.adamClient.sendMessage(
+                            `${content}\n\n[Note: File '${requestedFile}' not found in workspace. Please provide the full path or ensure the file exists.]`
+                        );
+                        this.addMessage(response);
+                        return;
+                    }
+                    
+                    // Read the file
                     const fileContent = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
                     const fileText = Buffer.from(fileContent).toString('utf8');
                     const fileName = filePath.split('/').pop();
                     const extension = fileName?.split('.').pop() || 'txt';
                     
                     // Enhance the message with file content
-                    const enhancedContent = `${content}\n\nFile content of ${fileName}:\n\`\`\`${extension}\n${fileText}\n\`\`\``;
+                    const enhancedContent = `${content}\n\nFile path: ${filePath}\nFile content of ${fileName}:\n\`\`\`${extension}\n${fileText}\n\`\`\``;
                     
                     console.log('File read successfully, sending to ADAM with content');
                     
@@ -93,8 +121,10 @@ export class ADAMChatProvider implements vscode.WebviewViewProvider {
                     this.addMessage(response);
                 } catch (fileError) {
                     console.error('Failed to read file:', fileError);
-                    // If file reading fails, just send the original message
-                    const response = await this.adamClient.sendMessage(content);
+                    // If file reading fails, send error info to ADAM
+                    const response = await this.adamClient.sendMessage(
+                        `${content}\n\n[Error reading file: ${fileError}]`
+                    );
                     this.addMessage(response);
                 }
             } else {

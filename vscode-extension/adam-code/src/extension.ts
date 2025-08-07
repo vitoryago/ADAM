@@ -1,28 +1,37 @@
 import * as vscode from 'vscode';
 import { ADAMChatProvider } from './providers/chatProvider';
 import { ADAMClient } from './client/adamClient';
+import { StandaloneADAMClient } from './standalone/standaloneClient';
 import { GitIntegration } from './integrations/gitIntegration';
 import { SQLOptimizer } from './tools/sqlOptimizer';
 import { DBTGenerator } from './tools/dbtGenerator';
 import { FileManager } from './tools/fileManager';
 import { VoiceChat } from './features/voiceChat';
 
-let adamClient: ADAMClient;
+let adamClient: ADAMClient | StandaloneADAMClient;
 let chatProvider: ADAMChatProvider;
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('ADAM Code is activating...');
 
-    // Initialize ADAM client
+    // Check if we should use standalone mode (default: true)
     const config = vscode.workspace.getConfiguration('adam');
-    // Use the actual project ID from your backend
-    adamClient = new ADAMClient(
-        config.get('serverUrl') || 'http://localhost:8000',
-        config.get('projectId') || '3a859e97-16fd-46c6-b018-1ede9fade704'  // Your actual project ID
-    );
+    const useStandalone = config.get('standalone', true);
+    
+    if (useStandalone) {
+        // Use standalone ADAM (no backend needed)
+        adamClient = new StandaloneADAMClient(context);
+        console.log('ADAM running in standalone mode - no backend required!');
+    } else {
+        // Use backend mode (original)
+        adamClient = new ADAMClient(
+            config.get('serverUrl') || 'http://localhost:8000',
+            config.get('projectId') || '3a859e97-16fd-46c6-b018-1ede9fade704'
+        );
+    }
 
-    // Initialize chat provider
-    chatProvider = new ADAMChatProvider(context.extensionUri, adamClient);
+    // Initialize chat provider - cast to ADAMClient for now
+    chatProvider = new ADAMChatProvider(context.extensionUri, adamClient as any);
 
     // Register webview provider
     context.subscriptions.push(
@@ -32,12 +41,12 @@ export function activate(context: vscode.ExtensionContext) {
     // Register commands
     registerCommands(context);
 
-    // Initialize features
+    // Initialize features - cast to ADAMClient for compatibility
     const gitIntegration = new GitIntegration();
-    const sqlOptimizer = new SQLOptimizer(adamClient);
-    const dbtGenerator = new DBTGenerator(adamClient);
+    const sqlOptimizer = new SQLOptimizer(adamClient as any);
+    const dbtGenerator = new DBTGenerator(adamClient as any);
     const fileManager = new FileManager();
-    const voiceChat = new VoiceChat(adamClient);
+    const voiceChat = new VoiceChat(adamClient as any);
 
     // Status bar item
     const statusBarItem = vscode.window.createStatusBarItem(
@@ -274,7 +283,7 @@ function registerCommands(context: vscode.ExtensionContext) {
             }
 
             try {
-                const voiceChat = new VoiceChat(adamClient);
+                const voiceChat = new VoiceChat(adamClient as any);
                 await voiceChat.start();
             } catch (error) {
                 vscode.window.showErrorMessage(`ADAM Voice Error: ${error}`);
