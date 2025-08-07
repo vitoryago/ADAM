@@ -60,7 +60,9 @@
       "Bash(npm run server:*)",
       "Bash(export USE_OPENAI_TTS=true)",
       "Bash(export LOG_LEVEL=DEBUG)",
-      "Bash(USE_OPENAI_TTS=true python /Users/vitoryago/ADAM/test_voice_complete.py)"
+      "Bash(USE_OPENAI_TTS=true python /Users/vitoryago/ADAM/test_voice_complete.py)",
+      "Bash(npm i:*)",
+      "Bash(npm run compile:*)"
     ],
     "deny": []
   }

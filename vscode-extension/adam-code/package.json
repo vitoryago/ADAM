@@ -1,0 +1,179 @@
+{
+  "name": "adam-code",
+  "displayName": "ADAM Code - Analytics Engineering Assistant",
+  "description": "Your AI coworker for analytics engineering with perfect memory",
+  "version": "0.1.0",
+  "publisher": "adam-assistant",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Snippets",
+    "Other"
+  ],
+  "icon": "resources/adam-icon.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "adam.chat",
+        "title": "ADAM: Open Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "adam.explain",
+        "title": "ADAM: Explain Code",
+        "icon": "$(question)"
+      },
+      {
+        "command": "adam.optimize",
+        "title": "ADAM: Optimize SQL Query",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "adam.createBranch",
+        "title": "ADAM: Create Feature Branch",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "adam.createPR",
+        "title": "ADAM: Create Pull Request",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "adam.dbtGenerate",
+        "title": "ADAM: Generate dbt Model",
+        "icon": "$(database)"
+      },
+      {
+        "command": "adam.analyzeData",
+        "title": "ADAM: Analyze Data Pattern",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "adam.voice",
+        "title": "ADAM: Voice Chat",
+        "icon": "$(unmute)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "adam-container",
+          "title": "ADAM Assistant",
+          "icon": "resources/adam-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "adam-container": [
+        {
+          "id": "adam.chatView",
+          "name": "Chat",
+          "type": "webview"
+        },
+        {
+          "id": "adam.memoryView",
+          "name": "Memory Network",
+          "icon": "$(circuit-board)",
+          "contextualTitle": "ADAM Memory"
+        },
+        {
+          "id": "adam.tasksView",
+          "name": "Tasks",
+          "icon": "$(checklist)",
+          "contextualTitle": "Current Tasks"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ADAM Code",
+      "properties": {
+        "adam.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "ADAM backend server URL"
+        },
+        "adam.projectId": {
+          "type": "string",
+          "default": "",
+          "description": "Current ADAM project ID"
+        },
+        "adam.enableVoice": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable voice interaction"
+        },
+        "adam.autoMemory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically save important interactions to memory"
+        },
+        "adam.sqlDialect": {
+          "type": "string",
+          "enum": [
+            "bigquery",
+            "snowflake",
+            "postgres",
+            "mysql",
+            "redshift"
+          ],
+          "default": "bigquery",
+          "description": "SQL dialect for query optimization"
+        },
+        "adam.dbtProject": {
+          "type": "string",
+          "default": "",
+          "description": "Path to dbt project"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "adam.chat",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      },
+      {
+        "command": "adam.explain",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorHasSelection"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "adam.explain",
+          "when": "editorHasSelection",
+          "group": "adam@1"
+        },
+        {
+          "command": "adam.optimize",
+          "when": "resourceExtname == .sql",
+          "group": "adam@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "axios": "^1.6.5",
+    "ws": "^8.16.0"
+  }
+}

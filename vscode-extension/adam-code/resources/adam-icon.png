@@ -1,0 +1,14 @@
+# PNG Icon Placeholder
+
+Since we can't generate actual PNG images, you'll need to:
+1. Use the SVG file we created
+2. Convert it to PNG using an online tool or design software
+3. Save it as adam-icon.png in this resources folder
+
+For now, the SVG should work. If the icon is still showing as a white circle:
+1. Close the Extension Development Host window completely
+2. In the main VS Code window, press Cmd+Shift+P
+3. Type "Developer: Reload Window"
+4. Press F5 again to launch a fresh Extension Development Host
+
+The icon cache should be cleared and you should see the "A" icon.
