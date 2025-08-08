@@ -13,43 +13,79 @@ export class StandaloneADAMClient {
     private memoryManager: UnifiedMemoryManager;
     private openaiKey: string | undefined;
     private grokKey: string | undefined;
+    private conversationHistory: Message[] = [];
     
     constructor(context: vscode.ExtensionContext) {
         // Get workspace name for project-based memory
         const workspaceName = vscode.workspace.name || 'default';
         this.memoryManager = new UnifiedMemoryManager(workspaceName);
         
-        // Load API keys from settings
-        const config = vscode.workspace.getConfiguration('adam');
-        this.openaiKey = config.get('openaiApiKey') || process.env.OPENAI_API_KEY;
-        this.grokKey = config.get('grokApiKey') || process.env.GROK_API_KEY || process.env.XAI_API_KEY;
+        // Always try to load from .env first (project root)
+        this.loadEnvFile();
         
-        // Try to load from .env if not in settings
-        if (!this.openaiKey && !this.grokKey) {
-            this.loadEnvFile();
+        // Then check VSCode settings (can override .env)
+        const config = vscode.workspace.getConfiguration('adam');
+        const settingsOpenAI = config.get<string>('openaiApiKey');
+        const settingsGrok = config.get<string>('grokApiKey');
+        
+        if (settingsOpenAI) {
+            this.openaiKey = settingsOpenAI;
         }
+        if (settingsGrok) {
+            this.grokKey = settingsGrok;
+        }
+        
+        // Log status for debugging
+        console.log('ADAM Standalone Client initialized:');
+        console.log('- OpenAI Key:', this.openaiKey ? 'Configured' : 'Not configured');
+        console.log('- Grok Key:', this.grokKey ? 'Configured' : 'Not configured');
     }
     
     /**
      * Load API keys from .env file
      */
     private loadEnvFile() {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) return;
+        // Try multiple locations for .env file
+        const possiblePaths = [
+            '/Users/vitoryago/ADAM/.env', // Direct ADAM project path
+        ];
         
-        const envPath = path.join(workspaceFolder.uri.fsPath, '.env');
-        if (fs.existsSync(envPath)) {
-            const envContent = fs.readFileSync(envPath, 'utf8');
-            const lines = envContent.split('\n');
-            
-            lines.forEach(line => {
-                const [key, value] = line.split('=');
-                if (key?.trim() === 'OPENAI_API_KEY' && !this.openaiKey) {
-                    this.openaiKey = value?.trim();
-                } else if ((key?.trim() === 'GROK_API_KEY' || key?.trim() === 'XAI_API_KEY') && !this.grokKey) {
-                    this.grokKey = value?.trim();
-                }
-            });
+        // Also check workspace folder
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (workspaceFolder) {
+            possiblePaths.push(path.join(workspaceFolder.uri.fsPath, '.env'));
+        }
+        
+        for (const envPath of possiblePaths) {
+            if (fs.existsSync(envPath)) {
+                console.log(`Loading .env from: ${envPath}`);
+                const envContent = fs.readFileSync(envPath, 'utf8');
+                const lines = envContent.split('\n');
+                
+                lines.forEach(line => {
+                    // Handle lines with quotes and without
+                    const match = line.match(/^([A-Z_]+)=(.*)$/);
+                    if (match) {
+                        const key = match[1].trim();
+                        let value = match[2].trim();
+                        
+                        // Remove quotes if present
+                        if ((value.startsWith('"') && value.endsWith('"')) || 
+                            (value.startsWith("'") && value.endsWith("'"))) {
+                            value = value.slice(1, -1);
+                        }
+                        
+                        if (key === 'OPENAI_API_KEY' && !this.openaiKey) {
+                            this.openaiKey = value;
+                            console.log('Loaded OpenAI API key from .env');
+                        } else if ((key === 'GROK_API_KEY' || key === 'XAI_API_KEY') && !this.grokKey) {
+                            this.grokKey = value;
+                            console.log(`Loaded ${key} from .env`);
+                        }
+                    }
+                });
+                break; // Stop after first successful .env load
+            }
         }
     }
     
@@ -58,6 +94,14 @@ export class StandaloneADAMClient {
      */
     async sendMessage(content: string, useMemory: boolean = true): Promise<Message> {
         try {
+            // Add user message to conversation history
+            this.conversationHistory.push({ role: 'user', content });
+            
+            // Keep only last 10 messages to avoid context overflow
+            if (this.conversationHistory.length > 20) {
+                this.conversationHistory = this.conversationHistory.slice(-20);
+            }
+            
             // Get relevant memories if enabled
             let memoryContext = '';
             if (useMemory) {
@@ -71,7 +115,7 @@ export class StandaloneADAMClient {
                 }
             }
             
-            // Prepare the full prompt
+            // Prepare the full prompt with conversation history
             const fullPrompt = memoryContext + content;
             
             // Call the appropriate LLM
@@ -80,9 +124,10 @@ export class StandaloneADAMClient {
             let cost = 0;
             
             if (this.grokKey) {
-                // Prefer Grok for code tasks
-                response = await this.callGrok(fullPrompt);
-                model = 'grok-2';
+                // Prefer Grok for code tasks - use intelligent model selection
+                const complexity = this.analyzeComplexity(content);
+                response = await this.callGrok(fullPrompt, complexity);
+                model = complexity.model;
             } else if (this.openaiKey) {
                 response = await this.callOpenAI(fullPrompt);
                 model = 'gpt-4-turbo';
@@ -103,12 +148,16 @@ export class StandaloneADAMClient {
                 );
             }
             
-            return {
+            // Add assistant response to conversation history
+            const assistantMessage: Message = {
                 role: 'assistant',
                 content: response,
                 model,
                 cost
             };
+            this.conversationHistory.push(assistantMessage);
+            
+            return assistantMessage;
         } catch (error: any) {
             return {
                 role: 'assistant',
@@ -155,9 +204,73 @@ export class StandaloneADAMClient {
     }
     
     /**
-     * Call Grok/xAI API
+     * Analyze query complexity for model selection
+     * Matches backend routing: grok-4-reasoning, grok-4, grok-3-mini-fast
      */
-    private async callGrok(prompt: string): Promise<string> {
+    private analyzeComplexity(query: string): { level: 'high' | 'medium' | 'low'; model: string } {
+        const lowerQuery = query.toLowerCase();
+        
+        // High complexity indicators - use grok-4-reasoning
+        if (lowerQuery.includes('implement') || lowerQuery.includes('refactor') ||
+            lowerQuery.includes('debug') || lowerQuery.includes('architecture') ||
+            lowerQuery.includes('design a solution') || lowerQuery.includes('complex') ||
+            lowerQuery.includes('step by step') || lowerQuery.includes('code generation') ||
+            lowerQuery.includes('build a') || lowerQuery.includes('create a function')) {
+            return { level: 'high', model: 'grok-4-reasoning' };
+        }
+        
+        // Medium complexity indicators - use grok-4
+        if (lowerQuery.includes('explain') || lowerQuery.includes('analyze') ||
+            lowerQuery.includes('write') || lowerQuery.includes('create') || 
+            lowerQuery.includes('fix') || lowerQuery.includes('update') || 
+            lowerQuery.includes('modify') || lowerQuery.includes('optimize') ||
+            lowerQuery.includes('how does') || lowerQuery.includes('sql')) {
+            return { level: 'medium', model: 'grok-4' };
+        }
+        
+        // Default to low complexity for simple queries - use grok-3-mini-fast
+        return { level: 'low', model: 'grok-3-mini-fast' };
+    }
+    
+    /**
+     * Call Grok/xAI API with intelligent model selection
+     */
+    private async callGrok(prompt: string, complexity: { level: string; model: string }): Promise<string> {
+        // Map our model names to actual API model names
+        // Matching backend configuration exactly
+        const modelMapping: { [key: string]: string } = {
+            'grok-4-reasoning': 'grok-4',      // High complexity tasks
+            'grok-4': 'grok-4',                 // Medium complexity
+            'grok-3-mini-fast': 'grok-3-mini'   // Fast, simple queries
+        };
+        
+        const apiModel = modelMapping[complexity.model] || 'grok-3-mini';
+        
+        // Build messages array with conversation history
+        const messages: any[] = [
+            {
+                role: 'system',
+                content: 'You are a helpful AI assistant for developers. Be concise and direct. Do not introduce yourself unless asked.'
+            }
+        ];
+        
+        // Add recent conversation history (excluding the current user message which is in prompt)
+        const recentHistory = this.conversationHistory.slice(-10, -1); // Last 10 messages, excluding current
+        recentHistory.forEach(msg => {
+            if (msg.role === 'user' || msg.role === 'assistant') {
+                messages.push({
+                    role: msg.role,
+                    content: msg.content
+                });
+            }
+        });
+        
+        // Add current user message
+        messages.push({
+            role: 'user',
+            content: prompt
+        });
+        
         const response = await fetch('https://api.x.ai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -165,19 +278,13 @@ export class StandaloneADAMClient {
                 'Authorization': `Bearer ${this.grokKey}`
             },
             body: JSON.stringify({
-                model: 'grok-2-latest',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a helpful AI assistant for developers. Be concise and direct. Do not introduce yourself unless asked.'
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
+                model: apiModel,
+                messages,
                 temperature: 0.7,
-                stream: false
+                stream: false,
+                // Add reasoning_effort for grok-3-mini-fast to get better quality
+                // This makes grok-3-mini perform better on tasks that don't need grok-4
+                ...(apiModel === 'grok-3-mini' ? { reasoning_effort: 'high' } : {})
             })
         });
         
