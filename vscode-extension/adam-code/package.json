@@ -2,8 +2,8 @@
   "name": "adam-code",
   "displayName": "ADAM Code - Analytics Engineering Assistant",
   "description": "Your AI coworker for analytics engineering with perfect memory",
-  "version": "0.1.0",
-  "publisher": "adam-assistant",
+  "version": "0.1.2",
+  "publisher": "adamassistant",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -15,7 +15,7 @@
   ],
   "icon": "resources/adam-icon.png",
   "activationEvents": [
-    "onStartupFinished"
+    "*"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -94,10 +94,25 @@
     "configuration": {
       "title": "ADAM Code",
       "properties": {
+        "adam.standalone": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use standalone mode (no backend required)"
+        },
+        "adam.openaiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API key for standalone mode"
+        },
+        "adam.grokApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Grok/xAI API key for standalone mode"
+        },
         "adam.serverUrl": {
           "type": "string",
           "default": "http://localhost:8000",
-          "description": "ADAM backend server URL"
+          "description": "ADAM backend server URL (only for non-standalone mode)"
         },
         "adam.projectId": {
           "type": "string",

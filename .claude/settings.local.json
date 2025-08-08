@@ -62,7 +62,22 @@
       "Bash(export LOG_LEVEL=DEBUG)",
       "Bash(USE_OPENAI_TTS=true python /Users/vitoryago/ADAM/test_voice_complete.py)",
       "Bash(npm i:*)",
-      "Bash(npm run compile:*)"
+      "Bash(npm run compile:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node:*)",
+      "Bash(vsce package:*)",
+      "Bash(mdfind:*)",
+      "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --version)",
+      "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --install-extension adam-code-0.1.0.vsix)",
+      "Bash(ln:*)",
+      "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --list-extensions)",
+      "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --uninstall-extension adam-assistant.adam-code)",
+      "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --install-extension adam-code-0.1.1.vsix)",
+      "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --uninstall-extension adamassistant.adam-code)",
+      "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --install-extension /Users/vitoryago/ADAM/vscode-extension/adam-code/adam-code-0.1.1.vsix)",
+      "Bash(npx vsce package:*)",
+      "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --install-extension /Users/vitoryago/ADAM/vscode-extension/adam-code/adam-code-0.1.2.vsix)",
+      "mcp__filesystem__read_text_file"
     ],
     "deny": []
   }
