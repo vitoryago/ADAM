@@ -72,10 +72,10 @@ class LLMService:
         self.project_settings = project_settings or {}
         self.project_id = project_id
         # Use project model, then env default, then hardcoded default
-        env_default = os.getenv("DEFAULT_MODEL", "grok-3-mini-fast")
+        env_default = os.getenv("DEFAULT_MODEL", "gpt-5-mini")
         self.default_model = self.project_settings.get("model", env_default)
         self.temperature = self.project_settings.get("temperature", 0.7)
-        self.max_tokens = self.project_settings.get("max_tokens", 2000)
+        self.max_tokens = self.project_settings.get("max_tokens", 4000)  # Increased for code generation
         
         # Initialize ADAM's LLM client if available
         if ADAM_LLM_AVAILABLE:
@@ -149,7 +149,7 @@ class LLMService:
             model = self._select_model_by_complexity(complexity)
         
         # Use the specified model or default
-        final_model = model or self.default_model or "grok-3-mini-fast"
+        final_model = model or self.default_model or "gpt-5-mini"
         
         try:
             # Check if model supports vision
@@ -159,7 +159,7 @@ class LLMService:
             if system_prompt:
                 final_system_prompt = system_prompt
             else:
-                final_system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
+                final_system_prompt = "You are a helpful AI assistant for software development and data analysis. Be concise and direct. Do not introduce yourself or explain what you are unless specifically asked."
                 
             if messages and len(messages) > 1:
                 # Create a conversation context from history
@@ -180,7 +180,7 @@ class LLMService:
             }
             
             # Add search parameters if enabled
-            if use_search and final_model in ["grok-3-mini-high", "grok-3-mini-fast-high", "grok-4", "grok-4-reasoning"]:
+            if use_search and final_model in ["grok-3-mini-high", "grok-4", "grok-4-reasoning"]:
                 # Simple boolean flag - the API will handle the search internally
                 complete_kwargs["search_parameters"] = True
                 logger.info(f"Live search enabled for model: {final_model}")
@@ -332,7 +332,7 @@ class LLMService:
             complexity, _ = self.query_analyzer.analyze_query(message)
             model = self._select_model_by_complexity(complexity)
         
-        final_model = model or self.default_model or "grok-3-mini-fast"
+        final_model = model or self.default_model or "gpt-5-mini"
         
         try:
             # Check if model supports vision
@@ -344,7 +344,7 @@ class LLMService:
             if system_prompt:
                 final_system_prompt = system_prompt
             else:
-                final_system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
+                final_system_prompt = "You are a helpful AI assistant for software development and data analysis. Be concise and direct. Do not introduce yourself or explain what you are unless specifically asked."
                 
             if messages and len(messages) > 1:
                 # Create a conversation context from history
@@ -366,7 +366,7 @@ class LLMService:
             }
             
             # Add search parameters if enabled
-            if use_search and final_model in ["grok-3-mini-high", "grok-3-mini-fast-high", "grok-4", "grok-4-reasoning"]:
+            if use_search and final_model in ["grok-3-mini-high", "grok-4", "grok-4-reasoning"]:
                 # Simple boolean flag - the API will handle the search internally
                 complete_kwargs["search_parameters"] = True
                 logger.info(f"Live search enabled for streaming with model: {final_model}")
@@ -480,14 +480,14 @@ class LLMService:
     def _select_model_by_complexity(self, complexity: 'QueryComplexity') -> str:
         """Select model based on query complexity"""
         if not QueryComplexity:
-            return "grok-3-mini-fast"
+            return "gpt-5-mini"
             
         if complexity == QueryComplexity.HIGH:
-            return "grok-4-reasoning"
+            return "claude-opus-4.1"  # Claude Opus for most complex tasks
         elif complexity == QueryComplexity.MEDIUM:
-            return "grok-4"
+            return "gpt-5"  # GPT-5 for medium complexity
         else:
-            return "grok-3-mini-fast"
+            return "gpt-5-mini"  # GPT-5-mini for simple queries
     
     def estimate_cost(
         self,
@@ -502,7 +502,7 @@ class LLMService:
         # Rough token estimation
         estimated_tokens = len(message.split()) * 1.5  # 1.5 tokens per word average
         
-        model_name = model or self.default_model or "grok-3-mini-high"
+        model_name = model or self.default_model or "gpt-5-mini"
         model_config = MODEL_CONFIGS.get(model_name)
         
         if not model_config:
