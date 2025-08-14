@@ -123,18 +123,21 @@ export class StandaloneADAMClient {
             let model: string;
             let cost = 0;
             
-            if (this.grokKey) {
-                // Prefer Grok for code tasks - use intelligent model selection
-                const complexity = this.analyzeComplexity(content);
+            // Analyze complexity for model selection
+            const complexity = this.analyzeComplexity(content);
+            
+            if (this.openaiKey) {
+                // Prefer OpenAI for GPT-5 models
+                response = await this.callOpenAI(fullPrompt, complexity);
+                model = complexity.model;
+            } else if (this.grokKey) {
+                // Fallback to Grok if no OpenAI key
                 response = await this.callGrok(fullPrompt, complexity);
                 model = complexity.model;
-            } else if (this.openaiKey) {
-                response = await this.callOpenAI(fullPrompt);
-                model = 'gpt-4-turbo';
             } else {
                 return {
                     role: 'assistant',
-                    content: 'No API keys configured. Please set OpenAI or Grok API key in VSCode settings (Cmd+, then search for "adam").',
+                    content: 'No API keys configured. Please set OpenAI API key in VSCode settings (Cmd+, then search for "adam").',
                     model: 'none'
                 };
             }
@@ -168,30 +171,72 @@ export class StandaloneADAMClient {
     }
     
     /**
-     * Call OpenAI API
+     * Call OpenAI API with GPT-5 support
      */
-    private async callOpenAI(prompt: string): Promise<string> {
+    private async callOpenAI(prompt: string, complexity: { level: string; model: string; reasoning_effort?: string }): Promise<string> {
+        // Map our model names to actual OpenAI API model names
+        const modelMapping: { [key: string]: string } = {
+            'gpt-5': 'gpt-5-2025-08-07',
+            'gpt-5-mini': 'gpt-5-mini-2025-08-07',
+            'gpt-5-nano': 'gpt-5-nano'
+        };
+        
+        const apiModel = modelMapping[complexity.model] || 'gpt-5-mini-2025-08-07';
+        
+        // Build messages array with conversation history
+        const messages: any[] = [
+            {
+                role: 'system',
+                content: 'You are a helpful AI assistant for developers. Be concise and direct. Do not introduce yourself unless asked.'
+            }
+        ];
+        
+        // Add recent conversation history (excluding the current user message which is in prompt)
+        const recentHistory = this.conversationHistory.slice(-10, -1); // Last 10 messages, excluding current
+        recentHistory.forEach(msg => {
+            if (msg.role === 'user' || msg.role === 'assistant') {
+                messages.push({
+                    role: msg.role,
+                    content: msg.content
+                });
+            }
+        });
+        
+        // Add current user message
+        messages.push({
+            role: 'user',
+            content: prompt
+        });
+        
+        // Build request body with reasoning effort for GPT-5
+        const requestBody: any = {
+            model: apiModel,
+            messages,
+            stream: false  // No streaming in VSCode extension
+        };
+        
+        // GPT-5 specific parameters
+        if (apiModel.includes('gpt-5')) {
+            // GPT-5 only supports default temperature (1), so we omit it
+            requestBody.max_completion_tokens = 2000;
+        } else {
+            // Other models support temperature
+            requestBody.temperature = 0.7;
+            requestBody.max_tokens = 2000;
+        }
+        
+        // Add reasoning effort for GPT-5 models
+        if (complexity.reasoning_effort) {
+            requestBody.reasoning_effort = complexity.reasoning_effort;
+        }
+        
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${this.openaiKey}`
             },
-            body: JSON.stringify({
-                model: 'gpt-4-turbo-preview',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a helpful AI assistant for developers. Be concise and direct. Do not introduce yourself unless asked.'
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
-                temperature: 0.7,
-                max_tokens: 2000
-            })
+            body: JSON.stringify(requestBody)
         });
         
         const data: any = await response.json();
@@ -204,32 +249,152 @@ export class StandaloneADAMClient {
     }
     
     /**
-     * Analyze query complexity for model selection
-     * Matches backend routing: grok-4-reasoning, grok-4, grok-3-mini-fast
+     * Call OpenAI API with streaming support for GPT-5
      */
-    private analyzeComplexity(query: string): { level: 'high' | 'medium' | 'low'; model: string } {
+    private async callOpenAIStream(
+        prompt: string, 
+        complexity: { level: string; model: string; reasoning_effort?: string },
+        onChunk: (chunk: string) => void
+    ): Promise<string> {
+        // Map our model names to actual OpenAI API model names
+        const modelMapping: { [key: string]: string } = {
+            'gpt-5': 'gpt-5-2025-08-07',
+            'gpt-5-mini': 'gpt-5-mini-2025-08-07',
+            'gpt-5-nano': 'gpt-5-nano'
+        };
+        
+        const apiModel = modelMapping[complexity.model] || 'gpt-5-mini-2025-08-07';
+        
+        // Build messages array with conversation history
+        const messages: any[] = [
+            {
+                role: 'system',
+                content: 'You are a helpful AI assistant for developers. Be concise and direct. Do not introduce yourself unless asked.'
+            }
+        ];
+        
+        // Add recent conversation history
+        const recentHistory = this.conversationHistory.slice(-10, -1);
+        recentHistory.forEach(msg => {
+            if (msg.role === 'user' || msg.role === 'assistant') {
+                messages.push({
+                    role: msg.role,
+                    content: msg.content
+                });
+            }
+        });
+        
+        // Add current user message
+        messages.push({
+            role: 'user',
+            content: prompt
+        });
+        
+        // Build request body with streaming enabled
+        const requestBody: any = {
+            model: apiModel,
+            messages,
+            stream: true  // Enable streaming
+        };
+        
+        // GPT-5 specific parameters
+        if (apiModel.includes('gpt-5')) {
+            // GPT-5 only supports default temperature (1), so we omit it
+            requestBody.max_completion_tokens = 2000;
+        } else {
+            // Other models support temperature
+            requestBody.temperature = 0.7;
+            requestBody.max_tokens = 2000;
+        }
+        
+        // Add reasoning effort for GPT-5 models
+        if (complexity.reasoning_effort) {
+            requestBody.reasoning_effort = complexity.reasoning_effort;
+        }
+        
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.openaiKey}`
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'API request failed');
+        }
+        
+        // Handle streaming response
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+        
+        if (!reader) {
+            throw new Error('No response body');
+        }
+        
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') continue;
+                        
+                        try {
+                            const parsed = JSON.parse(data);
+                            const content = parsed.choices?.[0]?.delta?.content || '';
+                            if (content) {
+                                fullContent += content;
+                                onChunk(content);
+                            }
+                        } catch (e) {
+                            // Skip unparseable chunks
+                        }
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
+        }
+        
+        return fullContent;
+    }
+    
+    /**
+     * Analyze query complexity for model selection
+     * Matches backend routing: gpt-5 (high/medium), gpt-5-mini (low)
+     */
+    private analyzeComplexity(query: string): { level: 'high' | 'medium' | 'low'; model: string; reasoning_effort?: string } {
         const lowerQuery = query.toLowerCase();
         
-        // High complexity indicators - use grok-4-reasoning
+        // High complexity indicators - use GPT-5 with high reasoning
         if (lowerQuery.includes('implement') || lowerQuery.includes('refactor') ||
             lowerQuery.includes('debug') || lowerQuery.includes('architecture') ||
             lowerQuery.includes('design a solution') || lowerQuery.includes('complex') ||
             lowerQuery.includes('step by step') || lowerQuery.includes('code generation') ||
             lowerQuery.includes('build a') || lowerQuery.includes('create a function')) {
-            return { level: 'high', model: 'grok-4-reasoning' };
+            return { level: 'high', model: 'gpt-5', reasoning_effort: 'high' };
         }
         
-        // Medium complexity indicators - use grok-4
+        // Medium complexity indicators - use GPT-5 with medium reasoning
         if (lowerQuery.includes('explain') || lowerQuery.includes('analyze') ||
             lowerQuery.includes('write') || lowerQuery.includes('create') || 
             lowerQuery.includes('fix') || lowerQuery.includes('update') || 
             lowerQuery.includes('modify') || lowerQuery.includes('optimize') ||
             lowerQuery.includes('how does') || lowerQuery.includes('sql')) {
-            return { level: 'medium', model: 'grok-4' };
+            return { level: 'medium', model: 'gpt-5', reasoning_effort: 'medium' };
         }
         
-        // Default to low complexity for simple queries - use grok-3-mini-fast
-        return { level: 'low', model: 'grok-3-mini-fast' };
+        // Default to low complexity for simple queries - use gpt-5-mini with minimal reasoning
+        return { level: 'low', model: 'gpt-5-mini', reasoning_effort: 'minimal' };
     }
     
     /**
@@ -241,7 +406,7 @@ export class StandaloneADAMClient {
         const modelMapping: { [key: string]: string } = {
             'grok-4-reasoning': 'grok-4',      // High complexity tasks
             'grok-4': 'grok-4',                 // Medium complexity
-            'grok-3-mini-fast': 'grok-3-mini'   // Fast, simple queries
+            'grok-3-mini-high': 'grok-3-mini'   // Fast, simple queries
         };
         
         const apiModel = modelMapping[complexity.model] || 'grok-3-mini';
@@ -282,7 +447,7 @@ export class StandaloneADAMClient {
                 messages,
                 temperature: 0.7,
                 stream: false,
-                // Add reasoning_effort for grok-3-mini-fast to get better quality
+                // Add reasoning_effort for grok-3-mini to get better quality
                 // This makes grok-3-mini perform better on tasks that don't need grok-4
                 ...(apiModel === 'grok-3-mini' ? { reasoning_effort: 'high' } : {})
             })
@@ -404,6 +569,96 @@ export class StandaloneADAMClient {
             patterns: 'See summary',
             recommendations: 'See summary'
         };
+    }
+    
+    /**
+     * Send message with streaming support
+     */
+    async sendMessageStream(
+        content: string, 
+        useMemory: boolean = true,
+        onChunk: (chunk: string) => void
+    ): Promise<Message> {
+        try {
+            // Add user message to conversation history
+            this.conversationHistory.push({ role: 'user', content });
+            
+            // Keep only last 10 messages to avoid context overflow
+            if (this.conversationHistory.length > 20) {
+                this.conversationHistory = this.conversationHistory.slice(-20);
+            }
+            
+            // Get relevant memories if enabled
+            let memoryContext = '';
+            if (useMemory) {
+                const memories = await this.memoryManager.searchMemories(content, 3);
+                if (memories.length > 0) {
+                    memoryContext = 'Relevant context from previous conversations:\n';
+                    memories.forEach(mem => {
+                        memoryContext += `- ${mem.content.substring(0, 200)}...\n`;
+                    });
+                    memoryContext += '\n';
+                }
+            }
+            
+            // Prepare the full prompt with conversation history
+            const fullPrompt = memoryContext + content;
+            
+            // Analyze complexity for model selection
+            const complexity = this.analyzeComplexity(content);
+            
+            let response: string;
+            let model: string;
+            let cost = 0;
+            
+            if (this.openaiKey) {
+                // Use streaming for GPT-5 models
+                response = await this.callOpenAIStream(fullPrompt, complexity, onChunk);
+                model = complexity.model;
+            } else if (this.grokKey) {
+                // Fallback to non-streaming Grok
+                response = await this.callGrok(fullPrompt, complexity);
+                model = complexity.model;
+                // Simulate streaming by sending the whole response
+                onChunk(response);
+            } else {
+                const errorMsg = 'No API keys configured. Please set OpenAI API key in VSCode settings.';
+                onChunk(errorMsg);
+                return {
+                    role: 'assistant',
+                    content: errorMsg,
+                    model: 'none'
+                };
+            }
+            
+            // Save to memory if substantial
+            if (useMemory && response.length > 50) {
+                await this.memoryManager.saveMemory(
+                    content,
+                    response,
+                    vscode.workspace.name
+                );
+            }
+            
+            // Add assistant response to conversation history
+            const assistantMessage: Message = {
+                role: 'assistant',
+                content: response,
+                model,
+                cost
+            };
+            this.conversationHistory.push(assistantMessage);
+            
+            return assistantMessage;
+        } catch (error: any) {
+            const errorMsg = `Error: ${error.message || error}`;
+            onChunk(errorMsg);
+            return {
+                role: 'assistant',
+                content: errorMsg,
+                model: 'error'
+            };
+        }
     }
     
     /**
