@@ -77,7 +77,10 @@
       "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --install-extension /Users/vitoryago/ADAM/vscode-extension/adam-code/adam-code-0.1.1.vsix)",
       "Bash(npx vsce package:*)",
       "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --install-extension /Users/vitoryago/ADAM/vscode-extension/adam-code/adam-code-0.1.2.vsix)",
-      "mcp__filesystem__read_text_file"
+      "mcp__filesystem__read_text_file",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__read_multiple_files",
+      "mcp__sequential-thinking__sequentialthinking"
     ],
     "deny": []
   }
