@@ -27,6 +27,13 @@ except ImportError:
     OPENAI_AVAILABLE = False
     print("Warning: openai not installed. Run: pip install openai")
 
+try:
+    from anthropic import AsyncAnthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    print("Warning: anthropic not installed. Run: pip install anthropic")
+
 from .config import LLMConfig, ModelProvider, ModelConfig
 from .query_analyzer import QueryAnalyzer, QueryComplexity
 
@@ -66,6 +73,12 @@ class UnifiedLLMClient:
         if OPENAI_AVAILABLE and self.config.get_api_key(ModelProvider.OPENAI):
             self.clients[ModelProvider.OPENAI] = AsyncOpenAI(
                 api_key=self.config.get_api_key(ModelProvider.OPENAI)
+            )
+        
+        # Initialize Anthropic client
+        if ANTHROPIC_AVAILABLE and self.config.get_api_key(ModelProvider.ANTHROPIC):
+            self.clients[ModelProvider.ANTHROPIC] = AsyncAnthropic(
+                api_key=self.config.get_api_key(ModelProvider.ANTHROPIC)
             )
     
     async def complete(
@@ -108,13 +121,13 @@ class UnifiedLLMClient:
                 vision_models = [m for m in self.config.get_available_models() 
                                if self.config.get_model_config(m).supports_vision]
                 if vision_models:
-                    # Prefer grok-2-vision for cost efficiency
-                    if "grok-2-vision-1212" in vision_models:
+                    # Prefer GPT-5 for vision, then grok-2-vision for cost efficiency
+                    if "gpt-5" in vision_models:
+                        actual_model = "gpt-5"
+                    elif "grok-2-vision-1212" in vision_models:
                         actual_model = "grok-2-vision-1212"
                     elif "grok-4" in vision_models:
                         actual_model = "grok-4"
-                    elif "gpt-4" in vision_models:
-                        actual_model = "gpt-4"
                     else:
                         actual_model = vision_models[0]
                     
@@ -178,6 +191,11 @@ class UnifiedLLMClient:
                 prompt, model_config, system_prompt, temperature,
                 max_tokens, reasoning_effort, stream, image_data, routing_decision
             )
+        elif model_config.provider == ModelProvider.ANTHROPIC:
+            return await self._complete_anthropic(
+                prompt, model_config, system_prompt, temperature,
+                max_tokens, stream, image_data, routing_decision
+            )
         else:
             raise ValueError(f"Unsupported provider: {model_config.provider}")
     
@@ -220,12 +238,12 @@ class UnifiedLLMClient:
                 # Don't add reasoning_effort to chat_params
             else:
                 # Map our unified effort levels to model-specific values
-                # grok-3-mini and grok-3-mini-fast only support: low, high (no medium)
+                # grok-3-mini only supports: low, high (no medium)
                 if "grok-3-mini" in model_config.api_name:
-                    effort_map = {"low": "low", "medium": "high", "high": "high"}
+                    effort_map = {"low": "low", "medium": "high", "high": "high", "minimal": "low"}
                 else:
                     # grok-4-reasoning supports: low, medium, high
-                    effort_map = {"low": "low", "medium": "medium", "high": "high"}
+                    effort_map = {"low": "low", "medium": "medium", "high": "high", "minimal": "low"}
                 chat_params[model_config.reasoning_param] = effort_map.get(reasoning_effort, "high")
         
         chat = client.chat.create(**chat_params)
@@ -375,14 +393,14 @@ class UnifiedLLMClient:
                 else:
                     raise
         else:
-            # Standard chat completion for GPT models
+            # Standard chat completion for GPT models (including GPT-5)
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             
             # Handle image data for vision models
-            if image_data and "gpt-4" in model_config.api_name:
-                # For GPT-4 vision, format message with image
+            if image_data and (model_config.supports_vision or "gpt-4" in model_config.api_name):
+                # For GPT-4/GPT-5 vision, format message with image
                 import base64
                 image_base64 = base64.b64encode(image_data).decode('utf-8')
                 messages.append({
@@ -400,13 +418,32 @@ class UnifiedLLMClient:
             else:
                 messages.append({"role": "user", "content": prompt})
             
-            response = await client.chat.completions.create(
-                model=model_config.api_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=stream
-            )
+            # Build request parameters
+            request_params = {
+                "model": model_config.api_name,
+                "messages": messages,
+                "stream": stream
+            }
+            
+            # GPT-5 specific parameters
+            if "gpt-5" in model_config.api_name:
+                # GPT-5 only supports temperature=1 (default), so we omit it
+                request_params["max_completion_tokens"] = max_tokens or 2000
+                # Don't add temperature for GPT-5
+                logger.info(f"Using default temperature for {model_config.api_name} (GPT-5 doesn't support custom temperature)")
+            else:
+                # Other models support temperature
+                request_params["temperature"] = temperature
+                request_params["max_tokens"] = max_tokens
+            
+            # Add reasoning_effort for GPT-5 models
+            if "gpt-5" in model_config.api_name and reasoning_effort:
+                # GPT-5 uses reasoning_effort parameter
+                effort_map = {"low": "low", "medium": "medium", "high": "high", "minimal": "minimal"}
+                request_params["reasoning_effort"] = effort_map.get(reasoning_effort, "medium")
+                logger.info(f"Using reasoning_effort={request_params['reasoning_effort']} for {model_config.api_name}")
+            
+            response = await client.chat.completions.create(**request_params)
             
             if stream:
                 # Return async generator
@@ -429,6 +466,125 @@ class UnifiedLLMClient:
                     cost=self._calculate_openai_cost(model_config, response.usage),
                     raw_response=raw_response_data
                 )
+    
+    async def _complete_anthropic(
+        self,
+        prompt: str,
+        model_config: ModelConfig,
+        system_prompt: Optional[str],
+        temperature: float,
+        max_tokens: Optional[int],
+        stream: bool,
+        image_data: Optional[bytes] = None,
+        routing_decision: Optional[Dict] = None
+    ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
+        """Handle Claude model completion"""
+        client = self.clients[ModelProvider.ANTHROPIC]
+        
+        # Build messages for Claude
+        messages = []
+        
+        # Handle image data for vision models
+        if image_data and model_config.supports_vision:
+            import base64
+            image_base64 = base64.b64encode(image_data).decode('utf-8')
+            messages.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": image_base64
+                        }
+                    }
+                ]
+            })
+        else:
+            messages.append({"role": "user", "content": prompt})
+        
+        # Build request parameters for Claude
+        request_params = {
+            "model": model_config.api_name,
+            "messages": messages,
+            "max_tokens": max_tokens or model_config.max_tokens,
+            "temperature": temperature,
+            "stream": stream
+        }
+        
+        # Add system prompt if provided
+        if system_prompt:
+            request_params["system"] = system_prompt
+        
+        try:
+            if stream:
+                # Stream response
+                stream_response = await client.messages.create(**request_params)
+                
+                async def stream_generator():
+                    async for chunk in stream_response:
+                        if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
+                            yield chunk.delta.text
+                        elif hasattr(chunk, 'content_block') and hasattr(chunk.content_block, 'text'):
+                            yield chunk.content_block.text
+                return stream_generator()
+            else:
+                # Get complete response
+                response = await client.messages.create(**request_params)
+                
+                # Extract content from Claude response
+                content = ""
+                if hasattr(response, 'content'):
+                    if isinstance(response.content, list):
+                        # Join all text blocks, preserving formatting
+                        for block in response.content:
+                            if hasattr(block, 'text'):
+                                content += block.text
+                            elif hasattr(block, 'type') and block.type == 'text':
+                                content += block.text if hasattr(block, 'text') else str(block)
+                    elif isinstance(response.content, str):
+                        content = response.content
+                    else:
+                        content = str(response.content)
+                
+                # Calculate cost
+                usage = response.usage if hasattr(response, 'usage') else None
+                if usage:
+                    input_tokens = usage.input_tokens if hasattr(usage, 'input_tokens') else 0
+                    output_tokens = usage.output_tokens if hasattr(usage, 'output_tokens') else 0
+                    
+                    if model_config.cost_per_1k_input_tokens and model_config.cost_per_1k_output_tokens:
+                        input_cost = (input_tokens / 1000) * model_config.cost_per_1k_input_tokens
+                        output_cost = (output_tokens / 1000) * model_config.cost_per_1k_output_tokens
+                        cost = input_cost + output_cost
+                    else:
+                        total_tokens = input_tokens + output_tokens
+                        cost = (total_tokens / 1000) * model_config.cost_per_1k_tokens
+                else:
+                    cost = 0.0
+                
+                # Build response with routing info
+                raw_response_data = {}
+                if routing_decision:
+                    raw_response_data['routing_decision'] = routing_decision
+                
+                return LLMResponse(
+                    content=content,
+                    model=model_config.name,
+                    reasoning_content=None,  # Claude Opus 4.1 handles reasoning internally
+                    total_tokens=usage.input_tokens + usage.output_tokens if usage else 0,
+                    completion_tokens=usage.output_tokens if usage else 0,
+                    cost=cost,
+                    raw_response=raw_response_data
+                )
+        except Exception as e:
+            logger.error(f"Claude API error: {e}")
+            raise
     
     def _auto_select_model(self, prompt: str, reasoning_effort: Optional[str]) -> Optional[str]:
         """Auto-select best model based on prompt and requirements using intelligent analysis"""

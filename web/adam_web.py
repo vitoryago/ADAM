@@ -786,14 +786,14 @@ CRITICAL ANTI-HALLUCINATION RULES (ONLY for memory recall):
             # Model selector at the top
             model_info = {
                 "automatic": "🤖 Smart routing (recommended)",
+                "gpt-5": "🚀 GPT-5 (Most capable) 🖼️",
+                "gpt-5-mini": "⚡ GPT-5 Mini (Fast & efficient)",
+                "gpt-5-nano": "💨 GPT-5 Nano (Ultra-fast)",
                 "grok-4-reasoning": "Deep reasoning 🖼️",
                 "grok-4": "Most capable 🖼️",
-                "grok-3-mini-fast": "⚡ Super fast",
                 "grok-3-mini-high": "Fast & efficient",
                 "grok-2-vision-1212": "Vision optimized 🖼️",
-                "o4-mini-high": "High reasoning",
-                "gpt-4": "OpenAI GPT-4 🖼️",
-                "gpt-3.5-turbo": "Fast & cheap"
+                "o4-mini-high": "High reasoning"
             }
             
             # Ensure automatic is first in the list

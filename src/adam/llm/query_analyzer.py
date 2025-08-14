@@ -24,7 +24,9 @@ class QueryAnalyzer:
                 'refactor', 'optimize code', 'debug', 'fix this code',
                 'write a function', 'write a class', 'write a script',
                 'python function', 'async/await', 'rate limiting', 'error handling',
-                'queue of tasks', 'process a queue'
+                'queue of tasks', 'process a queue', 'developing a python code',
+                'python code', 'code example', 'code that will', 'llm routing',
+                'ai agent', 'complete implementation', 'fastapi', 'api endpoint'
             ],
             'deep_analysis': [
                 'analyze deeply', 'explain in detail', 'comprehensive analysis',
@@ -186,6 +188,17 @@ class QueryAnalyzer:
     
     def _contains_code(self, text: str) -> bool:
         """Check if text contains code blocks or code-like patterns"""
+        # Check for explicit code requests first
+        text_lower = text.lower()
+        code_request_phrases = [
+            'python code', 'write code', 'code example', 'implement', 
+            'developing a python', 'code that will', 'script', 'function that',
+            'api endpoint', 'fastapi', 'django', 'flask', 'algorithm',
+            'llm routing', 'ai agent', 'class that', 'module', 'library'
+        ]
+        if any(phrase in text_lower for phrase in code_request_phrases):
+            return True
+            
         code_patterns = [
             r'```[\s\S]*```',           # Markdown code blocks
             r'def\s+\w+\s*\(',          # Python functions
@@ -217,11 +230,11 @@ class QueryAnalyzer:
         Returns:
             Recommended model name
         """
-        # Model preferences by complexity - prioritize grok-3-mini-fast for speed
+        # Model preferences by complexity
         model_preferences = {
-            QueryComplexity.HIGH: ['grok-4-reasoning', 'o4-mini-high', 'grok-4'],  # Only for true complexity
-            QueryComplexity.MEDIUM: ['grok-3-mini-fast', 'grok-3-mini-high', 'grok-4'],  # Fast first!
-            QueryComplexity.LOW: ['grok-3-mini-fast', 'grok-3-mini-high', 'gpt-3.5-turbo']  # Always fast for simple
+            QueryComplexity.HIGH: ['claude-opus-4.1', 'gpt-5', 'grok-4-reasoning', 'o4-mini-high'],  # Claude Opus for hardest problems
+            QueryComplexity.MEDIUM: ['gpt-5', 'gpt-5-mini', 'claude-3.5-sonnet', 'grok-4'],  # GPT-5 for medium complexity
+            QueryComplexity.LOW: ['gpt-5-mini', 'gpt-5-nano', 'claude-3.5-haiku', 'grok-3-mini-high']  # GPT-5-mini for simple tasks
         }
         
         # Find first available model from preferences
@@ -240,10 +253,10 @@ class QueryAnalyzer:
             complexity: Query complexity level
             
         Returns:
-            Reasoning effort level (low, medium, high) or None
+            Reasoning effort level (minimal, low, medium, high) or None
         """
         effort_mapping = {
-            QueryComplexity.LOW: "low",
+            QueryComplexity.LOW: "minimal",  # Use minimal reasoning for simple queries
             QueryComplexity.MEDIUM: "medium", 
             QueryComplexity.HIGH: "high"
         }
@@ -284,7 +297,7 @@ if __name__ == "__main__":
     ]
     
     analyzer = QueryAnalyzer()
-    available_models = ['grok-4-reasoning', 'grok-4', 'grok-3-mini-high']
+    available_models = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano']
     
     for query in test_queries:
         print(f"\nQuery: {query[:50]}...")

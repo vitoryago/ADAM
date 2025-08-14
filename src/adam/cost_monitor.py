@@ -306,9 +306,9 @@ async def demo_cost_monitoring():
     
     # Simulate some queries
     test_queries = [
-        ("What is Python?", "grok-3-mini-reasoning-high", 50, 150, 0.00004),
-        ("Debug distributed system", "o3", 500, 1000, 0.5625),
-        ("Implement web scraper", "claude-opus-4", 800, 1500, 0.1035),
+        ("What is Python?", "gpt-5-mini", 50, 150, 0.0006),
+        ("Debug distributed system", "gpt-5", 500, 1000, 0.015),
+        ("Implement web scraper", "gpt-5", 800, 1500, 0.025),
     ]
     
     for query, model, in_tokens, out_tokens, cost in test_queries:

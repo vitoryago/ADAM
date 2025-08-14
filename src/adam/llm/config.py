@@ -14,6 +14,7 @@ load_dotenv(override=True)
 class ModelProvider(Enum):
     GROK = "grok"
     OPENAI = "openai"
+    ANTHROPIC = "anthropic"
 
 class ModelCapability(Enum):
     BASIC_QA = "basic_qa"
@@ -45,9 +46,11 @@ class LLMConfig:
     
     def __init__(self):
         # API Keys - Set these as environment variables
+        # Check both XAI_API_KEY and GROK_API_KEY for Grok models
         self.api_keys = {
-            ModelProvider.GROK: os.getenv("XAI_API_KEY"),
+            ModelProvider.GROK: os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY"),
             ModelProvider.OPENAI: os.getenv("OPENAI_API_KEY"),
+            ModelProvider.ANTHROPIC: os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY"),
         }
         
         # Model configurations
@@ -55,7 +58,7 @@ class LLMConfig:
             # Virtual automatic model for intelligent routing
             "automatic": ModelConfig(
                 name="automatic",
-                provider=ModelProvider.GROK,  # Placeholder
+                provider=ModelProvider.ANTHROPIC,  # Now defaulting to Claude for complex tasks
                 api_name="automatic",
                 capabilities=[
                     ModelCapability.REASONING,
@@ -70,6 +73,122 @@ class LLMConfig:
                 supports_streaming=True,
                 supports_vision=True,  # Can route to vision models
                 cost_per_1k_tokens=0.002  # Average cost estimate
+            ),
+            
+            # Claude Models (New!)
+            "claude-opus-4.1": ModelConfig(
+                name="claude-opus-4.1",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-opus-4-1-20250805",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=True,
+                reasoning_param=None,  # Claude uses thinking blocks internally
+                max_tokens=200000,  # Claude supports up to 200k output tokens
+                supports_streaming=True,
+                supports_vision=True,
+                cost_per_1k_tokens=0.015,  # $15/1M input, $75/1M output
+                cost_per_1k_input_tokens=0.015,
+                cost_per_1k_output_tokens=0.075
+            ),
+            
+            "claude-3.5-sonnet": ModelConfig(
+                name="claude-3.5-sonnet",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-3-5-sonnet-20241022",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION,
+                    ModelCapability.FAST_RESPONSE
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=8192,  # Claude 3.5 Sonnet max
+                supports_streaming=True,
+                supports_vision=True,
+                cost_per_1k_tokens=0.003,  # $3/1M input, $15/1M output
+                cost_per_1k_input_tokens=0.003,
+                cost_per_1k_output_tokens=0.015
+            ),
+            
+            "claude-3.5-haiku": ModelConfig(
+                name="claude-3.5-haiku",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-3-5-haiku-20241022",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=8192,  # Claude 3.5 Haiku max
+                supports_streaming=True,
+                supports_vision=False,
+                cost_per_1k_tokens=0.001,  # $1/1M input, $5/1M output
+                cost_per_1k_input_tokens=0.001,
+                cost_per_1k_output_tokens=0.005
+            ),
+            
+            # GPT-5 Models (New!)
+            "gpt-5": ModelConfig(
+                name="gpt-5",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-5-2025-08-07",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",  # Uses "minimal", "low", "medium", "high"
+                max_tokens=16384,
+                supports_streaming=True,
+                supports_vision=True,
+                cost_per_1k_tokens=0.015,  # Estimated pricing
+                cost_per_1k_input_tokens=0.010,
+                cost_per_1k_output_tokens=0.020
+            ),
+            
+            "gpt-5-mini": ModelConfig(
+                name="gpt-5-mini",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-5-mini-2025-08-07",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA,
+                    ModelCapability.REASONING
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",
+                max_tokens=8192,
+                supports_streaming=True,
+                supports_vision=False,
+                cost_per_1k_tokens=0.003,
+                cost_per_1k_input_tokens=0.002,
+                cost_per_1k_output_tokens=0.004
+            ),
+            
+            "gpt-5-nano": ModelConfig(
+                name="gpt-5-nano",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-5-nano",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",
+                max_tokens=4096,
+                supports_streaming=True,
+                supports_vision=False,
+                cost_per_1k_tokens=0.001,
+                cost_per_1k_input_tokens=0.0005,
+                cost_per_1k_output_tokens=0.0015
             ),
             "grok-4-reasoning": ModelConfig(
                 name="grok-4-reasoning",
@@ -124,41 +243,6 @@ class LLMConfig:
                 cost_per_1k_output_tokens=0.006
             ),
             
-            "grok-3-mini-fast": ModelConfig(
-                name="grok-3-mini-fast",
-                provider=ModelProvider.GROK,
-                api_name="grok-3-mini-fast",
-                capabilities=[
-                    ModelCapability.FAST_RESPONSE,
-                    ModelCapability.BASIC_QA,
-                    ModelCapability.REASONING
-                ],
-                supports_reasoning=True,
-                reasoning_param="reasoning_effort",
-                max_tokens=4096,
-                supports_streaming=True,
-                cost_per_1k_tokens=0.0023,  # Average of input/output
-                cost_per_1k_input_tokens=0.0006,  # $0.60/1M
-                cost_per_1k_output_tokens=0.004    # $4.00/1M
-            ),
-            
-            "grok-3-mini-fast-high": ModelConfig(
-                name="grok-3-mini-fast-high",
-                provider=ModelProvider.GROK,
-                api_name="grok-3-mini-fast-high",
-                capabilities=[
-                    ModelCapability.FAST_RESPONSE,
-                    ModelCapability.BASIC_QA,
-                    ModelCapability.REASONING
-                ],
-                supports_reasoning=True,
-                reasoning_param="reasoning_effort",
-                max_tokens=4096,
-                supports_streaming=True,
-                cost_per_1k_tokens=0.0035,  # Estimated higher cost for live search
-                cost_per_1k_input_tokens=0.001,
-                cost_per_1k_output_tokens=0.006
-            ),
             
             "grok-2-vision-1212": ModelConfig(
                 name="grok-2-vision-1212",
@@ -194,47 +278,14 @@ class LLMConfig:
                 supports_streaming=True
             ),
             
-            # Standard OpenAI models that work without verification
-            "gpt-4": ModelConfig(
-                name="gpt-4",
-                provider=ModelProvider.OPENAI,
-                api_name="gpt-4",
-                capabilities=[
-                    ModelCapability.COMPLEX_ANALYSIS,
-                    ModelCapability.CODE_GENERATION,
-                    ModelCapability.REASONING
-                ],
-                supports_reasoning=False,
-                reasoning_param=None,
-                max_tokens=8192,
-                supports_streaming=True,
-                cost_per_1k_tokens=0.03,
-                supports_vision=True  # GPT-4 vision is supported
-            ),
-            
-            "gpt-3.5-turbo": ModelConfig(
-                name="gpt-3.5-turbo",
-                provider=ModelProvider.OPENAI,
-                api_name="gpt-3.5-turbo",
-                capabilities=[
-                    ModelCapability.FAST_RESPONSE,
-                    ModelCapability.BASIC_QA,
-                    ModelCapability.CODE_GENERATION
-                ],
-                supports_reasoning=False,
-                reasoning_param=None,
-                max_tokens=4096,
-                supports_streaming=True,
-                cost_per_1k_tokens=0.001
-            )
         }
         
         # Default model selection rules
         self.default_models = {
-            "complex": "grok-4-reasoning",    # For code generation, deep analysis
-            "medium": "grok-4",               # For standard queries
-            "fast": "grok-3-mini-high",       # For memory recaps, simple queries
-            "reasoning": "grok-4-reasoning"   # Explicit reasoning tasks
+            "complex": "claude-opus-4.1",    # Claude Opus for hardest problems
+            "medium": "gpt-5",                # GPT-5 for medium complexity
+            "fast": "gpt-5-mini",             # GPT-5 Mini for simple queries
+            "reasoning": "claude-opus-4.1"    # Claude Opus for deep reasoning
         }
     
     def get_api_key(self, provider: ModelProvider) -> Optional[str]:
@@ -280,17 +331,25 @@ class LLMConfig:
 SETUP_INSTRUCTIONS = """
 To use ADAM's LLM capabilities, you need to set up your API keys:
 
-1. For Grok models (grok-4, grok-3-mini):
-   export XAI_API_KEY="your-xai-api-key-here"
-   
-2. For OpenAI models (o4-mini):
+1. For Claude models (claude-opus-4.1, claude-3.5-sonnet, claude-3.5-haiku):
+   export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
+   # OR
+   export CLAUDE_API_KEY="your-claude-api-key-here"
+
+2. For GPT-5 models (gpt-5, gpt-5-mini, gpt-5-nano):
    export OPENAI_API_KEY="your-openai-api-key-here"
+   
+3. For Grok models (grok-4, grok-3-mini):
+   export XAI_API_KEY="your-xai-api-key-here"
+   # OR
+   export GROK_API_KEY="your-xai-api-key-here"
 
 You can add these to your shell profile (~/.bashrc, ~/.zshrc) or create a .env file:
 
 # .env file in ADAM root directory
-XAI_API_KEY=your-xai-api-key-here
+ANTHROPIC_API_KEY=your-anthropic-api-key-here
 OPENAI_API_KEY=your-openai-api-key-here
+XAI_API_KEY=your-xai-api-key-here
 
 Then load with python-dotenv:
 from dotenv import load_dotenv
