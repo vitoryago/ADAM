@@ -75,7 +75,7 @@ class LLMService:
         env_default = os.getenv("DEFAULT_MODEL", "gpt-5-mini")
         self.default_model = self.project_settings.get("model", env_default)
         self.temperature = self.project_settings.get("temperature", 0.7)
-        self.max_tokens = self.project_settings.get("max_tokens", 4000)  # Increased for code generation
+        self.max_tokens = self.project_settings.get("max_tokens", None)  # No limit by default
         
         # Initialize ADAM's LLM client if available
         if ADAM_LLM_AVAILABLE:
