@@ -20,6 +20,7 @@ try:
     from adam.llm.client import UnifiedLLMClient
     from adam.llm.query_analyzer import QueryAnalyzer, QueryComplexity
     from adam.llm.config import LLMConfig
+    from adam.llm.ai_router import SmartRoutingEngine
     ADAM_LLM_AVAILABLE = True
     logger.info("Successfully imported ADAM LLM client")
     # Get model configs from LLMConfig instance
@@ -30,6 +31,7 @@ except ImportError as e:
     UnifiedLLMClient = None
     QueryAnalyzer = None
     QueryComplexity = None
+    SmartRoutingEngine = None
     MODEL_CONFIGS = {}
     llm_config = None
     logger.error(f"Failed to import ADAM LLM client: {e}")
@@ -82,14 +84,28 @@ class LLMService:
             try:
                 self.llm_client = UnifiedLLMClient()
                 self.query_analyzer = QueryAnalyzer()
+                
+                # Initialize AI routing if enabled
+                use_ai_routing = os.getenv("USE_AI_ROUTING", "true").lower() == "true"
+                routing_model = os.getenv("AI_ROUTING_MODEL", "claude-3.5-haiku")  # Use fast Claude model for routing
+                
+                if use_ai_routing and SmartRoutingEngine:
+                    self.router = SmartRoutingEngine(use_ai=True, routing_model=routing_model)
+                    logger.info(f"AI-powered routing enabled with {routing_model}")
+                else:
+                    self.router = SmartRoutingEngine(use_ai=False) if SmartRoutingEngine else None
+                    logger.info("Using fallback keyword-based routing")
+                
                 logger.info("LLM client initialized successfully")
             except Exception as e:
                 self.llm_client = None
                 self.query_analyzer = None
+                self.router = None
                 logger.error(f"Failed to initialize LLM client: {e}")
         else:
             self.llm_client = None
             self.query_analyzer = None
+            self.router = None
             logger.warning("ADAM LLM client not available, using mock responses")
         
         # Initialize memory service if available
@@ -143,13 +159,43 @@ class LLMService:
         if memory_context:
             full_prompt = f"{memory_context}\n\nUser: {message}"
         
-        # Analyze query complexity if no model specified
-        if not model:
+        # Use AI routing if no model specified and router is available
+        routing_metadata = None
+        if not model and self.router:
+            try:
+                # Get routing decision from AI or fallback
+                routing_result = await self.router.route(
+                    query=message,
+                    context={
+                        "has_memory": bool(memory_context),
+                        "has_image": bool(image_data),
+                        "needs_search": use_search
+                    }
+                )
+                
+                final_model = routing_result.get("model", self.default_model)
+                routing_metadata = {
+                    "method": routing_result.get("method", "unknown"),
+                    "confidence": routing_result.get("confidence", 0.0),
+                    "complexity": routing_result.get("complexity", "unknown"),
+                    "task_type": routing_result.get("task_type", "unknown"),
+                    "reasoning": routing_result.get("reasoning", "No reasoning provided")[:200]
+                }
+                
+                logger.info(f"AI Router selected {final_model} ({routing_metadata['method']} routing, confidence: {routing_metadata['confidence']:.2%})")
+                
+            except Exception as e:
+                logger.error(f"AI routing failed: {e}, falling back to traditional routing")
+                # Fallback to traditional routing
+                complexity, _ = self.query_analyzer.analyze_query(message)
+                final_model = self._select_model_by_complexity(complexity)
+        elif not model:
+            # Traditional routing when AI router not available
             complexity, _ = self.query_analyzer.analyze_query(message)
-            model = self._select_model_by_complexity(complexity)
-        
-        # Use the specified model or default
-        final_model = model or self.default_model or "gpt-5-mini"
+            final_model = self._select_model_by_complexity(complexity)
+        else:
+            # Use the specified model
+            final_model = model
         
         try:
             # Check if model supports vision
@@ -159,7 +205,13 @@ class LLMService:
             if system_prompt:
                 final_system_prompt = system_prompt
             else:
-                final_system_prompt = "You are a helpful AI assistant for software development and data analysis. Be concise and direct. Do not introduce yourself or explain what you are unless specifically asked."
+                # Use different prompts based on model and complexity
+                if final_model == "claude-opus-4.1":
+                    final_system_prompt = "You are an expert AI assistant specializing in complex software development and architecture. Think deeply about problems, consider multiple approaches, and provide comprehensive solutions with best practices. Be thorough but clear."
+                elif final_model == "gpt-5":
+                    final_system_prompt = "You are a capable AI assistant for software development and analysis. Provide clear, well-structured solutions. Be direct and comprehensive."
+                else:
+                    final_system_prompt = "You are a helpful AI assistant for software development and data analysis. Be concise and direct. Do not introduce yourself or explain what you are unless specifically asked."
                 
             if messages and len(messages) > 1:
                 # Create a conversation context from history
@@ -217,9 +269,14 @@ class LLMService:
             
             # Check if response includes citations from search
             metadata = {
-                "complexity": complexity.value if 'complexity' in locals() else None,
                 "has_image": bool(image_data)
             }
+            
+            # Add routing metadata if available
+            if routing_metadata:
+                metadata["routing"] = routing_metadata
+            elif 'complexity' in locals():
+                metadata["complexity"] = complexity.value
             
             # Add citations if present
             if hasattr(response, 'raw_response') and response.raw_response and 'citations' in response.raw_response:
@@ -344,7 +401,13 @@ class LLMService:
             if system_prompt:
                 final_system_prompt = system_prompt
             else:
-                final_system_prompt = "You are a helpful AI assistant for software development and data analysis. Be concise and direct. Do not introduce yourself or explain what you are unless specifically asked."
+                # Use different prompts based on model and complexity
+                if final_model == "claude-opus-4.1":
+                    final_system_prompt = "You are an expert AI assistant specializing in complex software development and architecture. Think deeply about problems, consider multiple approaches, and provide comprehensive solutions with best practices. Be thorough but clear."
+                elif final_model == "gpt-5":
+                    final_system_prompt = "You are a capable AI assistant for software development and analysis. Provide clear, well-structured solutions. Be direct and comprehensive."
+                else:
+                    final_system_prompt = "You are a helpful AI assistant for software development and data analysis. Be concise and direct. Do not introduce yourself or explain what you are unless specifically asked."
                 
             if messages and len(messages) > 1:
                 # Create a conversation context from history
@@ -483,9 +546,19 @@ class LLMService:
             return "gpt-5-mini"
             
         if complexity == QueryComplexity.HIGH:
-            return "claude-opus-4.1"  # Claude Opus for most complex tasks
+            # Use Grok-4-reasoning for complex tasks
+            preferred_models = ["grok-4-reasoning", "grok-4", "gpt-5", "claude-3.5-sonnet"]
+            for model in preferred_models:
+                if model in MODEL_CONFIGS:
+                    return model
+            return "grok-4-reasoning"  # Default to Grok-4-reasoning
         elif complexity == QueryComplexity.MEDIUM:
-            return "gpt-5"  # GPT-5 for medium complexity
+            # Use GPT-5 for medium complexity
+            preferred_models = ["gpt-5", "claude-sonnet-4", "claude-sonnet-3.7", "gpt-5-mini"]
+            for model in preferred_models:
+                if model in MODEL_CONFIGS:
+                    return model
+            return "gpt-5"  # Default to GPT-5
         else:
             return "gpt-5-mini"  # GPT-5-mini for simple queries
     

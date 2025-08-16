@@ -39,7 +39,9 @@ class QueryAnalyzer:
                 'pros and cons', 'trade-offs',  # Removed 'compare and contrast'  
                 'distributed system', 'system architecture', 'scalability',
                 '1M+ users', 'concurrent users', 'optimization for', 'performance tuning',
-                'suggest optimizations', 'complex analysis', 'comprehensive analysis'
+                'suggest optimizations', 'complex analysis', 'comprehensive analysis',
+                'best approach', 'best practices', 'production-ready', 'enterprise',
+                'microservices', 'design patterns', 'clean architecture'
             ],
             'mathematical': [
                 'calculate', 'derive', 'prove', 'mathematical', 'equation',
@@ -232,8 +234,8 @@ class QueryAnalyzer:
         """
         # Model preferences by complexity
         model_preferences = {
-            QueryComplexity.HIGH: ['claude-opus-4.1', 'gpt-5', 'grok-4-reasoning', 'o4-mini-high'],  # Claude Opus for hardest problems
-            QueryComplexity.MEDIUM: ['gpt-5', 'gpt-5-mini', 'claude-3.5-sonnet', 'grok-4'],  # GPT-5 for medium complexity
+            QueryComplexity.HIGH: ['grok-4-reasoning', 'grok-4', 'gpt-5', 'claude-3.5-sonnet'],  # Grok-4-reasoning for complex tasks
+            QueryComplexity.MEDIUM: ['gpt-5', 'claude-3.5-sonnet', 'grok-4', 'gpt-5-mini'],  # GPT-5 for medium complexity
             QueryComplexity.LOW: ['gpt-5-mini', 'gpt-5-nano', 'claude-3.5-haiku', 'grok-3-mini-high']  # GPT-5-mini for simple tasks
         }
         

@@ -86,13 +86,72 @@ class LLMConfig:
                     ModelCapability.CODE_GENERATION
                 ],
                 supports_reasoning=True,
-                reasoning_param=None,  # Claude uses thinking blocks internally
-                max_tokens=200000,  # Claude supports up to 200k output tokens
+                reasoning_param="thinking",  # Claude 4 uses extended thinking
+                max_tokens=32000,  # Claude Opus 4.1 supports up to 32k output tokens
                 supports_streaming=True,
                 supports_vision=True,
                 cost_per_1k_tokens=0.015,  # $15/1M input, $75/1M output
                 cost_per_1k_input_tokens=0.015,
                 cost_per_1k_output_tokens=0.075
+            ),
+            
+            "claude-opus-4": ModelConfig(
+                name="claude-opus-4",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-opus-4-20250514",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=True,
+                reasoning_param="thinking",  # Claude 4 uses extended thinking
+                max_tokens=32000,
+                supports_streaming=True,
+                supports_vision=True,
+                cost_per_1k_tokens=0.015,  # $15/1M input, $75/1M output
+                cost_per_1k_input_tokens=0.015,
+                cost_per_1k_output_tokens=0.075
+            ),
+            
+            "claude-sonnet-4": ModelConfig(
+                name="claude-sonnet-4",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-sonnet-4-20250514",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION,
+                    ModelCapability.FAST_RESPONSE
+                ],
+                supports_reasoning=True,
+                reasoning_param="thinking",  # Claude 4 uses extended thinking
+                max_tokens=16000,
+                supports_streaming=True,
+                supports_vision=True,
+                cost_per_1k_tokens=0.003,  # $3/1M input, $15/1M output
+                cost_per_1k_input_tokens=0.003,
+                cost_per_1k_output_tokens=0.015
+            ),
+            
+            "claude-sonnet-3.7": ModelConfig(
+                name="claude-sonnet-3.7",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-3-7-sonnet-20250219",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION,
+                    ModelCapability.FAST_RESPONSE
+                ],
+                supports_reasoning=True,
+                reasoning_param="thinking",  # Claude 3.7 also supports extended thinking
+                max_tokens=8192,
+                supports_streaming=True,
+                supports_vision=True,
+                cost_per_1k_tokens=0.003,  # $3/1M input, $15/1M output
+                cost_per_1k_input_tokens=0.003,
+                cost_per_1k_output_tokens=0.015
             ),
             
             "claude-3.5-sonnet": ModelConfig(
@@ -146,7 +205,7 @@ class LLMConfig:
                 ],
                 supports_reasoning=True,
                 reasoning_param="reasoning_effort",  # Uses "minimal", "low", "medium", "high"
-                max_tokens=16384,
+                max_tokens=32768,  # GPT-5 supports up to 32k
                 supports_streaming=True,
                 supports_vision=True,
                 cost_per_1k_tokens=0.015,  # Estimated pricing
@@ -282,10 +341,10 @@ class LLMConfig:
         
         # Default model selection rules
         self.default_models = {
-            "complex": "claude-opus-4.1",    # Claude Opus for hardest problems
+            "complex": "grok-4-reasoning",    # Grok-4-reasoning for hardest problems
             "medium": "gpt-5",                # GPT-5 for medium complexity
             "fast": "gpt-5-mini",             # GPT-5 Mini for simple queries
-            "reasoning": "claude-opus-4.1"    # Claude Opus for deep reasoning
+            "reasoning": "grok-4-reasoning"   # Grok-4-reasoning for deep reasoning
         }
     
     def get_api_key(self, provider: ModelProvider) -> Optional[str]:

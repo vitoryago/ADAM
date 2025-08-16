@@ -194,7 +194,7 @@ class UnifiedLLMClient:
         elif model_config.provider == ModelProvider.ANTHROPIC:
             return await self._complete_anthropic(
                 prompt, model_config, system_prompt, temperature,
-                max_tokens, stream, image_data, routing_decision
+                max_tokens, stream, image_data, routing_decision, reasoning_effort
             )
         else:
             raise ValueError(f"Unsupported provider: {model_config.provider}")
@@ -476,7 +476,8 @@ class UnifiedLLMClient:
         max_tokens: Optional[int],
         stream: bool,
         image_data: Optional[bytes] = None,
-        routing_decision: Optional[Dict] = None
+        routing_decision: Optional[Dict] = None,
+        reasoning_effort: Optional[str] = None
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """Handle Claude model completion"""
         client = self.clients[ModelProvider.ANTHROPIC]
@@ -513,40 +514,139 @@ class UnifiedLLMClient:
             "model": model_config.api_name,
             "messages": messages,
             "max_tokens": max_tokens or model_config.max_tokens,
-            "temperature": temperature,
             "stream": stream
         }
+        
+        # Add extended thinking for Claude 4 models (Opus 4.1, Opus 4, Sonnet 4)
+        if model_config.api_name in ["claude-opus-4-1-20250805", "claude-opus-4-20250514", "claude-sonnet-4-20250514"]:
+            # Determine thinking budget based on reasoning effort
+            if reasoning_effort:
+                effort_to_budget = {
+                    "minimal": 4000,
+                    "low": 8000,
+                    "medium": 16000,
+                    "high": 32000
+                }
+                budget_tokens = effort_to_budget.get(reasoning_effort, 16000)
+            else:
+                # Default budget for complex tasks
+                budget_tokens = 16000
+            
+            # Add thinking parameter
+            request_params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": budget_tokens
+            }
+            
+            # Always force streaming for extended thinking (required by Claude API)
+            request_params["stream"] = True
+            # Extended thinking requires temperature=1
+            request_params["temperature"] = 1.0
+            logger.info(f"Forcing streaming and temperature=1 for extended thinking with {budget_tokens} tokens")
+            
+            logger.info(f"Enabling extended thinking for {model_config.api_name} with {budget_tokens} budget tokens")
+        else:
+            # Add temperature for non-extended-thinking models
+            request_params["temperature"] = temperature
         
         # Add system prompt if provided
         if system_prompt:
             request_params["system"] = system_prompt
         
         try:
-            if stream:
-                # Stream response
-                stream_response = await client.messages.create(**request_params)
+            # Check if we're forcing streaming for extended thinking
+            forced_streaming = request_params.get("stream", False) and not stream
+            
+            if stream or forced_streaming:
+                # Stream response (either requested or forced for extended thinking)
+                # For Anthropic, use the messages.stream method instead of create with stream=True
+                request_params.pop('stream', None)  # Remove stream parameter
+                stream_response = client.messages.stream(**request_params)
                 
-                async def stream_generator():
-                    async for chunk in stream_response:
-                        if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
-                            yield chunk.delta.text
-                        elif hasattr(chunk, 'content_block') and hasattr(chunk.content_block, 'text'):
-                            yield chunk.content_block.text
-                return stream_generator()
+                if stream:
+                    # Return actual stream for streaming requests
+                    async def stream_generator():
+                        async with stream_response as stream:
+                            async for chunk in stream:
+                                if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
+                                    yield chunk.delta.text
+                                elif hasattr(chunk, 'content_block') and hasattr(chunk.content_block, 'text'):
+                                    yield chunk.content_block.text
+                    return stream_generator()
+                else:
+                    # Collect stream for non-streaming requests with forced streaming
+                    content = ""
+                    thinking_content = None
+                    usage_data = None
+                    
+                    async with stream_response as stream:
+                        async for chunk in stream:
+                            if hasattr(chunk, 'type'):
+                                if chunk.type == 'content_block_delta':
+                                    if hasattr(chunk, 'delta'):
+                                        if hasattr(chunk.delta, 'type'):
+                                            if chunk.delta.type == 'thinking_delta' and hasattr(chunk.delta, 'thinking'):
+                                                if thinking_content is None:
+                                                    thinking_content = ""
+                                                thinking_content += chunk.delta.thinking
+                                            elif chunk.delta.type == 'text_delta' and hasattr(chunk.delta, 'text'):
+                                                content += chunk.delta.text
+                                elif chunk.type == 'message_delta':
+                                    if hasattr(chunk, 'usage'):
+                                        usage_data = chunk.usage
+                                elif chunk.type == 'message_stop':
+                                    # Final message data
+                                    if hasattr(chunk, 'message') and hasattr(chunk.message, 'usage'):
+                                        usage_data = chunk.message.usage
+                    
+                    # Calculate cost
+                    cost = 0.0
+                    if usage_data:
+                        input_tokens = getattr(usage_data, 'input_tokens', 0)
+                        output_tokens = getattr(usage_data, 'output_tokens', 0)
+                        
+                        if model_config.cost_per_1k_input_tokens and model_config.cost_per_1k_output_tokens:
+                            input_cost = (input_tokens / 1000) * model_config.cost_per_1k_input_tokens
+                            output_cost = (output_tokens / 1000) * model_config.cost_per_1k_output_tokens
+                            cost = input_cost + output_cost
+                        else:
+                            total_tokens = input_tokens + output_tokens
+                            cost = (total_tokens / 1000) * model_config.cost_per_1k_tokens
+                    
+                    # Build response with routing info
+                    raw_response_data = {}
+                    if routing_decision:
+                        raw_response_data['routing_decision'] = routing_decision
+                    
+                    return LLMResponse(
+                        content=content,
+                        model=model_config.name,
+                        reasoning_content=thinking_content,
+                        total_tokens=usage_data.input_tokens + usage_data.output_tokens if usage_data else 0,
+                        completion_tokens=usage_data.output_tokens if usage_data else 0,
+                        cost=cost,
+                        raw_response=raw_response_data
+                    )
             else:
-                # Get complete response
+                # Get complete response (non-streaming, non-extended-thinking)
                 response = await client.messages.create(**request_params)
                 
                 # Extract content from Claude response
                 content = ""
+                thinking_content = None
                 if hasattr(response, 'content'):
                     if isinstance(response.content, list):
-                        # Join all text blocks, preserving formatting
+                        # Process all blocks, separating thinking from text
                         for block in response.content:
-                            if hasattr(block, 'text'):
+                            if hasattr(block, 'type'):
+                                if block.type == 'thinking':
+                                    # Capture thinking content (summarized in Claude 4)
+                                    if hasattr(block, 'thinking'):
+                                        thinking_content = block.thinking
+                                elif block.type == 'text':
+                                    content += block.text if hasattr(block, 'text') else str(block)
+                            elif hasattr(block, 'text'):
                                 content += block.text
-                            elif hasattr(block, 'type') and block.type == 'text':
-                                content += block.text if hasattr(block, 'text') else str(block)
                     elif isinstance(response.content, str):
                         content = response.content
                     else:
@@ -576,7 +676,7 @@ class UnifiedLLMClient:
                 return LLMResponse(
                     content=content,
                     model=model_config.name,
-                    reasoning_content=None,  # Claude Opus 4.1 handles reasoning internally
+                    reasoning_content=thinking_content,  # Extended thinking content if available
                     total_tokens=usage.input_tokens + usage.output_tokens if usage else 0,
                     completion_tokens=usage.output_tokens if usage else 0,
                     cost=cost,
