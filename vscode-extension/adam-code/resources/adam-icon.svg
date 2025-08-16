@@ -1,16 +1,18 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background circle -->
-  <circle cx="16" cy="16" r="14" fill="#6366f1"/>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle with gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e40af;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="url(#bgGradient)" />
   
-  <!-- Letter A -->
-  <path d="M16 7L10 23H12.5L13.5 20H18.5L19.5 23H22L16 7ZM14.5 17.5L16 13L17.5 17.5H14.5Z" fill="white"/>
-  
-  <!-- Brain network dots around the A -->
-  <circle cx="8" cy="10" r="1" fill="#a78bfa" opacity="0.8"/>
-  <circle cx="24" cy="10" r="1" fill="#a78bfa" opacity="0.8"/>
-  <circle cx="8" cy="22" r="1" fill="#a78bfa" opacity="0.8"/>
-  <circle cx="24" cy="22" r="1" fill="#a78bfa" opacity="0.8"/>
-  
-  <!-- Connecting lines -->
-  <path d="M8 10L14.5 15M24 10L17.5 15M8 22L14.5 17M24 22L17.5 17" stroke="#8b5cf6" stroke-width="0.5" opacity="0.4"/>
+  <!-- Letter A with clean, modern design -->
+  <text x="64" y="90" 
+        font-family="'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" 
+        font-size="80" 
+        font-weight="600" 
+        fill="white" 
+        text-anchor="middle">A</text>
 </svg>
