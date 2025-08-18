@@ -15,7 +15,7 @@
   ],
   "icon": "resources/adam-icon.png",
   "activationEvents": [
-    "*"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -59,6 +59,21 @@
         "command": "adam.voice",
         "title": "ADAM: Voice Chat",
         "icon": "$(unmute)"
+      },
+      {
+        "command": "adam.selectWorkspace",
+        "title": "ADAM: Select Workspace Folder",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "adam.toggleStandalone",
+        "title": "ADAM: Toggle Standalone Mode",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "adam.restartBackend",
+        "title": "ADAM: Restart Backend",
+        "icon": "$(debug-restart)"
       }
     ],
     "viewsContainers": {
@@ -99,6 +114,16 @@
           "default": true,
           "description": "Use standalone mode (no backend required)"
         },
+        "adam.backendPath": {
+          "type": "string",
+          "default": "/Users/vitoryago/ADAM",
+          "description": "Path to ADAM backend project (for non-standalone mode)"
+        },
+        "adam.autoStartBackend": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start backend when extension activates (non-standalone mode)"
+        },
         "adam.openaiApiKey": {
           "type": "string",
           "default": "",
@@ -128,6 +153,16 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically save important interactions to memory"
+        },
+        "adam.preferredModel": {
+          "type": "string",
+          "enum": [
+            "grok-4-reasoning",
+            "claude-opus-4.1",
+            "gpt-5-high"
+          ],
+          "default": "grok-4-reasoning",
+          "description": "Preferred high-performance model for complex tasks in VSCode"
         },
         "adam.sqlDialect": {
           "type": "string",

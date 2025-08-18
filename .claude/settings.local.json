@@ -80,7 +80,15 @@
       "mcp__filesystem__read_text_file",
       "mcp__filesystem__list_directory",
       "mcp__filesystem__read_multiple_files",
-      "mcp__sequential-thinking__sequentialthinking"
+      "mcp__sequential-thinking__sequentialthinking",
+      "mcp__filesystem__read_media_file",
+      "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --install-extension /Users/vitoryago/ADAM/vscode-extension/adam-code/adam-code-0.1.2.vsix --force)",
+      "Bash(echo $SHELL)",
+      "Bash(sudo ln:*)",
+      "Bash(export:*)",
+      "Bash(/Users/vitoryago/ADAM/bin/adam --help)",
+      "Bash(hash -r)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }
