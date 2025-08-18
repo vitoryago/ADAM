@@ -1,0 +1,74 @@
+#!/bin/bash
+# ADAM Global Command - Analytics Data Assistant with Memory
+# Works from anywhere, just like Claude Code
+
+# Color codes for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Set ADAM root directory
+ADAM_ROOT="/Users/vitoryago/ADAM"
+
+# Function to show help
+show_help() {
+    echo -e "${BLUE}ADAM - Analytics Data Assistant with Memory${NC}"
+    echo ""
+    echo "Usage: adam [options] [message]"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help     Show this help message"
+    echo "  -w, --web      Launch web interface (Streamlit)"
+    echo "  -c, --chat     Launch interactive chat mode (default)"
+    echo "  -v, --version  Show version information"
+    echo ""
+    echo "Examples:"
+    echo "  adam                    # Start interactive chat"
+    echo "  adam --web              # Launch web interface"
+    echo "  adam \"Hello ADAM\"       # Send a single message"
+    echo ""
+    echo "Just like Claude Code, ADAM provides AI assistance with perfect memory!"
+}
+
+# Check which Python to use (prefer conda if available)
+if command -v /opt/anaconda3/bin/python &> /dev/null; then
+    PYTHON_CMD="/opt/anaconda3/bin/python"
+elif command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+else
+    PYTHON_CMD="python"
+fi
+
+# Parse arguments
+case "$1" in
+    -h|--help)
+        show_help
+        exit 0
+        ;;
+    -v|--version)
+        echo -e "${GREEN}ADAM v2.0.0${NC}"
+        echo "Analytics Data Assistant with Memory"
+        exit 0
+        ;;
+    -w|--web)
+        echo -e "${BLUE}Launching ADAM Web Interface...${NC}"
+        cd "$ADAM_ROOT"
+        streamlit run web/adam_web.py
+        exit 0
+        ;;
+    -c|--chat|"")
+        # Interactive chat mode (default)
+        echo -e "${BLUE}Starting ADAM Interactive Chat...${NC}"
+        echo -e "${YELLOW}(Press Ctrl+C to exit)${NC}"
+        echo ""
+        cd "$ADAM_ROOT"
+        exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_chat.py"
+        ;;
+    *)
+        # Single message mode
+        cd "$ADAM_ROOT"
+        echo "$@" | $PYTHON_CMD "$ADAM_ROOT/cli/adam_chat.py"
+        ;;
+esac

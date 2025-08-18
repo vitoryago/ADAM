@@ -6,8 +6,8 @@ langchain-anthropic==0.1.1
 langgraph==0.0.26
 ollama==0.1.4
 chromadb==0.4.22
-openai==1.6.1  # For O1 models and vision
-anthropic==0.8.1  # For Claude Opus 4
+openai>=1.10.0  # For O1 models and vision
+anthropic>=0.17.0,<1  # Compatible with langchain-anthropic
 
 # Voice capabilities
 openai-whisper==20231117

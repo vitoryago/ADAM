@@ -1,0 +1,33 @@
+# Core dependencies that actually work together
+# Using latest compatible versions
+
+# Core AI/ML - Let pip resolve versions
+langchain
+langchain-community
+langchain-openai
+langchain-anthropic
+chromadb
+openai
+anthropic
+
+# FastAPI for backend
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+
+# Essential utilities
+python-dotenv
+requests
+aiohttp
+numpy
+pandas
+
+# For embeddings and search
+sentence-transformers
+tiktoken
+
+# Optional - comment out if causing issues
+# openai-whisper
+# pyttsx3
+# SpeechRecognition
