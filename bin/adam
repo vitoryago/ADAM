@@ -20,13 +20,13 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  -h, --help     Show this help message"
-    echo "  -w, --web      Launch web interface (Streamlit)"
     echo "  -c, --chat     Launch interactive chat mode (default)"
     echo "  -v, --version  Show version information"
+    echo "  -r, --react    Open React web interface in browser"
     echo ""
     echo "Examples:"
     echo "  adam                    # Start interactive chat"
-    echo "  adam --web              # Launch web interface"
+    echo "  adam --react            # Open React web interface"
     echo "  adam \"Hello ADAM\"       # Send a single message"
     echo ""
     echo "Just like Claude Code, ADAM provides AI assistance with perfect memory!"
@@ -52,19 +52,49 @@ case "$1" in
         echo "Analytics Data Assistant with Memory"
         exit 0
         ;;
-    -w|--web)
-        echo -e "${BLUE}Launching ADAM Web Interface...${NC}"
-        cd "$ADAM_ROOT"
-        streamlit run web/adam_web.py
+    -r|--react)
+        echo -e "${BLUE}Opening ADAM React Interface...${NC}"
+        
+        # Check if backend is running
+        if ! curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
+            echo -e "${YELLOW}Starting ADAM backend...${NC}"
+            cd "$ADAM_ROOT/src/adam_v2"
+            python main.py > "$ADAM_ROOT/backend.log" 2>&1 &
+            sleep 3
+        else
+            echo -e "${GREEN}✓ Backend is running${NC}"
+        fi
+        
+        # Check if React dev server is running
+        if ! curl -s http://localhost:5173 > /dev/null 2>&1; then
+            echo -e "${YELLOW}Starting React development server...${NC}"
+            cd "$ADAM_ROOT/frontend/AdamChat"
+            npm run dev > "$ADAM_ROOT/frontend.log" 2>&1 &
+            sleep 5
+        else
+            echo -e "${GREEN}✓ React dev server is running${NC}"
+        fi
+        
+        # Open React frontend in browser
+        open "http://localhost:5173" 2>/dev/null || xdg-open "http://localhost:5173" 2>/dev/null
+        echo -e "${GREEN}✓ ADAM React interface opened in browser${NC}"
+        echo -e "${BLUE}Backend API: http://localhost:8000/api/docs${NC}"
+        echo -e "${BLUE}React Frontend: http://localhost:5173${NC}"
         exit 0
         ;;
     -c|--chat|"")
-        # Interactive chat mode (default)
-        echo -e "${BLUE}Starting ADAM Interactive Chat...${NC}"
+        # Interactive chat mode with tools (default)
+        echo -e "${BLUE}Starting ADAM with Full Tool Support...${NC}"
         echo -e "${YELLOW}(Press Ctrl+C to exit)${NC}"
         echo ""
         cd "$ADAM_ROOT"
-        exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_chat.py"
+        
+        # Use the tool-enabled CLI if it exists, otherwise fallback
+        if [ -f "$ADAM_ROOT/cli/adam_tools.py" ]; then
+            exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_tools.py"
+        else
+            exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_chat.py"
+        fi
         ;;
     *)
         # Single message mode

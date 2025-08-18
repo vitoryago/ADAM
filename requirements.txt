@@ -1,54 +1,87 @@
-# Core AI/ML
-langchain==0.1.1
-langchain-community==0.0.13
-langchain-openai==0.0.5
-langchain-anthropic==0.1.1
-langgraph==0.0.26
-ollama==0.1.4
-chromadb==0.4.22
-openai>=1.10.0  # For O1 models and vision
-anthropic>=0.17.0,<1  # Compatible with langchain-anthropic
+# ADAM - Analytics Data Assistant with Memory
+# Consolidated Requirements - All dependencies in one file
 
-# Voice capabilities
-openai-whisper==20231117
-pyttsx3==2.90
-SpeechRecognition==3.10.1
-pyaudio==0.2.14
+# ============ CORE AI/ML ============
+# LangChain ecosystem
+langchain>=0.1.1
+langchain-community>=0.0.13
+langchain-openai>=0.0.5
+langchain-anthropic>=0.1.1
+langgraph>=0.0.26
 
-# Data tools
-pandas==2.1.4
-sqlalchemy==2.0.25
-dbt-core==1.7.4
-sqlparse==0.4.4
-psycopg2-binary==2.9.9  # PostgreSQL
-sentence-transformers==2.2.2  # For embeddings
-numpy==1.24.3
-scikit-learn==1.3.2  # For TSNE
-matplotlib==3.7.2  # For visualization
-seaborn==0.12.2
-networkx==3.1  # For memory network graph
-rank-bm25==0.2.2  # For BM25 keyword search in advanced RAG
-matplotlib-venn==0.11.9  # For Venn diagrams in visualizations
+# LLM Providers
+openai>=1.10.0  # GPT-5, O1 models, vision, whisper
+anthropic>=0.17.0,<1  # Claude models
+ollama>=0.1.4  # Local models
 
-# Utilities
-python-dotenv==1.0.0
-pydantic==2.5.3
-pyyaml==6.0.1
-rich==13.7.0  # Beautiful terminal output
-click==8.1.7  # CLI tools
-aiohttp==3.9.1  # Async HTTP for real-time pricing
-aiofiles==23.2.1  # Async file operations for tools
+# Vector Database & Embeddings
+chromadb>=0.4.22
+sentence-transformers>=2.2.2
+rank-bm25>=0.2.2  # BM25 keyword search
 
-# Web interface
-streamlit==1.29.0
-gradio==4.13.0  # Alternative to Streamlit
+# ============ BACKEND (FastAPI) ============
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+pydantic>=2.5.3
+pydantic-settings>=2.0.0
 
-# Development
-pytest==7.4.4
-black==23.12.1
-ruff==0.1.9
-ipykernel==6.28.0  # For Jupyter notebooks
+# ============ DATABASE ============
+sqlalchemy>=2.0.25
+psycopg2-binary>=2.9.9  # PostgreSQL
+aiosqlite>=0.19.0  # Async SQLite
 
-# Documentation
-mkdocs==1.5.3
-mkdocs-material==9.5.3
+# ============ VOICE & AUDIO ============
+# openai-whisper==20231117  # Uncomment if needed
+# pyttsx3>=2.90  # Uncomment if needed
+# SpeechRecognition>=3.10.1  # Uncomment if needed
+# pyaudio>=0.2.14  # Uncomment if needed
+elevenlabs>=0.2.0  # Text-to-speech
+
+# ============ DATA SCIENCE ============
+pandas>=2.1.4
+numpy>=1.24.3
+scikit-learn>=1.3.2
+matplotlib>=3.7.2
+seaborn>=0.12.2
+networkx>=3.1  # Memory network graphs
+matplotlib-venn>=0.11.9  # Venn diagrams
+
+# ============ SQL & DATABASE TOOLS ============
+sqlparse>=0.4.4
+dbt-core>=1.7.4  # Uncomment if using dbt
+
+# ============ WEB INTERFACE ============
+# React frontend (no Python dependencies needed)
+pillow>=10.0.0  # Image handling for backend
+
+# ============ UTILITIES ============
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+rich>=13.7.0  # Beautiful terminal output
+click>=8.1.7  # CLI tools
+aiohttp>=3.9.1  # Async HTTP
+aiofiles>=23.2.1  # Async file operations
+tiktoken>=0.5.0  # Token counting
+requests>=2.31.0
+httpx>=0.25.0
+
+# ============ SCREEN CAPTURE & SYSTEM (Optional) ============
+# mss>=9.0.1  # Cross-platform screen capture
+# pytesseract>=0.3.10  # OCR for text extraction
+# pystray>=0.19.5  # System tray integration
+# keyboard>=0.13.5  # Global hotkeys
+# plyer>=2.1  # Native notifications
+
+# ============ DEVELOPMENT & TESTING ============
+pytest>=7.4.4
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+black>=23.12.1
+ruff>=0.1.9
+ipykernel>=6.28.0  # Jupyter notebooks
+watchdog>=3.0.0  # File watching
+
+# ============ DOCUMENTATION ============
+mkdocs>=1.5.3
+mkdocs-material>=9.5.3
