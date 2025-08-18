@@ -7,11 +7,15 @@ import { SQLOptimizer } from './tools/sqlOptimizer';
 import { DBTGenerator } from './tools/dbtGenerator';
 import { FileManager } from './tools/fileManager';
 import { VoiceChat } from './features/voiceChat';
+import { spawn, ChildProcess } from 'child_process';
+import * as path from 'path';
+import * as fs from 'fs';
 
 let adamClient: ADAMClient | StandaloneADAMClient;
 let chatProvider: ADAMChatProvider;
+let backendProcess: ChildProcess | null = null;
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
     console.log('ADAM Code is activating...');
 
     // Check if we should use standalone mode (default: true)
@@ -23,11 +27,18 @@ export function activate(context: vscode.ExtensionContext) {
         adamClient = new StandaloneADAMClient(context);
         console.log('ADAM running in standalone mode - no backend required!');
     } else {
-        // Use backend mode (original)
-        adamClient = new ADAMClient(
-            config.get('serverUrl') || 'http://localhost:8000',
-            config.get('projectId') || '3a859e97-16fd-46c6-b018-1ede9fade704'
-        );
+        // Use backend mode - start backend automatically
+        const backendStarted = await startBackend(context);
+        if (!backendStarted) {
+            // Fallback to standalone if backend fails
+            vscode.window.showWarningMessage('Failed to start ADAM backend. Using standalone mode.');
+            adamClient = new StandaloneADAMClient(context);
+        } else {
+            adamClient = new ADAMClient(
+                config.get('serverUrl') || 'http://localhost:8000',
+                config.get('projectId') || '3a859e97-16fd-46c6-b018-1ede9fade704'
+            );
+        }
     }
 
     // Initialize chat provider - cast to ADAMClient for now
@@ -320,10 +331,219 @@ function registerCommands(context: vscode.ExtensionContext) {
             });
         })
     );
+    
+    // Select workspace folder
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.selectWorkspace', async () => {
+            const result = await vscode.window.showOpenDialog({
+                canSelectFiles: false,
+                canSelectFolders: true,
+                canSelectMany: false,
+                openLabel: 'Select ADAM Backend Folder',
+                defaultUri: vscode.Uri.file('/Users/vitoryago/ADAM')
+            });
+            
+            if (result && result[0]) {
+                const folderPath = result[0].fsPath;
+                
+                // Verify it's a valid ADAM backend folder
+                if (!fs.existsSync(path.join(folderPath, 'src', 'adam_v2', 'main.py'))) {
+                    vscode.window.showErrorMessage('Selected folder does not contain ADAM backend (src/adam_v2/main.py not found)');
+                    return;
+                }
+                
+                // Update configuration
+                await vscode.workspace.getConfiguration('adam').update('backendPath', folderPath, vscode.ConfigurationTarget.Global);
+                vscode.window.showInformationMessage(`ADAM backend path updated to: ${folderPath}`);
+                
+                // Ask if user wants to restart backend
+                const restart = await vscode.window.showInformationMessage(
+                    'Restart ADAM backend with new path?',
+                    'Yes', 'No'
+                );
+                
+                if (restart === 'Yes') {
+                    vscode.commands.executeCommand('adam.restartBackend');
+                }
+            }
+        })
+    );
+    
+    // Toggle standalone mode
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.toggleStandalone', async () => {
+            const config = vscode.workspace.getConfiguration('adam');
+            const currentMode = config.get('standalone', true);
+            const newMode = !currentMode;
+            
+            await config.update('standalone', newMode, vscode.ConfigurationTarget.Global);
+            
+            const modeText = newMode ? 'Standalone (no backend)' : 'Backend mode';
+            vscode.window.showInformationMessage(`ADAM switched to: ${modeText}`);
+            
+            // Reload window to apply changes
+            const reload = await vscode.window.showInformationMessage(
+                'Reload window to apply changes?',
+                'Reload', 'Later'
+            );
+            
+            if (reload === 'Reload') {
+                vscode.commands.executeCommand('workbench.action.reloadWindow');
+            }
+        })
+    );
+    
+    // Restart backend
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.restartBackend', async () => {
+            const config = vscode.workspace.getConfiguration('adam');
+            const useStandalone = config.get('standalone', true);
+            
+            if (useStandalone) {
+                vscode.window.showInformationMessage('ADAM is in standalone mode - no backend to restart');
+                return;
+            }
+            
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: "Restarting ADAM backend...",
+                cancellable: false
+            }, async () => {
+                // Stop existing backend
+                if (backendProcess) {
+                    backendProcess.kill();
+                    backendProcess = null;
+                    await new Promise(resolve => setTimeout(resolve, 2000));  // Wait for process to die
+                }
+                
+                // Start backend again
+                const started = await startBackend(context);
+                if (started) {
+                    vscode.window.showInformationMessage('ADAM backend restarted successfully');
+                } else {
+                    vscode.window.showErrorMessage('Failed to restart ADAM backend');
+                }
+            });
+        })
+    );
 }
 
 export function deactivate() {
     if (adamClient) {
         adamClient.disconnect();
     }
+    
+    // Stop backend process if running
+    if (backendProcess) {
+        console.log('Stopping ADAM backend...');
+        backendProcess.kill();
+        backendProcess = null;
+    }
+}
+
+/**
+ * Start the ADAM backend automatically
+ */
+async function startBackend(context: vscode.ExtensionContext): Promise<boolean> {
+    try {
+        const config = vscode.workspace.getConfiguration('adam');
+        const autoStart = config.get('autoStartBackend', true);
+        
+        if (!autoStart) {
+            console.log('Auto-start backend is disabled');
+            return false;
+        }
+        
+        // Get backend path from configuration
+        const configuredPath = config.get<string>('backendPath');
+        
+        // Try to find ADAM project path
+        const adamPaths = [
+            configuredPath,
+            '/Users/vitoryago/ADAM',  // Primary ADAM location
+            path.join(process.env.HOME || '', 'ADAM'),
+            path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', 'ADAM')
+        ].filter(p => p);  // Remove undefined/null values
+        
+        let adamPath: string | null = null;
+        for (const testPath of adamPaths) {
+            if (testPath && fs.existsSync(path.join(testPath, 'src', 'adam_v2', 'main.py'))) {
+                adamPath = testPath;
+                break;
+            }
+        }
+        
+        if (!adamPath) {
+            console.error('ADAM backend not found in expected locations');
+            return false;
+        }
+        
+        console.log(`Starting ADAM backend from: ${adamPath}`);
+        
+        // Check if backend is already running
+        const isRunning = await checkBackendRunning();
+        if (isRunning) {
+            console.log('ADAM backend is already running');
+            return true;
+        }
+        
+        // Start the backend process
+        backendProcess = spawn('python', ['-m', 'adam_v2.main'], {
+            cwd: adamPath,
+            env: {
+                ...process.env,
+                PYTHONPATH: path.join(adamPath, 'src')
+            },
+            detached: false
+        });
+        
+        backendProcess.stdout?.on('data', (data) => {
+            console.log(`ADAM Backend: ${data}`);
+        });
+        
+        backendProcess.stderr?.on('data', (data) => {
+            console.error(`ADAM Backend Error: ${data}`);
+        });
+        
+        backendProcess.on('error', (error) => {
+            console.error('Failed to start ADAM backend:', error);
+            vscode.window.showErrorMessage(`Failed to start ADAM backend: ${error.message}`);
+        });
+        
+        // Wait for backend to be ready
+        await waitForBackend();
+        
+        vscode.window.showInformationMessage('ADAM backend started successfully');
+        return true;
+        
+    } catch (error: any) {
+        console.error('Error starting ADAM backend:', error);
+        return false;
+    }
+}
+
+/**
+ * Check if backend is already running
+ */
+async function checkBackendRunning(): Promise<boolean> {
+    try {
+        const response = await fetch('http://localhost:8000/api/health');
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Wait for backend to be ready
+ */
+async function waitForBackend(maxRetries = 30): Promise<boolean> {
+    for (let i = 0; i < maxRetries; i++) {
+        const isRunning = await checkBackendRunning();
+        if (isRunning) {
+            return true;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    return false;
 }

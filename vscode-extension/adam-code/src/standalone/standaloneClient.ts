@@ -178,10 +178,12 @@ export class StandaloneADAMClient {
         const modelMapping: { [key: string]: string } = {
             'gpt-5': 'gpt-5-2025-08-07',
             'gpt-5-mini': 'gpt-5-mini-2025-08-07',
-            'gpt-5-nano': 'gpt-5-nano'
+            'gpt-5-nano': 'gpt-5-nano',
+            'grok-4-reasoning': 'gpt-5-2025-08-07',  // Map grok-4-reasoning to GPT-5 for OpenAI
+            'claude-opus-4.1': 'gpt-5-2025-08-07'    // Map Claude to GPT-5 as fallback
         };
         
-        const apiModel = modelMapping[complexity.model] || 'gpt-5-mini-2025-08-07';
+        const apiModel = modelMapping[complexity.model] || 'gpt-5-2025-08-07';  // Default to GPT-5 for VSCode
         
         // Build messages array with conversation history
         const messages: any[] = [
@@ -322,7 +324,7 @@ export class StandaloneADAMClient {
         });
         
         if (!response.ok) {
-            const error = await response.json();
+            const error = await response.json() as any;
             throw new Error(error.error?.message || 'API request failed');
         }
         
@@ -375,26 +377,31 @@ export class StandaloneADAMClient {
     private analyzeComplexity(query: string): { level: 'high' | 'medium' | 'low'; model: string; reasoning_effort?: string } {
         const lowerQuery = query.toLowerCase();
         
-        // High complexity indicators - use GPT-5 with high reasoning
+        // Get user's preferred high-performance model from VSCode settings
+        const config = vscode.workspace.getConfiguration('adam');
+        const preferredModel = config.get<string>('preferredModel', 'grok-4-reasoning');
+        
+        // High complexity indicators - use preferred high-performance model for VSCode
         if (lowerQuery.includes('implement') || lowerQuery.includes('refactor') ||
             lowerQuery.includes('debug') || lowerQuery.includes('architecture') ||
             lowerQuery.includes('design a solution') || lowerQuery.includes('complex') ||
             lowerQuery.includes('step by step') || lowerQuery.includes('code generation') ||
             lowerQuery.includes('build a') || lowerQuery.includes('create a function')) {
-            return { level: 'high', model: 'gpt-5', reasoning_effort: 'high' };
+            // Use the user's preferred high-performance model
+            return { level: 'high', model: preferredModel, reasoning_effort: 'high' };
         }
         
-        // Medium complexity indicators - use GPT-5 with medium reasoning
+        // Medium complexity indicators - use gpt-5 with high reasoning for VSCode
         if (lowerQuery.includes('explain') || lowerQuery.includes('analyze') ||
             lowerQuery.includes('write') || lowerQuery.includes('create') || 
             lowerQuery.includes('fix') || lowerQuery.includes('update') || 
             lowerQuery.includes('modify') || lowerQuery.includes('optimize') ||
             lowerQuery.includes('how does') || lowerQuery.includes('sql')) {
-            return { level: 'medium', model: 'gpt-5', reasoning_effort: 'medium' };
+            return { level: 'medium', model: 'gpt-5', reasoning_effort: 'high' };
         }
         
-        // Default to low complexity for simple queries - use gpt-5-mini with minimal reasoning
-        return { level: 'low', model: 'gpt-5-mini', reasoning_effort: 'minimal' };
+        // Default to low complexity - still use gpt-5 with medium reasoning for VSCode
+        return { level: 'low', model: 'gpt-5', reasoning_effort: 'medium' };
     }
     
     /**
