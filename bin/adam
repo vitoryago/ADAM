@@ -89,9 +89,11 @@ case "$1" in
         echo ""
         cd "$ADAM_ROOT"
         
-        # Use the tool-enabled CLI if it exists, otherwise fallback
-        if [ -f "$ADAM_ROOT/cli/adam_tools.py" ]; then
-            exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_tools.py"
+        # Use the Claude-style natural language CLI
+        if [ -f "$ADAM_ROOT/cli/adam_claude_style.py" ]; then
+            exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_claude_style.py"
+        elif [ -f "$ADAM_ROOT/cli/adam_with_tools.py" ]; then
+            exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_with_tools.py"
         else
             exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_chat.py"
         fi
