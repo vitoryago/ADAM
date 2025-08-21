@@ -88,7 +88,10 @@
       "Bash(export:*)",
       "Bash(/Users/vitoryago/ADAM/bin/adam --help)",
       "Bash(hash -r)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(code --install-extension:*)",
+      "Bash(adam:*)",
+      "Bash(code:*)"
     ],
     "deny": []
   }

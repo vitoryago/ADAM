@@ -1,6 +1,5 @@
 #!/bin/bash
-# ADAM Global Command - Analytics Data Assistant with Memory
-# Works from anywhere, just like Claude Code
+# ADAM - Analytics Data Assistant with Memory
 
 # Color codes for output
 RED='\033[0;31m'
@@ -16,20 +15,15 @@ ADAM_ROOT="/Users/vitoryago/ADAM"
 show_help() {
     echo -e "${BLUE}ADAM - Analytics Data Assistant with Memory${NC}"
     echo ""
-    echo "Usage: adam [options] [message]"
+    echo "Usage: adam [options]"
     echo ""
     echo "Options:"
-    echo "  -h, --help     Show this help message"
-    echo "  -c, --chat     Launch interactive chat mode (default)"
-    echo "  -v, --version  Show version information"
-    echo "  -r, --react    Open React web interface in browser"
+    echo "  --web          Launch web interface (React + Backend)"
+    echo "  --help         Show this help message"
+    echo "  --version      Show version information"
     echo ""
-    echo "Examples:"
-    echo "  adam                    # Start interactive chat"
-    echo "  adam --react            # Open React web interface"
-    echo "  adam \"Hello ADAM\"       # Send a single message"
-    echo ""
-    echo "Just like Claude Code, ADAM provides AI assistance with perfect memory!"
+    echo "For IDE integration, use the ADAM VSCode extension."
+    echo "It's already installed and available in all VSCode sessions!"
 }
 
 # Check which Python to use (prefer conda if available)
@@ -43,64 +37,76 @@ fi
 
 # Parse arguments
 case "$1" in
-    -h|--help)
+    --help)
         show_help
         exit 0
         ;;
-    -v|--version)
+    --version)
         echo -e "${GREEN}ADAM v2.0.0${NC}"
         echo "Analytics Data Assistant with Memory"
         exit 0
         ;;
-    -r|--react)
-        echo -e "${BLUE}Opening ADAM React Interface...${NC}"
+    --web)
+        echo -e "${BLUE}🚀 Launching ADAM Web Interface...${NC}"
+        echo ""
         
         # Check if backend is running
         if ! curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
-            echo -e "${YELLOW}Starting ADAM backend...${NC}"
+            echo -e "${YELLOW}⏳ Starting ADAM backend...${NC}"
             cd "$ADAM_ROOT/src/adam_v2"
-            python main.py > "$ADAM_ROOT/backend.log" 2>&1 &
-            sleep 3
+            $PYTHON_CMD main.py > "$ADAM_ROOT/backend.log" 2>&1 &
+            BACKEND_PID=$!
+            
+            # Wait for backend to be ready
+            for i in {1..10}; do
+                if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
+                    echo -e "${GREEN}✅ Backend started successfully${NC}"
+                    break
+                fi
+                sleep 1
+            done
         else
-            echo -e "${GREEN}✓ Backend is running${NC}"
+            echo -e "${GREEN}✅ Backend is already running${NC}"
         fi
         
         # Check if React dev server is running
         if ! curl -s http://localhost:5173 > /dev/null 2>&1; then
-            echo -e "${YELLOW}Starting React development server...${NC}"
+            echo -e "${YELLOW}⏳ Starting React frontend...${NC}"
             cd "$ADAM_ROOT/frontend/AdamChat"
             npm run dev > "$ADAM_ROOT/frontend.log" 2>&1 &
-            sleep 5
+            FRONTEND_PID=$!
+            
+            # Wait for frontend to be ready
+            for i in {1..10}; do
+                if curl -s http://localhost:5173 > /dev/null 2>&1; then
+                    echo -e "${GREEN}✅ Frontend started successfully${NC}"
+                    break
+                fi
+                sleep 1
+            done
         else
-            echo -e "${GREEN}✓ React dev server is running${NC}"
+            echo -e "${GREEN}✅ Frontend is already running${NC}"
         fi
         
-        # Open React frontend in browser
-        open "http://localhost:5173" 2>/dev/null || xdg-open "http://localhost:5173" 2>/dev/null
-        echo -e "${GREEN}✓ ADAM React interface opened in browser${NC}"
-        echo -e "${BLUE}Backend API: http://localhost:8000/api/docs${NC}"
-        echo -e "${BLUE}React Frontend: http://localhost:5173${NC}"
-        exit 0
-        ;;
-    -c|--chat|"")
-        # Interactive chat mode with tools (default)
-        echo -e "${BLUE}Starting ADAM with Full Tool Support...${NC}"
-        echo -e "${YELLOW}(Press Ctrl+C to exit)${NC}"
+        # Open browser
         echo ""
-        cd "$ADAM_ROOT"
+        echo -e "${BLUE}📊 Opening ADAM in your browser...${NC}"
+        sleep 1
+        open "http://localhost:5173" 2>/dev/null || xdg-open "http://localhost:5173" 2>/dev/null
         
-        # Use the Claude-style natural language CLI
-        if [ -f "$ADAM_ROOT/cli/adam_claude_style.py" ]; then
-            exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_claude_style.py"
-        elif [ -f "$ADAM_ROOT/cli/adam_with_tools.py" ]; then
-            exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_with_tools.py"
-        else
-            exec $PYTHON_CMD "$ADAM_ROOT/cli/adam_chat.py"
-        fi
+        echo ""
+        echo -e "${GREEN}🎉 ADAM Web Interface is ready!${NC}"
+        echo -e "${BLUE}   Frontend: http://localhost:5173${NC}"
+        echo -e "${BLUE}   Backend API: http://localhost:8000/api/docs${NC}"
+        echo ""
+        echo -e "${YELLOW}Press Ctrl+C to stop the servers${NC}"
+        
+        # Keep running and handle Ctrl+C
+        trap "echo -e '\n${YELLOW}Shutting down...${NC}'; kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT
+        wait
         ;;
     *)
-        # Single message mode
-        cd "$ADAM_ROOT"
-        echo "$@" | $PYTHON_CMD "$ADAM_ROOT/cli/adam_chat.py"
+        show_help
+        exit 0
         ;;
 esac

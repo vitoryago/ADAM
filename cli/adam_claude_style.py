@@ -169,6 +169,9 @@ class ADAMClaudeStyle:
             print(f"🔧 Executing: {tool_info['tool']}...")
             
             # Execute tool
+            # Create a new event loop for tool execution
+            import nest_asyncio
+            nest_asyncio.apply()
             tool_result = asyncio.run(
                 self.execute_tool_async(tool_info['tool'], tool_info['params'])
             )
@@ -271,7 +274,7 @@ class ADAMClaudeStyle:
                 
                 if user_input.lower() in ['exit', 'quit']:
                     print("\nGoodbye! Your conversation has been saved.")
-                    self.conversation.end_session(self.session_id)
+                    self.conversation.end_session()
                     break
                 
                 if not user_input:
