@@ -19,9 +19,11 @@ from models import (
 )
 from services.llm_service import LLMService
 from services.memory_service import ProjectMemoryService, ADAM_MEMORY_AVAILABLE
+from services.tool_service import get_tool_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+tool_service = get_tool_service()
 
 
 @router.post("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
@@ -108,10 +110,29 @@ async def send_message(
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}")
     
-    # Generate AI response
+    # Check if message requires tool usage
+    tool_result = None
+    tool_output = ""
+    
     try:
+        # Check if the message is requesting a tool operation
+        tool_result = tool_service.process_tool_request(message_data.content)
+        
+        if tool_result and tool_result.get('status') == 'success':
+            tool_output = f"\n\n**Tool Execution Result:**\n```\n{tool_result.get('output', '')}\n```\n"
+            logger.info(f"Tool executed successfully: {tool_result.get('metadata', {})}")
+    except Exception as e:
+        logger.error(f"Error processing tool request: {e}")
+    
+    # Generate AI response (incorporating tool results if any)
+    try:
+        # Modify the message to include tool results for context
+        enhanced_message = message_data.content
+        if tool_output:
+            enhanced_message += tool_output
+        
         response = await llm_service.generate_response(
-            message=message_data.content,
+            message=enhanced_message,
             history=history,
             memory_context=memory_context,
             model=message_data.model,
