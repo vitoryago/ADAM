@@ -158,7 +158,7 @@ class ADAMClaudeStyle:
         else:
             return f"Error: {result.message if hasattr(result, 'message') else 'Tool execution failed'}"
     
-    def process_message(self, message: str) -> str:
+    async def process_message(self, message: str) -> str:
         """Process message with natural language understanding"""
         
         # First, try to extract tool from natural language
@@ -235,21 +235,21 @@ class ADAMClaudeStyle:
         
         # If no tool detected, use LLM for general response
         # Search relevant memories
-        memories = self.memory.search_memories(message, limit=3)
+        memories = self.memory.recall_with_context(query=message, n_results=3)
         memory_context = ""
         if memories:
             memory_context = "Relevant context:\n"
             for mem in memories[:2]:
-                memory_context += f"- {mem.content[:100]}...\n"
+                content = mem.get('content', '')
+                memory_context += f"- {content[:100]}...\n"
         
         # Get LLM response
         try:
-            response = self.llm_client.chat(
-                messages=[
-                    {"role": "system", "content": "You are ADAM, an AI assistant with file system access. Help the user with their requests."},
-                    {"role": "user", "content": message}
-                ],
-                model="gpt-5-mini"  # Use fast model for responsiveness
+            prompt = f"You are ADAM, an AI assistant with file system access. Help the user with their requests.\n\n{memory_context}\n\nUser: {message}\n\nResponse:"
+            response = await self.llm_client.complete(
+                prompt=prompt,
+                model=None,  # Auto-select based on complexity
+                temperature=0.7
             )
             
             return response.content
@@ -278,7 +278,7 @@ class ADAMClaudeStyle:
                     continue
                 
                 # Process with natural language understanding
-                response = self.process_message(user_input)
+                response = asyncio.run(self.process_message(user_input))
                 
                 # Display response
                 if RICH_AVAILABLE:
@@ -288,12 +288,15 @@ class ADAMClaudeStyle:
                 
                 # Store significant interactions in memory
                 if len(response.split()) > 20:
-                    self.memory.store(
-                        content=f"User: {user_input}\nADAM: {response}",
-                        metadata={
+                    self.memory.remember_if_worthy(
+                        query=user_input,
+                        response=response,
+                        context={
                             'session_id': self.session_id,
                             'type': 'conversation'
-                        }
+                        },
+                        generation_cost=0.001,
+                        model_used="gpt-3.5-turbo"
                     )
                 
             except KeyboardInterrupt:

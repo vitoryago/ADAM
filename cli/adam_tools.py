@@ -180,30 +180,34 @@ class ADAMToolChat:
             context = f"\n\nTool execution result:\n{tool_output}\n"
         
         # Search memories
-        memories = self.memory.search_memories(message, limit=3)
+        memories = self.memory.recall_with_context(query=message, n_results=3)
         memory_context = ""
         if memories:
             memory_context = "\n\nRelevant memories:\n"
             for mem in memories[:2]:
-                memory_context += f"- {mem.content[:100]}...\n"
+                content = mem.get('content', '')
+                memory_context += f"- {content[:100]}...\n"
         
         # Get AI response
-        full_message = message + context
-        response = await self.llm_client.generate(
-            message=full_message,
-            context=memory_context,
-            model="automatic"  # Let it choose based on complexity
+        full_prompt = f"{message}{context}{memory_context}"
+        response = await self.llm_client.complete(
+            prompt=full_prompt,
+            model=None,  # Let it auto-select based on complexity
+            temperature=0.7
         )
         
         # Store in memory if significant
         if len(response.content.split()) > 50 or tool_output:
-            self.memory.store(
-                content=f"User: {message}\nTool: {tool_info['tool'] if tool_info else 'none'}\nAI: {response.content}",
-                metadata={
+            self.memory.remember_if_worthy(
+                query=message,
+                response=f"Tool: {tool_info['tool'] if tool_info else 'none'}\nAI: {response.content}",
+                context={
                     'session_id': self.session_id,
                     'has_tool': bool(tool_info),
                     'tool': tool_info['tool'] if tool_info else None
-                }
+                },
+                generation_cost=0.001,
+                model_used="automatic"
             )
         
         return response.content
