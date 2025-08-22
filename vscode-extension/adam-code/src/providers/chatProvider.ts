@@ -68,11 +68,14 @@ export class ADAMChatProvider implements vscode.WebviewViewProvider {
         this.updateWebview();
     }
 
-    public show() {
+    public async show() {
         if (this._view) {
             this._view.show(true);
         } else {
-            vscode.commands.executeCommand('adam.chatView.focus');
+            // First ensure the sidebar is visible
+            await vscode.commands.executeCommand('workbench.view.extension.adam-container');
+            // Then focus on the chat view
+            await vscode.commands.executeCommand('adam.chatView.focus');
         }
     }
 
@@ -170,10 +173,20 @@ export class ADAMChatProvider implements vscode.WebviewViewProvider {
                         console.log(`File read successfully via tool integration`);
                         
                         // Send to ADAM with file content
+                        console.log('Sending enhanced content to ADAM, length:', enhancedContent.length);
                         const response = await this.adamClient.sendMessage(enhancedContent);
+                        console.log('Received response from ADAM:', response?.content?.substring(0, 100));
                         
                         // Add assistant response
-                        this.addMessage(response);
+                        if (response && response.content) {
+                            this.addMessage(response);
+                        } else {
+                            console.error('Empty response from ADAM');
+                            this.addMessage({
+                                role: 'assistant',
+                                content: 'I received the file but encountered an issue processing it. The file has been loaded successfully. How can I help you with this file?'
+                            });
+                        }
                     } else {
                         // Tool failed to read file
                         const response = await this.adamClient.sendMessage(

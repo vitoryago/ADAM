@@ -8,6 +8,7 @@ vsc-extension-quickstart.md
 **/.eslintrc.json
 **/*.map
 **/*.ts
-node_modules/**
 *.vsix
 compile-and-test.sh
+node_modules/@types/**
+node_modules/typescript/**

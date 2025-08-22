@@ -139,4 +139,7 @@
     
     // Focus input on load
     messageInput.focus();
+    
+    // Notify extension that webview is ready
+    vscode.postMessage({ type: 'ready' });
 })();

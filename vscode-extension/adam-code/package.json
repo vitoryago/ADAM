@@ -74,6 +74,16 @@
         "command": "adam.restartBackend",
         "title": "ADAM: Restart Backend",
         "icon": "$(debug-restart)"
+      },
+      {
+        "command": "adam.switchMode",
+        "title": "ADAM: Switch Between Backend/Standalone Mode",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "adam.showStatus",
+        "title": "ADAM: Show Connection Status",
+        "icon": "$(info)"
       }
     ],
     "viewsContainers": {
@@ -180,6 +190,31 @@
           "type": "string",
           "default": "",
           "description": "Path to dbt project"
+        },
+        "adam.tryBackendFirst": {
+          "type": "boolean",
+          "default": true,
+          "description": "Try to connect to backend for full RAG capabilities"
+        },
+        "adam.useRAG": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use RAG (Retrieval-Augmented Generation) when backend is available"
+        },
+        "adam.useAdvancedMemory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use advanced memory system when backend is available"
+        },
+        "adam.enableFileOperations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable file creation, editing, and deletion capabilities"
+        },
+        "adam.enableGitOperations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable git operations (commit, push, branch, etc.)"
         }
       }
     },
