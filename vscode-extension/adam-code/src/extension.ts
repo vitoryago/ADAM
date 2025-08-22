@@ -407,6 +407,136 @@ function registerCommands(context: vscode.ExtensionContext) {
         })
     );
     
+    // Show conversation history
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.showHistory', async () => {
+            const enhancedClient = adamClient as any;
+            if (enhancedClient.getConversationHistory) {
+                const history = enhancedClient.getConversationHistory(50);
+                
+                // Create a webview to show history
+                const panel = vscode.window.createWebviewPanel(
+                    'adamHistory',
+                    'ADAM Conversation History',
+                    vscode.ViewColumn.Two,
+                    {}
+                );
+                
+                const historyHtml = history.map((entry: any) => `
+                    <div style="margin-bottom: 20px; padding: 10px; border: 1px solid #444;">
+                        <div><strong>${entry.message.role}:</strong></div>
+                        <div>${entry.message.content}</div>
+                        <div style="font-size: 0.9em; color: #888;">
+                            ${new Date(entry.timestamp).toLocaleString()}
+                        </div>
+                    </div>
+                `).join('');
+                
+                panel.webview.html = `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <style>
+                            body { 
+                                font-family: var(--vscode-font-family);
+                                color: var(--vscode-foreground);
+                                background: var(--vscode-editor-background);
+                                padding: 20px;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>ADAM Conversation History</h1>
+                        ${historyHtml}
+                    </body>
+                    </html>
+                `;
+            }
+        })
+    );
+    
+    // Export conversation history
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.exportHistory', async () => {
+            const enhancedClient = adamClient as any;
+            if (enhancedClient.exportHistory) {
+                const format = await vscode.window.showQuickPick(['JSON', 'Markdown'], {
+                    placeHolder: 'Select export format'
+                });
+                
+                if (format) {
+                    const exportData = enhancedClient.exportHistory(format.toLowerCase() as any);
+                    
+                    // Save to file
+                    const uri = await vscode.window.showSaveDialog({
+                        defaultUri: vscode.Uri.file(`adam_history_${Date.now()}.${format === 'JSON' ? 'json' : 'md'}`),
+                        filters: {
+                            [format]: [format === 'JSON' ? 'json' : 'md']
+                        }
+                    });
+                    
+                    if (uri) {
+                        await vscode.workspace.fs.writeFile(uri, Buffer.from(exportData));
+                        vscode.window.showInformationMessage('History exported successfully');
+                    }
+                }
+            }
+        })
+    );
+    
+    // Show error memory statistics
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.errorStats', async () => {
+            const enhancedClient = adamClient as any;
+            if (enhancedClient.getErrorStats) {
+                const stats = enhancedClient.getErrorStats();
+                
+                vscode.window.showInformationMessage(
+                    `Error Memory Stats:\n` +
+                    `Total Memories: ${stats.totalMemories}\n` +
+                    `Solved Errors: ${stats.solvedErrors}\n` +
+                    `Patterns: ${stats.patterns}\n` +
+                    `Solutions: ${stats.solutions}\n` +
+                    `Success Rate: ${Math.round(stats.averageSuccessRate * 100)}%`
+                );
+            }
+        })
+    );
+    
+    // Clear old history
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.clearHistory', async () => {
+            const enhancedClient = adamClient as any;
+            if (enhancedClient.clearOldHistory) {
+                const days = await vscode.window.showInputBox({
+                    prompt: 'Keep history for how many days?',
+                    value: '30'
+                });
+                
+                if (days) {
+                    const removed = enhancedClient.clearOldHistory(parseInt(days));
+                    vscode.window.showInformationMessage(`Cleared ${removed} old conversation sessions`);
+                }
+            }
+        })
+    );
+    
+    // Start new session
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.newSession', async () => {
+            const enhancedClient = adamClient as any;
+            if (enhancedClient.startNewSession) {
+                const title = await vscode.window.showInputBox({
+                    prompt: 'Session title (optional)',
+                    placeHolder: 'e.g., Bug fixing session'
+                });
+                
+                enhancedClient.startNewSession(title);
+                vscode.window.showInformationMessage(`Started new session${title ? `: ${title}` : ''}`);
+            }
+        })
+    );
+    
     // Restart backend
     context.subscriptions.push(
         vscode.commands.registerCommand('adam.restartBackend', async () => {

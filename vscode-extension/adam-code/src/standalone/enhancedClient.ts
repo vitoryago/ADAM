@@ -12,6 +12,8 @@ import { GitOperations } from '../tools/gitOperations';
 import { TerminalOperations } from '../tools/terminalOperations';
 import { SearchOperations } from '../tools/searchOperations';
 import { MultiFileOperations } from '../tools/multiFileOperations';
+import { ErrorMemorySystem } from '../memory/errorMemory';
+import { ConversationHistoryManager } from '../memory/conversationHistory';
 
 export class EnhancedADAMClient {
     private standaloneClient: StandaloneADAMClient;
@@ -21,9 +23,12 @@ export class EnhancedADAMClient {
     private terminalOps: TerminalOperations;
     private searchOps: SearchOperations;
     private multiFileOps: MultiFileOperations;
+    private errorMemory: ErrorMemorySystem;
+    private conversationHistory: ConversationHistoryManager;
     private useBackend: boolean = false;
+    private lastErrorMemoryId?: string;
     
-    constructor(context: vscode.ExtensionContext) {
+    constructor(private context: vscode.ExtensionContext) {
         // Initialize all components
         this.standaloneClient = new StandaloneADAMClient(context);
         this.backendConnector = new BackendConnector();
@@ -32,6 +37,8 @@ export class EnhancedADAMClient {
         this.terminalOps = new TerminalOperations();
         this.searchOps = new SearchOperations();
         this.multiFileOps = new MultiFileOperations();
+        this.errorMemory = ErrorMemorySystem.getInstance(context);
+        this.conversationHistory = ConversationHistoryManager.getInstance(context);
         
         // Check backend availability
         this.initializeBackend();
@@ -60,6 +67,24 @@ export class EnhancedADAMClient {
      * Main message handler with command detection
      */
     async sendMessage(content: string, useMemory: boolean = true): Promise<Message> {
+        // Track conversation
+        const context = {
+            activeFile: vscode.window.activeTextEditor?.document.fileName,
+            workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+            gitBranch: await this.gitOps.getCurrentBranch()
+        };
+        
+        // Add user message to history
+        await this.conversationHistory.addEntry(
+            { role: 'user', content, model: 'user' },
+            context
+        );
+        
+        // Check for feedback commands
+        const feedbackResult = await this.handleFeedback(content);
+        if (feedbackResult) {
+            return feedbackResult;
+        }
         // Check for terminal operation commands
         const terminalOpResult = await this.handleTerminalOperations(content);
         if (terminalOpResult) {
@@ -94,7 +119,16 @@ export class EnhancedADAMClient {
         }
         
         // Use standalone client
-        return this.standaloneClient.sendMessage(content, useMemory);
+        const response = await this.standaloneClient.sendMessage(content, useMemory);
+        
+        // Track response in history
+        await this.conversationHistory.addEntry(
+            response,
+            context,
+            { memoryUsed: useMemory }
+        );
+        
+        return response;
     }
     
     /**
@@ -182,6 +216,83 @@ export class EnhancedADAMClient {
     }
     
     /**
+     * Handle feedback for error learning
+     */
+    private async handleFeedback(content: string): Promise<Message | null> {
+        const lowerContent = content.toLowerCase();
+        
+        // Check for feedback patterns
+        if (lowerContent.includes('that worked') || lowerContent.includes('that fixed it') || 
+            lowerContent.includes('solution worked')) {
+            // Positive feedback
+            const lastError = await this.getLastErrorFromHistory();
+            if (lastError) {
+                await this.errorMemory.learnFromFeedback(lastError.memoryId, true);
+                return {
+                    role: 'assistant',
+                    content: '✅ Great! I\'ve learned that this solution works for this type of error.',
+                    model: 'feedback'
+                };
+            }
+        }
+        
+        if (lowerContent.includes('didn\'t work') || lowerContent.includes('still broken') || 
+            lowerContent.includes('wrong solution')) {
+            // Negative feedback
+            const lastError = await this.getLastErrorFromHistory();
+            if (lastError) {
+                // Check if user provided the actual solution
+                const solutionMatch = content.match(/(?:actual solution is|correct solution is|should be|try)\s*:?\s*(.+)/i);
+                const actualSolution = solutionMatch?.[1];
+                
+                await this.errorMemory.learnFromFeedback(
+                    lastError.memoryId, 
+                    false, 
+                    actualSolution,
+                    content
+                );
+                
+                return {
+                    role: 'assistant',
+                    content: actualSolution 
+                        ? `📝 Thank you! I've learned the correct solution for this error.`
+                        : `📝 I've noted that the previous solution didn't work. Could you share what fixed it?`,
+                    model: 'feedback'
+                };
+            }
+        }
+        
+        if (lowerContent.includes('the error was') || lowerContent.includes('i found the error')) {
+            // User found an error ADAM missed
+            const errorMatch = content.match(/(?:error was|found the error|problem was)\s*:?\s*(.+)/i);
+            const errorDescription = errorMatch?.[1];
+            
+            if (errorDescription) {
+                const solutionMatch = content.match(/(?:solution is|fix is|fixed by)\s*:?\s*(.+)/i);
+                const solution = solutionMatch?.[1];
+                
+                const memoryId = await this.errorMemory.rememberError(
+                    errorDescription,
+                    solution,
+                    {
+                        file: vscode.window.activeTextEditor?.document.fileName,
+                        workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                    },
+                    !!solution
+                );
+                
+                return {
+                    role: 'assistant',
+                    content: `📚 I've learned about this error${solution ? ' and its solution' : ''}. Thank you for teaching me!`,
+                    model: 'feedback'
+                };
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
      * Handle terminal operation commands
      */
     private async handleTerminalOperations(content: string): Promise<Message | null> {
@@ -193,14 +304,72 @@ export class EnhancedADAMClient {
             const command = commandMatch?.[1];
             
             if (command) {
+                const startTime = Date.now();
                 const result = await this.terminalOps.executeCommand(command);
-                return {
+                const responseTime = Date.now() - startTime;
+                
+                // If command failed, check error memory for solutions
+                let enhancedResponse = '';
+                let memoryId: string | undefined;
+                
+                if (!result.success) {
+                    const errorText = result.stderr || result.stdout || result.message || '';
+                    
+                    // Check error memory for known solution
+                    const suggestion = await this.errorMemory.getSuggestedSolution(errorText);
+                    if (suggestion) {
+                        enhancedResponse = `\n\n💡 **Suggested Solution** (${Math.round(suggestion.confidence * 100)}% confidence):\n${suggestion.solution}`;
+                        if (suggestion.commands && suggestion.commands.length > 0) {
+                            enhancedResponse += `\n\n**Try running:**\n\`\`\`bash\n${suggestion.commands.join('\n')}\n\`\`\``;
+                        }
+                    }
+                    
+                    // Remember this error
+                    memoryId = await this.errorMemory.rememberError(
+                        errorText,
+                        suggestion?.solution,
+                        {
+                            command,
+                            workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                        },
+                        false
+                    );
+                    
+                    // Also analyze with terminal's built-in analyzer
+                    const analysis = this.terminalOps.analyzeOutput(errorText);
+                    if (analysis.suggestions.length > 0 && !suggestion) {
+                        enhancedResponse += `\n\n💡 **Suggestions:**\n${analysis.suggestions.map(s => `• ${s}`).join('\n')}`;
+                    }
+                }
+                
+                const response: Message = {
                     role: 'assistant',
                     content: result.success 
-                        ? `✅ Command executed:\n\`\`\`\n${result.stdout}\n\`\`\`${result.stderr ? `\n⚠️ Errors:\n\`\`\`\n${result.stderr}\n\`\`\`` : ''}`
-                        : `❌ Command failed: ${result.message}\n${result.stderr ? `\`\`\`\n${result.stderr}\n\`\`\`` : ''}`,
+                        ? `✅ Command executed:\n\`\`\`\n${result.stdout}\n\`\`\`${result.stderr ? `\n⚠️ Warnings:\n\`\`\`\n${result.stderr}\n\`\`\`` : ''}`
+                        : `❌ Command failed: ${result.message}\n${result.stderr ? `\`\`\`\n${result.stderr}\n\`\`\`` : ''}${enhancedResponse}`,
                     model: 'terminal-operation'
                 };
+                
+                // Track in history with error info
+                await this.conversationHistory.addEntry(
+                    response,
+                    {
+                        activeFile: vscode.window.activeTextEditor?.document.fileName,
+                        workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                    },
+                    { 
+                        responseTime,
+                        errorHandled: !result.success,
+                        memoryUsed: !result.success && enhancedResponse.includes('Suggested Solution')
+                    }
+                );
+                
+                // Store memory ID for potential feedback
+                if (memoryId) {
+                    this.lastErrorMemoryId = memoryId;
+                }
+                
+                return response;
             }
         }
         
@@ -687,9 +856,87 @@ export class EnhancedADAMClient {
     }
     
     /**
+     * Get last error from history
+     */
+    private async getLastErrorFromHistory(): Promise<{ memoryId: string } | null> {
+        if (this.lastErrorMemoryId) {
+            return { memoryId: this.lastErrorMemoryId };
+        }
+        return null;
+    }
+    
+    /**
+     * Get conversation history
+     */
+    getConversationHistory(limit?: number): any[] {
+        return this.conversationHistory.getHistory({ limit });
+    }
+    
+    /**
+     * Export conversation history
+     */
+    exportHistory(format: 'json' | 'markdown' = 'json'): string {
+        return this.conversationHistory.exportHistory(format);
+    }
+    
+    /**
+     * Get error memory statistics
+     */
+    getErrorStats(): any {
+        return this.errorMemory.getStatistics();
+    }
+    
+    /**
+     * Search error memory
+     */
+    async searchErrorMemory(query: string): Promise<any[]> {
+        return this.errorMemory.searchSimilarErrors(query);
+    }
+    
+    /**
+     * Add custom error solution
+     */
+    async teachErrorSolution(error: string, solution: string, explanation: string): Promise<void> {
+        const memoryId = await this.errorMemory.rememberError(
+            error,
+            solution,
+            {
+                workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+            },
+            true
+        );
+        this.lastErrorMemoryId = memoryId;
+    }
+    
+    /**
+     * Clear old conversation history
+     */
+    clearOldHistory(daysToKeep: number = 30): number {
+        return this.conversationHistory.clearOldHistory(daysToKeep);
+    }
+    
+    /**
+     * Get conversation statistics
+     */
+    getConversationStats(): any {
+        return this.conversationHistory.getStatistics();
+    }
+    
+    /**
+     * Start new conversation session
+     */
+    startNewSession(title?: string): void {
+        this.conversationHistory.startNewSession(title);
+        this.lastErrorMemoryId = undefined;
+    }
+    
+    /**
      * Disconnect and cleanup
      */
     disconnect(): void {
+        // End conversation session
+        this.conversationHistory.endCurrentSession();
+        
         // Cleanup if needed
         console.log('ADAM Enhanced Client disconnected');
     }
