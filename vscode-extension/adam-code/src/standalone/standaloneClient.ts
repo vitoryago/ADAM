@@ -123,21 +123,30 @@ export class StandaloneADAMClient {
             let model: string;
             let cost = 0;
             
-            // Analyze complexity for model selection
-            const complexity = this.analyzeComplexity(content);
+            // Analyze complexity for model selection (now async with GPT-5-mini)
+            const complexity = await this.analyzeComplexity(content);
             
-            if (this.openaiKey) {
-                // Prefer OpenAI for GPT-5 models
+            // Route to appropriate API based on model
+            if (complexity.model === 'grok-4-reasoning' && this.grokKey) {
+                // Use Grok for coding tasks (best for coding)
+                response = await this.callGrok(fullPrompt, complexity);
+                model = complexity.model;
+            } else if (complexity.model.startsWith('gpt-5') && this.openaiKey) {
+                // Use OpenAI for GPT-5 models
                 response = await this.callOpenAI(fullPrompt, complexity);
                 model = complexity.model;
             } else if (this.grokKey) {
-                // Fallback to Grok if no OpenAI key
+                // Fallback to Grok if model doesn't match or no OpenAI key
                 response = await this.callGrok(fullPrompt, complexity);
+                model = complexity.model;
+            } else if (this.openaiKey) {
+                // Fallback to OpenAI if no Grok key
+                response = await this.callOpenAI(fullPrompt, complexity);
                 model = complexity.model;
             } else {
                 return {
                     role: 'assistant',
-                    content: 'No API keys configured. Please set OpenAI API key in VSCode settings (Cmd+, then search for "adam").',
+                    content: 'No API keys configured. Please set OpenAI or Grok API key in VSCode settings (Cmd+, then search for "adam").',
                     model: 'none'
                 };
             }
@@ -176,11 +185,12 @@ export class StandaloneADAMClient {
     private async callOpenAI(prompt: string, complexity: { level: string; model: string; reasoning_effort?: string }): Promise<string> {
         // Map our model names to actual OpenAI API model names
         const modelMapping: { [key: string]: string } = {
-            'gpt-5': 'gpt-5-2025-08-07',
-            'gpt-5-mini': 'gpt-5-mini-2025-08-07',
-            'gpt-5-nano': 'gpt-5-nano',
-            'grok-4-reasoning': 'gpt-5-2025-08-07',  // Map grok-4-reasoning to GPT-5 for OpenAI
-            'claude-opus-4.1': 'gpt-5-2025-08-07'    // Map Claude to GPT-5 as fallback
+            'gpt-5-thinking': 'gpt-5-2025-08-07',    // GPT-5 with high reasoning for complex tasks
+            'gpt-5': 'gpt-5-2025-08-07',             // Standard GPT-5
+            'gpt-5-mini': 'gpt-5-mini-2025-08-07',   // Lightweight GPT-5 for simple queries
+            'gpt-5-nano': 'gpt-5-nano',               // Not used in current routing
+            'grok-4-reasoning': 'gpt-5-2025-08-07',  // Fallback: Map grok-4-reasoning to GPT-5 for OpenAI
+            'claude-opus-4.1': 'gpt-5-2025-08-07'    // Fallback: Map Claude to GPT-5
         };
         
         const apiModel = modelMapping[complexity.model] || 'gpt-5-2025-08-07';  // Default to GPT-5 for VSCode
@@ -228,7 +238,10 @@ export class StandaloneADAMClient {
         }
         
         // Add reasoning effort for GPT-5 models
-        if (complexity.reasoning_effort) {
+        // For gpt-5-thinking, always use high reasoning
+        if (complexity.model === 'gpt-5-thinking') {
+            requestBody.reasoning_effort = 'high';
+        } else if (complexity.reasoning_effort) {
             requestBody.reasoning_effort = complexity.reasoning_effort;
         }
         
@@ -260,9 +273,10 @@ export class StandaloneADAMClient {
     ): Promise<string> {
         // Map our model names to actual OpenAI API model names
         const modelMapping: { [key: string]: string } = {
-            'gpt-5': 'gpt-5-2025-08-07',
-            'gpt-5-mini': 'gpt-5-mini-2025-08-07',
-            'gpt-5-nano': 'gpt-5-nano'
+            'gpt-5-thinking': 'gpt-5-2025-08-07',  // GPT-5 with high reasoning for complex tasks
+            'gpt-5': 'gpt-5-2025-08-07',            // Standard GPT-5
+            'gpt-5-mini': 'gpt-5-mini-2025-08-07',  // Lightweight GPT-5 for simple queries
+            'gpt-5-nano': 'gpt-5-nano'               // Not used in current routing
         };
         
         const apiModel = modelMapping[complexity.model] || 'gpt-5-mini-2025-08-07';
@@ -310,7 +324,10 @@ export class StandaloneADAMClient {
         }
         
         // Add reasoning effort for GPT-5 models
-        if (complexity.reasoning_effort) {
+        // For gpt-5-thinking, always use high reasoning
+        if (complexity.model === 'gpt-5-thinking') {
+            requestBody.reasoning_effort = 'high';
+        } else if (complexity.reasoning_effort) {
             requestBody.reasoning_effort = complexity.reasoning_effort;
         }
         
@@ -371,37 +388,113 @@ export class StandaloneADAMClient {
     }
     
     /**
-     * Analyze query complexity for model selection
-     * Matches backend routing: gpt-5 (high/medium), gpt-5-mini (low)
+     * Use GPT-5-mini to intelligently analyze query complexity
      */
-    private analyzeComplexity(query: string): { level: 'high' | 'medium' | 'low'; model: string; reasoning_effort?: string } {
+    private async analyzeComplexityWithAI(query: string): Promise<{ level: 'high' | 'medium' | 'low'; model: string; reasoning_effort?: string }> {
+        // If no OpenAI key, fall back to rule-based analysis
+        if (!this.openaiKey) {
+            return this.analyzeComplexityRuleBased(query);
+        }
+        
+        try {
+            const classificationPrompt = `Classify this query's complexity and determine the best model.
+Query: "${query}"
+
+Rules:
+- If it's about coding, implementing, debugging, refactoring, or writing functions/classes → Return: "CODING:grok-4-reasoning"
+- If it's complex analysis, architecture, design, planning, or needs step-by-step thinking → Return: "COMPLEX:gpt-5-thinking"  
+- If it's explaining, describing, summarizing, or standard questions → Return: "STANDARD:gpt-5"
+- If it's simple, greeting, or basic questions → Return: "SIMPLE:gpt-5-mini"
+
+Return ONLY the classification (e.g., "CODING:grok-4-reasoning")`;
+
+            const messages = [
+                { role: 'system', content: 'You are a query classifier. Return only the classification.' },
+                { role: 'user', content: classificationPrompt }
+            ];
+            
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.openaiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'gpt-5-mini-2025-08-07',
+                    messages,
+                    max_tokens: 50,
+                    temperature: 0.3
+                })
+            });
+            
+            const data: any = await response.json();
+            if (data.error) {
+                console.error('Classification error:', data.error);
+                return this.analyzeComplexityRuleBased(query);
+            }
+            
+            const classification = data.choices[0].message.content.trim();
+            const [level, model] = classification.split(':');
+            
+            switch (level) {
+                case 'CODING':
+                    return { level: 'high', model: 'grok-4-reasoning', reasoning_effort: 'high' };
+                case 'COMPLEX':
+                    return { level: 'high', model: 'gpt-5-thinking', reasoning_effort: 'high' };
+                case 'STANDARD':
+                    return { level: 'medium', model: 'gpt-5', reasoning_effort: 'medium' };
+                case 'SIMPLE':
+                default:
+                    return { level: 'low', model: 'gpt-5-mini', reasoning_effort: 'low' };
+            }
+        } catch (error) {
+            console.error('AI classification failed, using rule-based:', error);
+            return this.analyzeComplexityRuleBased(query);
+        }
+    }
+    
+    /**
+     * Rule-based fallback for complexity analysis
+     */
+    private analyzeComplexityRuleBased(query: string): { level: 'high' | 'medium' | 'low'; model: string; reasoning_effort?: string } {
         const lowerQuery = query.toLowerCase();
         
-        // Get user's preferred high-performance model from VSCode settings
-        const config = vscode.workspace.getConfiguration('adam');
-        const preferredModel = config.get<string>('preferredModel', 'grok-4-reasoning');
-        
-        // High complexity indicators - use preferred high-performance model for VSCode
-        if (lowerQuery.includes('implement') || lowerQuery.includes('refactor') ||
-            lowerQuery.includes('debug') || lowerQuery.includes('architecture') ||
-            lowerQuery.includes('design a solution') || lowerQuery.includes('complex') ||
-            lowerQuery.includes('step by step') || lowerQuery.includes('code generation') ||
-            lowerQuery.includes('build a') || lowerQuery.includes('create a function')) {
-            // Use the user's preferred high-performance model
-            return { level: 'high', model: preferredModel, reasoning_effort: 'high' };
+        // Coding tasks - use grok-4-reasoning (best for coding)
+        if (lowerQuery.includes('code') || lowerQuery.includes('implement') || 
+            lowerQuery.includes('function') || lowerQuery.includes('class') ||
+            lowerQuery.includes('debug') || lowerQuery.includes('fix') ||
+            lowerQuery.includes('refactor') || lowerQuery.includes('optimize') ||
+            lowerQuery.includes('write a') || lowerQuery.includes('create a') ||
+            lowerQuery.includes('build') || lowerQuery.includes('develop')) {
+            return { level: 'high', model: 'grok-4-reasoning', reasoning_effort: 'high' };
         }
         
-        // Medium complexity indicators - use gpt-5 with high reasoning for VSCode
-        if (lowerQuery.includes('explain') || lowerQuery.includes('analyze') ||
-            lowerQuery.includes('write') || lowerQuery.includes('create') || 
-            lowerQuery.includes('fix') || lowerQuery.includes('update') || 
-            lowerQuery.includes('modify') || lowerQuery.includes('optimize') ||
-            lowerQuery.includes('how does') || lowerQuery.includes('sql')) {
-            return { level: 'medium', model: 'gpt-5', reasoning_effort: 'high' };
+        // Complex/thinking tasks - use gpt-5 with thinking (high reasoning)
+        if (lowerQuery.includes('complex') || lowerQuery.includes('architecture') ||
+            lowerQuery.includes('design') || lowerQuery.includes('analyze') ||
+            lowerQuery.includes('step by step') || lowerQuery.includes('plan') ||
+            lowerQuery.includes('strategy') || lowerQuery.includes('solution')) {
+            return { level: 'high', model: 'gpt-5-thinking', reasoning_effort: 'high' };
         }
         
-        // Default to low complexity - still use gpt-5 with medium reasoning for VSCode
-        return { level: 'low', model: 'gpt-5', reasoning_effort: 'medium' };
+        // Standard queries - use gpt-5
+        if (lowerQuery.includes('explain') || lowerQuery.includes('what is') ||
+            lowerQuery.includes('how does') || lowerQuery.includes('tell me') || 
+            lowerQuery.includes('describe') || lowerQuery.includes('summary')) {
+            return { level: 'medium', model: 'gpt-5', reasoning_effort: 'medium' };
+        }
+        
+        // Simple queries - use gpt-5-mini
+        return { level: 'low', model: 'gpt-5-mini', reasoning_effort: 'low' };
+    }
+    
+    /**
+     * Analyze query complexity for model selection
+     * Now uses GPT-5-mini for intelligent routing when available
+     */
+    private async analyzeComplexity(query: string): Promise<{ level: 'high' | 'medium' | 'low'; model: string; reasoning_effort?: string }> {
+        // Use AI-based analysis when available, fallback to rules
+        return this.analyzeComplexityWithAI(query);
     }
     
     /**
@@ -611,8 +704,8 @@ export class StandaloneADAMClient {
             // Prepare the full prompt with conversation history
             const fullPrompt = memoryContext + content;
             
-            // Analyze complexity for model selection
-            const complexity = this.analyzeComplexity(content);
+            // Analyze complexity for model selection (now async with GPT-5-mini)
+            const complexity = await this.analyzeComplexity(content);
             
             let response: string;
             let model: string;
