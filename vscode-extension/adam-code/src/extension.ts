@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ADAMChatProvider } from './providers/chatProvider';
 import { ADAMClient } from './client/adamClient';
 import { StandaloneADAMClient } from './standalone/standaloneClient';
+import { EnhancedADAMClient } from './standalone/enhancedClient';
 import { GitIntegration } from './integrations/gitIntegration';
 import { SQLOptimizer } from './tools/sqlOptimizer';
 import { DBTGenerator } from './tools/dbtGenerator';
@@ -11,75 +12,88 @@ import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 
-let adamClient: ADAMClient | StandaloneADAMClient;
+let adamClient: ADAMClient | StandaloneADAMClient | EnhancedADAMClient;
 let chatProvider: ADAMChatProvider;
 let backendProcess: ChildProcess | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('ADAM Code is activating...');
-
-    // Check if we should use standalone mode (default: true)
-    const config = vscode.workspace.getConfiguration('adam');
-    const useStandalone = config.get('standalone', true);
     
-    if (useStandalone) {
-        // Use standalone ADAM (no backend needed)
-        adamClient = new StandaloneADAMClient(context);
-        console.log('ADAM running in standalone mode - no backend required!');
-    } else {
-        // Use backend mode - start backend automatically
-        const backendStarted = await startBackend(context);
-        if (!backendStarted) {
-            // Fallback to standalone if backend fails
-            vscode.window.showWarningMessage('Failed to start ADAM backend. Using standalone mode.');
-            adamClient = new StandaloneADAMClient(context);
+    try {
+        // Check if we should use standalone mode (default: true)
+        const config = vscode.workspace.getConfiguration('adam');
+        const useStandalone = config.get('standalone', true);
+        
+        if (useStandalone) {
+            // Use enhanced standalone ADAM with file operations and optional backend
+            adamClient = new EnhancedADAMClient(context);
+            console.log('ADAM running in enhanced mode with file operations!');
         } else {
-            adamClient = new ADAMClient(
-                config.get('serverUrl') || 'http://localhost:8000',
-                config.get('projectId') || '3a859e97-16fd-46c6-b018-1ede9fade704'
-            );
+            // Use backend mode - start backend automatically
+            const backendStarted = await startBackend(context);
+            if (!backendStarted) {
+                // Fallback to enhanced standalone if backend fails
+                vscode.window.showWarningMessage('Failed to start ADAM backend. Using enhanced standalone mode.');
+                adamClient = new EnhancedADAMClient(context);
+            } else {
+                adamClient = new ADAMClient(
+                    config.get('serverUrl') || 'http://localhost:8000',
+                    config.get('projectId') || '3a859e97-16fd-46c6-b018-1ede9fade704'
+                );
+            }
         }
+
+        // Initialize chat provider - cast to ADAMClient for now
+        chatProvider = new ADAMChatProvider(context.extensionUri, adamClient as any);
+
+        // Register webview provider BEFORE registering commands
+        context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider('adam.chatView', chatProvider)
+        );
+
+        // Register commands - this must come after provider registration
+        registerCommands(context);
+
+        // Initialize features - cast to ADAMClient for compatibility
+        const gitIntegration = new GitIntegration();
+        const sqlOptimizer = new SQLOptimizer(adamClient as any);
+        const dbtGenerator = new DBTGenerator(adamClient as any);
+        const fileManager = new FileManager();
+        const voiceChat = new VoiceChat(adamClient as any);
+
+        // Status bar item
+        const statusBarItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            100
+        );
+        statusBarItem.text = '$(circuit-board) ADAM Ready';
+        statusBarItem.tooltip = 'ADAM is connected and ready';
+        statusBarItem.command = 'adam.chat';
+        statusBarItem.show();
+        context.subscriptions.push(statusBarItem);
+
+        console.log('ADAM Code is ready!');
+        
+    } catch (error) {
+        console.error('Failed to activate ADAM Code:', error);
+        vscode.window.showErrorMessage(`Failed to activate ADAM: ${error}`);
     }
-
-    // Initialize chat provider - cast to ADAMClient for now
-    chatProvider = new ADAMChatProvider(context.extensionUri, adamClient as any);
-
-    // Register webview provider
-    context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider('adam.chatView', chatProvider)
-    );
-
-    // Register commands
-    registerCommands(context);
-
-    // Initialize features - cast to ADAMClient for compatibility
-    const gitIntegration = new GitIntegration();
-    const sqlOptimizer = new SQLOptimizer(adamClient as any);
-    const dbtGenerator = new DBTGenerator(adamClient as any);
-    const fileManager = new FileManager();
-    const voiceChat = new VoiceChat(adamClient as any);
-
-    // Status bar item
-    const statusBarItem = vscode.window.createStatusBarItem(
-        vscode.StatusBarAlignment.Right,
-        100
-    );
-    statusBarItem.text = '$(circuit-board) ADAM Ready';
-    statusBarItem.tooltip = 'ADAM is connected and ready';
-    statusBarItem.command = 'adam.chat';
-    statusBarItem.show();
-    context.subscriptions.push(statusBarItem);
-
-    console.log('ADAM Code is ready!');
 }
 
 function registerCommands(context: vscode.ExtensionContext) {
     // Main chat command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('adam.chat', () => {
-            chatProvider.show();
-        })
-    );
+    const chatCommand = vscode.commands.registerCommand('adam.chat', async () => {
+        try {
+            // First ensure the sidebar is visible
+            await vscode.commands.executeCommand('workbench.view.extension.adam-container');
+            // Then focus on the chat view
+            await vscode.commands.executeCommand('adam.chatView.focus');
+        } catch (error) {
+            console.error('Error executing adam.chat command:', error);
+            vscode.window.showErrorMessage(`Failed to open ADAM chat: ${error}`);
+        }
+    });
+    context.subscriptions.push(chatCommand);
 
     // Explain selected code
     context.subscriptions.push(
