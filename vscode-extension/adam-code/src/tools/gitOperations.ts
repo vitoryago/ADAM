@@ -237,4 +237,262 @@ export class GitOperations {
         
         return { success: false, message: `Stash pop failed: ${result.error}` };
     }
+    
+    /**
+     * List all stashes
+     */
+    async stashList(): Promise<{ success: boolean; stashes?: string[]; message?: string }> {
+        const result = await this.execGit('stash list');
+        
+        if (result.success) {
+            const stashes = result.output?.split('\n').filter(s => s.trim()) || [];
+            return { success: true, stashes };
+        }
+        
+        return { success: false, message: result.error };
+    }
+    
+    /**
+     * Apply specific stash without removing it
+     */
+    async stashApply(stashRef: string = 'stash@{0}'): Promise<{ success: boolean; message: string }> {
+        const result = await this.execGit(`stash apply ${stashRef}`);
+        
+        if (result.success) {
+            return { success: true, message: `Applied stash: ${stashRef}` };
+        }
+        
+        return { success: false, message: `Stash apply failed: ${result.error}` };
+    }
+    
+    /**
+     * Drop a specific stash
+     */
+    async stashDrop(stashRef: string = 'stash@{0}'): Promise<{ success: boolean; message: string }> {
+        const result = await this.execGit(`stash drop ${stashRef}`);
+        
+        if (result.success) {
+            return { success: true, message: `Dropped stash: ${stashRef}` };
+        }
+        
+        return { success: false, message: `Stash drop failed: ${result.error}` };
+    }
+    
+    /**
+     * Cherry-pick a commit
+     */
+    async cherryPick(commitHash: string, noCommit: boolean = false): Promise<{ success: boolean; message: string }> {
+        const flags = noCommit ? '--no-commit' : '';
+        const result = await this.execGit(`cherry-pick ${flags} ${commitHash}`);
+        
+        if (result.success) {
+            return { success: true, message: `Cherry-picked commit: ${commitHash}` };
+        }
+        
+        return { success: false, message: `Cherry-pick failed: ${result.error}` };
+    }
+    
+    /**
+     * Rebase current branch onto another
+     */
+    async rebase(targetBranch: string): Promise<{ success: boolean; message: string }> {
+        const result = await this.execGit(`rebase ${targetBranch}`);
+        
+        if (result.success) {
+            return { success: true, message: `Rebased onto ${targetBranch}` };
+        }
+        
+        return { success: false, message: `Rebase failed: ${result.error}` };
+    }
+    
+    /**
+     * Continue rebase after resolving conflicts
+     */
+    async rebaseContinue(): Promise<{ success: boolean; message: string }> {
+        const result = await this.execGit('rebase --continue');
+        
+        if (result.success) {
+            return { success: true, message: 'Rebase continued' };
+        }
+        
+        return { success: false, message: `Rebase continue failed: ${result.error}` };
+    }
+    
+    /**
+     * Abort ongoing rebase
+     */
+    async rebaseAbort(): Promise<{ success: boolean; message: string }> {
+        const result = await this.execGit('rebase --abort');
+        
+        if (result.success) {
+            return { success: true, message: 'Rebase aborted' };
+        }
+        
+        return { success: false, message: `Rebase abort failed: ${result.error}` };
+    }
+    
+    /**
+     * Reset to a specific commit
+     */
+    async reset(commitHash: string, mode: 'soft' | 'mixed' | 'hard' = 'mixed'): Promise<{ success: boolean; message: string }> {
+        const result = await this.execGit(`reset --${mode} ${commitHash}`);
+        
+        if (result.success) {
+            return { success: true, message: `Reset to ${commitHash} (${mode})` };
+        }
+        
+        return { success: false, message: `Reset failed: ${result.error}` };
+    }
+    
+    /**
+     * Revert a commit
+     */
+    async revert(commitHash: string): Promise<{ success: boolean; message: string }> {
+        const result = await this.execGit(`revert ${commitHash} --no-edit`);
+        
+        if (result.success) {
+            return { success: true, message: `Reverted commit: ${commitHash}` };
+        }
+        
+        return { success: false, message: `Revert failed: ${result.error}` };
+    }
+    
+    /**
+     * Create a tag
+     */
+    async tag(tagName: string, message?: string, commitHash?: string): Promise<{ success: boolean; message: string }> {
+        let command = message 
+            ? `tag -a ${tagName} -m "${message}"`
+            : `tag ${tagName}`;
+            
+        if (commitHash) {
+            command += ` ${commitHash}`;
+        }
+        
+        const result = await this.execGit(command);
+        
+        if (result.success) {
+            return { success: true, message: `Created tag: ${tagName}` };
+        }
+        
+        return { success: false, message: `Tag creation failed: ${result.error}` };
+    }
+    
+    /**
+     * List all tags
+     */
+    async listTags(): Promise<{ success: boolean; tags?: string[]; message?: string }> {
+        const result = await this.execGit('tag');
+        
+        if (result.success) {
+            const tags = result.output?.split('\n').filter(t => t.trim()) || [];
+            return { success: true, tags };
+        }
+        
+        return { success: false, message: result.error };
+    }
+    
+    /**
+     * Delete a tag
+     */
+    async deleteTag(tagName: string, remote: boolean = false): Promise<{ success: boolean; message: string }> {
+        // Delete local tag
+        const result = await this.execGit(`tag -d ${tagName}`);
+        
+        if (!result.success) {
+            return { success: false, message: `Tag deletion failed: ${result.error}` };
+        }
+        
+        // Delete remote tag if requested
+        if (remote) {
+            const remoteResult = await this.execGit(`push origin :refs/tags/${tagName}`);
+            if (!remoteResult.success) {
+                return { success: false, message: `Remote tag deletion failed: ${remoteResult.error}` };
+            }
+        }
+        
+        return { success: true, message: `Deleted tag: ${tagName}${remote ? ' (including remote)' : ''}` };
+    }
+    
+    /**
+     * Show diff of changes
+     */
+    async diff(staged: boolean = false): Promise<{ success: boolean; diff?: string; message?: string }> {
+        const command = staged ? 'diff --cached' : 'diff';
+        const result = await this.execGit(command);
+        
+        if (result.success) {
+            return { success: true, diff: result.output || 'No changes' };
+        }
+        
+        return { success: false, message: result.error };
+    }
+    
+    /**
+     * Get merge conflicts
+     */
+    async getConflicts(): Promise<{ success: boolean; conflicts?: string[]; message?: string }> {
+        const result = await this.execGit('diff --name-only --diff-filter=U');
+        
+        if (result.success) {
+            const conflicts = result.output?.split('\n').filter(f => f.trim()) || [];
+            return { success: true, conflicts };
+        }
+        
+        return { success: false, message: result.error };
+    }
+    
+    /**
+     * Fetch from remote
+     */
+    async fetch(all: boolean = false): Promise<{ success: boolean; message: string }> {
+        const command = all ? 'fetch --all' : 'fetch';
+        const result = await this.execGit(command);
+        
+        if (result.success) {
+            return { success: true, message: 'Fetched from remote' };
+        }
+        
+        return { success: false, message: `Fetch failed: ${result.error}` };
+    }
+    
+    /**
+     * Get remote branches
+     */
+    async getRemoteBranches(): Promise<{ success: boolean; branches?: string[]; message?: string }> {
+        const result = await this.execGit('branch -r');
+        
+        if (result.success) {
+            const branches = result.output?.split('\n')
+                .filter(b => b.trim())
+                .map(b => b.trim()) || [];
+            return { success: true, branches };
+        }
+        
+        return { success: false, message: result.error };
+    }
+    
+    /**
+     * Amend last commit
+     */
+    async amendCommit(newMessage?: string): Promise<{ success: boolean; message: string }> {
+        const command = newMessage 
+            ? `commit --amend -m "${newMessage}"`
+            : 'commit --amend --no-edit';
+            
+        const result = await this.execGit(command);
+        
+        if (result.success) {
+            return { success: true, message: 'Amended last commit' };
+        }
+        
+        return { success: false, message: `Amend failed: ${result.error}` };
+    }
+    
+    /**
+     * Get workspace root path
+     */
+    private getWorkspaceRoot(): string {
+        return this.workspacePath;
+    }
 }

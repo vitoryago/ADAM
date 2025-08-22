@@ -4,7 +4,7 @@
  */
 
 import * as vscode from 'vscode';
-import { spawn, exec, ExecOptions } from 'child_process';
+import { spawn, exec, ExecOptions, ChildProcess } from 'child_process';
 import * as path from 'path';
 import { promisify } from 'util';
 
@@ -28,6 +28,25 @@ export interface RunningProcess {
 export class TerminalOperations {
     private terminals: Map<string, vscode.Terminal> = new Map();
     private runningProcesses: Map<string, RunningProcess> = new Map();
+    private outputBuffers: Map<string, string[]> = new Map();
+    private errorPatterns: RegExp[] = [
+        /error:/i,
+        /failed/i,
+        /exception/i,
+        /cannot find/i,
+        /undefined.*is not/i,
+        /TypeError:/,
+        /SyntaxError:/,
+        /ReferenceError:/,
+        /npm ERR!/,
+        /ENOENT/,
+        /EACCES/,
+        /Module not found/,
+        /Cannot resolve/,
+        /✖/,  // Common test failure marker
+        /FAIL/,
+        /AssertionError/
+    ];
     
     /**
      * Execute a command and return output
@@ -408,5 +427,275 @@ export class TerminalOperations {
         }
         
         return env;
+    }
+    
+    /**
+     * Execute command with real-time output monitoring
+     */
+    async executeWithMonitoring(
+        command: string,
+        onOutput?: (output: string, isError: boolean) => void,
+        cwd?: string
+    ): Promise<CommandResult> {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        const execCwd = cwd || workspaceFolder?.uri.fsPath || process.cwd();
+        
+        return new Promise((resolve) => {
+            const child = spawn(command, [], {
+                cwd: execCwd,
+                shell: true,
+                env: { ...process.env }
+            });
+            
+            const processId = `proc_${Date.now()}`;
+            const outputBuffer: string[] = [];
+            const errorBuffer: string[] = [];
+            const errors: string[] = [];
+            
+            this.runningProcesses.set(processId, {
+                id: processId,
+                command,
+                pid: child.pid!,
+                startTime: new Date()
+            });
+            
+            // Monitor stdout
+            child.stdout?.on('data', (data) => {
+                const output = data.toString();
+                outputBuffer.push(output);
+                
+                // Check for error patterns
+                const hasError = this.detectErrors(output);
+                if (hasError) {
+                    errors.push(output);
+                }
+                
+                if (onOutput) {
+                    onOutput(output, false);
+                }
+            });
+            
+            // Monitor stderr
+            child.stderr?.on('data', (data) => {
+                const output = data.toString();
+                errorBuffer.push(output);
+                errors.push(output);
+                
+                if (onOutput) {
+                    onOutput(output, true);
+                }
+            });
+            
+            // Handle process completion
+            child.on('close', (code) => {
+                this.runningProcesses.delete(processId);
+                
+                resolve({
+                    success: code === 0 && errors.length === 0,
+                    stdout: outputBuffer.join(''),
+                    stderr: errorBuffer.join(''),
+                    exitCode: code || 0,
+                    message: code !== 0 ? `Process exited with code ${code}` : undefined
+                });
+            });
+            
+            child.on('error', (error) => {
+                this.runningProcesses.delete(processId);
+                
+                resolve({
+                    success: false,
+                    stdout: outputBuffer.join(''),
+                    stderr: error.message,
+                    exitCode: 1,
+                    message: error.message
+                });
+            });
+        });
+    }
+    
+    /**
+     * Detect errors in output
+     */
+    detectErrors(output: string): boolean {
+        return this.errorPatterns.some(pattern => pattern.test(output));
+    }
+    
+    /**
+     * Analyze command output for errors and provide suggestions
+     */
+    analyzeOutput(output: string): {
+        hasErrors: boolean;
+        errors: string[];
+        suggestions: string[];
+    } {
+        const errors: string[] = [];
+        const suggestions: string[] = [];
+        const lines = output.split('\n');
+        
+        for (const line of lines) {
+            // Check for common error patterns
+            if (/Module not found|Cannot find module/i.test(line)) {
+                const moduleMatch = line.match(/['"]([^'"]+)['"]/);
+                if (moduleMatch) {
+                    errors.push(`Missing module: ${moduleMatch[1]}`);
+                    suggestions.push(`Try: npm install ${moduleMatch[1]}`);
+                }
+            }
+            
+            if (/npm ERR!/i.test(line)) {
+                errors.push(line);
+                if (/ENOENT/i.test(line)) {
+                    suggestions.push('File or directory not found. Check the path.');
+                }
+                if (/EACCES|permission/i.test(line)) {
+                    suggestions.push('Permission denied. Try with sudo or check file permissions.');
+                }
+                if (/E404/i.test(line)) {
+                    suggestions.push('Package not found in registry. Check the package name.');
+                }
+            }
+            
+            if (/TypeError:|ReferenceError:|SyntaxError:/i.test(line)) {
+                errors.push(line);
+                const fileMatch = line.match(/at\s+(.+):(\d+):(\d+)/);
+                if (fileMatch) {
+                    suggestions.push(`Check ${fileMatch[1]} at line ${fileMatch[2]}, column ${fileMatch[3]}`);
+                }
+            }
+            
+            if (/Test.*fail/i.test(line) || /✖/i.test(line)) {
+                errors.push(line);
+                suggestions.push('Test failures detected. Review the test output for details.');
+            }
+            
+            if (/port.*already in use/i.test(line)) {
+                const portMatch = line.match(/\d{4,5}/);
+                if (portMatch) {
+                    errors.push(`Port ${portMatch[0]} is already in use`);
+                    suggestions.push(`Kill the process using port ${portMatch[0]} or use a different port`);
+                }
+            }
+        }
+        
+        return {
+            hasErrors: errors.length > 0,
+            errors,
+            suggestions
+        };
+    }
+    
+    /**
+     * Monitor a long-running process and track its output
+     */
+    async monitorProcess(
+        command: string,
+        options: {
+            onOutput?: (output: string) => void;
+            onError?: (error: string) => void;
+            onComplete?: (result: CommandResult) => void;
+            timeout?: number;
+        } = {}
+    ): Promise<{ stop: () => void; getOutput: () => string[] }> {
+        const bufferId = `buffer_${Date.now()}`;
+        const buffer: string[] = [];
+        this.outputBuffers.set(bufferId, buffer);
+        
+        const child = spawn(command, [], {
+            shell: true,
+            env: { ...process.env }
+        });
+        
+        child.stdout?.on('data', (data) => {
+            const output = data.toString();
+            buffer.push(output);
+            
+            if (options.onOutput) {
+                options.onOutput(output);
+            }
+            
+            // Auto-analyze for errors
+            const analysis = this.analyzeOutput(output);
+            if (analysis.hasErrors && options.onError) {
+                options.onError(analysis.errors.join('\n'));
+            }
+        });
+        
+        child.stderr?.on('data', (data) => {
+            const error = data.toString();
+            buffer.push(`[ERROR] ${error}`);
+            
+            if (options.onError) {
+                options.onError(error);
+            }
+        });
+        
+        child.on('close', (code) => {
+            if (options.onComplete) {
+                options.onComplete({
+                    success: code === 0,
+                    stdout: buffer.filter(l => !l.startsWith('[ERROR]')).join(''),
+                    stderr: buffer.filter(l => l.startsWith('[ERROR]')).join(''),
+                    exitCode: code || 0
+                });
+            }
+        });
+        
+        // Set timeout if specified
+        let timeoutHandle: NodeJS.Timeout | undefined;
+        if (options.timeout) {
+            timeoutHandle = setTimeout(() => {
+                child.kill();
+            }, options.timeout);
+        }
+        
+        return {
+            stop: () => {
+                child.kill();
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                }
+                this.outputBuffers.delete(bufferId);
+            },
+            getOutput: () => buffer
+        };
+    }
+    
+    /**
+     * Run command and automatically fix common errors
+     */
+    async runWithAutoFix(command: string, maxRetries: number = 3): Promise<CommandResult> {
+        let attempts = 0;
+        let lastResult: CommandResult;
+        
+        while (attempts < maxRetries) {
+            attempts++;
+            lastResult = await this.executeCommand(command);
+            
+            if (lastResult.success) {
+                return lastResult;
+            }
+            
+            // Analyze the error and try to fix
+            const analysis = this.analyzeOutput(lastResult.stderr || lastResult.stdout || '');
+            
+            if (analysis.suggestions.length > 0) {
+                for (const suggestion of analysis.suggestions) {
+                    if (suggestion.startsWith('Try: ')) {
+                        const fixCommand = suggestion.replace('Try: ', '');
+                        const fixResult = await this.executeCommand(fixCommand);
+                        
+                        if (fixResult.success) {
+                            // Retry original command
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // No suggestions available, stop retrying
+                break;
+            }
+        }
+        
+        return lastResult!;
     }
 }
