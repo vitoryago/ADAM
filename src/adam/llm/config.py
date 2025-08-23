@@ -208,9 +208,10 @@ class LLMConfig:
                 max_tokens=32768,  # GPT-5 supports up to 32k
                 supports_streaming=True,
                 supports_vision=True,
-                cost_per_1k_tokens=0.015,  # Estimated pricing
-                cost_per_1k_input_tokens=0.010,
-                cost_per_1k_output_tokens=0.020
+                # GPT-5: $1.25 per 1M input, $10.00 per 1M output
+                cost_per_1k_tokens=0.005625,  # Average
+                cost_per_1k_input_tokens=0.00125,  # $1.25 / 1000
+                cost_per_1k_output_tokens=0.010     # $10.00 / 1000
             ),
             
             "gpt-5-mini": ModelConfig(
@@ -227,15 +228,16 @@ class LLMConfig:
                 max_tokens=8192,
                 supports_streaming=True,
                 supports_vision=False,
-                cost_per_1k_tokens=0.003,
-                cost_per_1k_input_tokens=0.002,
-                cost_per_1k_output_tokens=0.004
+                # GPT-5-mini: $0.25 per 1M input, $2.00 per 1M output
+                cost_per_1k_tokens=0.001125,  # Average
+                cost_per_1k_input_tokens=0.00025,  # $0.25 / 1000
+                cost_per_1k_output_tokens=0.002    # $2.00 / 1000
             ),
             
             "gpt-5-nano": ModelConfig(
                 name="gpt-5-nano",
                 provider=ModelProvider.OPENAI,
-                api_name="gpt-5-nano",
+                api_name="gpt-5-nano-2025-08-07",
                 capabilities=[
                     ModelCapability.FAST_RESPONSE,
                     ModelCapability.BASIC_QA
@@ -245,9 +247,10 @@ class LLMConfig:
                 max_tokens=4096,
                 supports_streaming=True,
                 supports_vision=False,
-                cost_per_1k_tokens=0.001,
-                cost_per_1k_input_tokens=0.0005,
-                cost_per_1k_output_tokens=0.0015
+                # GPT-5-nano: $0.05 per 1M input, $0.40 per 1M output
+                cost_per_1k_tokens=0.000225,  # Average
+                cost_per_1k_input_tokens=0.00005,  # $0.05 / 1000
+                cost_per_1k_output_tokens=0.0004   # $0.40 / 1000
             ),
             "grok-4-reasoning": ModelConfig(
                 name="grok-4-reasoning",
