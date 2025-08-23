@@ -5,7 +5,12 @@
 
 import * as vscode from 'vscode';
 import axios from 'axios';
-import { Message } from './adamClient';
+interface Message {
+    role: 'user' | 'assistant';
+    content: string;
+    model?: string;
+    cost?: number;
+}
 
 export interface BackendConfig {
     serverUrl: string;

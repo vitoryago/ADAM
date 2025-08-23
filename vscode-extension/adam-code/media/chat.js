@@ -109,15 +109,19 @@
         messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
     });
     
-    clearBtn.addEventListener('click', () => {
-        if (confirm('Clear all messages?')) {
-            vscode.postMessage({ type: 'clear' });
-        }
-    });
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (confirm('Clear all messages?')) {
+                vscode.postMessage({ type: 'clear' });
+            }
+        });
+    }
     
-    exportBtn.addEventListener('click', () => {
-        vscode.postMessage({ type: 'export' });
-    });
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'export' });
+        });
+    }
     
     // Handle messages from extension
     window.addEventListener('message', event => {
