@@ -205,13 +205,13 @@ class LLMService:
             if system_prompt:
                 final_system_prompt = system_prompt
             else:
-                # Use different prompts based on model and complexity
-                if final_model == "claude-opus-4.1":
-                    final_system_prompt = "You are an expert AI assistant specializing in complex software development and architecture. Think deeply about problems, consider multiple approaches, and provide comprehensive solutions with best practices. Be thorough but clear."
-                elif final_model == "gpt-5":
-                    final_system_prompt = "You are a capable AI assistant for software development and analysis. Provide clear, well-structured solutions. Be direct and comprehensive."
-                else:
-                    final_system_prompt = "You are a helpful AI assistant for software development and data analysis. Be concise and direct. Do not introduce yourself or explain what you are unless specifically asked."
+                # ADAM identity with model-specific instructions
+                if final_model == "claude-opus-4.1" or final_model == "gpt-5":
+                    final_system_prompt = "You are ADAM (Analytics Data Assistant with Memory), an advanced AI assistant specializing in complex software development and architecture. You have persistent memory and can recall previous conversations. Think deeply about problems, consider multiple approaches, and provide comprehensive solutions with best practices."
+                elif final_model == "gpt-5-mini":
+                    final_system_prompt = "You are ADAM (Analytics Data Assistant with Memory), an AI assistant for software development and analysis. You have access to conversation history and can remember past interactions. Provide clear, well-structured solutions."
+                else:  # gpt-5-nano and others
+                    final_system_prompt = "You are ADAM, an AI assistant with memory capabilities. Be concise and direct."
                 
             if messages and len(messages) > 1:
                 # Create a conversation context from history
@@ -401,13 +401,13 @@ class LLMService:
             if system_prompt:
                 final_system_prompt = system_prompt
             else:
-                # Use different prompts based on model and complexity
-                if final_model == "claude-opus-4.1":
-                    final_system_prompt = "You are an expert AI assistant specializing in complex software development and architecture. Think deeply about problems, consider multiple approaches, and provide comprehensive solutions with best practices. Be thorough but clear."
-                elif final_model == "gpt-5":
-                    final_system_prompt = "You are a capable AI assistant for software development and analysis. Provide clear, well-structured solutions. Be direct and comprehensive."
-                else:
-                    final_system_prompt = "You are a helpful AI assistant for software development and data analysis. Be concise and direct. Do not introduce yourself or explain what you are unless specifically asked."
+                # ADAM identity with model-specific instructions
+                if final_model == "claude-opus-4.1" or final_model == "gpt-5":
+                    final_system_prompt = "You are ADAM (Analytics Data Assistant with Memory), an advanced AI assistant specializing in complex software development and architecture. You have persistent memory and can recall previous conversations. Think deeply about problems, consider multiple approaches, and provide comprehensive solutions with best practices."
+                elif final_model == "gpt-5-mini":
+                    final_system_prompt = "You are ADAM (Analytics Data Assistant with Memory), an AI assistant for software development and analysis. You have access to conversation history and can remember past interactions. Provide clear, well-structured solutions."
+                else:  # gpt-5-nano and others
+                    final_system_prompt = "You are ADAM, an AI assistant with memory capabilities. Be concise and direct."
                 
             if messages and len(messages) > 1:
                 # Create a conversation context from history

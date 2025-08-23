@@ -234,9 +234,9 @@ class QueryAnalyzer:
         """
         # Model preferences by complexity
         model_preferences = {
-            QueryComplexity.HIGH: ['grok-4-reasoning', 'grok-4', 'gpt-5', 'claude-3.5-sonnet'],  # Grok-4-reasoning for complex tasks
-            QueryComplexity.MEDIUM: ['gpt-5', 'claude-3.5-sonnet', 'grok-4', 'gpt-5-mini'],  # GPT-5 for medium complexity
-            QueryComplexity.LOW: ['gpt-5-mini', 'gpt-5-nano', 'claude-3.5-haiku', 'grok-3-mini-high']  # GPT-5-mini for simple tasks
+            QueryComplexity.HIGH: ['gpt-5-reasoning', 'grok-4-reasoning', 'gpt-5', 'claude-3.5-sonnet'],  # GPT-5-reasoning for very complex, Grok-4-reasoning for coding
+            QueryComplexity.MEDIUM: ['gpt-5', 'claude-3.5-sonnet', 'grok-4'],  # GPT-5 for medium complexity
+            QueryComplexity.LOW: ['gpt-5-mini', 'gpt-5-nano', 'claude-3.5-haiku']  # GPT-5-mini for simple tasks
         }
         
         # Find first available model from preferences

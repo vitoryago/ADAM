@@ -46,7 +46,7 @@ class RoutingDecision:
 class AIRouter:
     """AI-powered routing engine using LLM for intelligent model selection"""
     
-    def __init__(self, routing_model: str = "gpt-5-mini", enable_caching: bool = True):
+    def __init__(self, routing_model: str = "gpt-5-nano", enable_caching: bool = True):
         """
         Initialize the AI Router
         
