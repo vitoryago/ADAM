@@ -1,96 +1,34 @@
 {
   "name": "adam-code",
-  "displayName": "ADAM Code - Analytics Engineering Assistant",
-  "description": "Your AI coworker for analytics engineering with perfect memory",
-  "version": "0.1.2",
+  "displayName": "ADAM Code",
+  "description": "AI assistant with backend integration",
+  "version": "0.3.1",
   "publisher": "adamassistant",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "AI",
-    "Programming Languages",
-    "Snippets",
     "Other"
   ],
   "icon": "resources/adam-icon.png",
   "activationEvents": [
     "onStartupFinished"
   ],
-  "main": "./out/extension.js",
+  "main": "./out/simpleExtension.js",
   "contributes": {
     "commands": [
       {
         "command": "adam.chat",
         "title": "ADAM: Open Chat",
         "icon": "$(comment-discussion)"
-      },
-      {
-        "command": "adam.explain",
-        "title": "ADAM: Explain Code",
-        "icon": "$(question)"
-      },
-      {
-        "command": "adam.optimize",
-        "title": "ADAM: Optimize SQL Query",
-        "icon": "$(rocket)"
-      },
-      {
-        "command": "adam.createBranch",
-        "title": "ADAM: Create Feature Branch",
-        "icon": "$(git-branch)"
-      },
-      {
-        "command": "adam.createPR",
-        "title": "ADAM: Create Pull Request",
-        "icon": "$(git-pull-request)"
-      },
-      {
-        "command": "adam.dbtGenerate",
-        "title": "ADAM: Generate dbt Model",
-        "icon": "$(database)"
-      },
-      {
-        "command": "adam.analyzeData",
-        "title": "ADAM: Analyze Data Pattern",
-        "icon": "$(graph)"
-      },
-      {
-        "command": "adam.voice",
-        "title": "ADAM: Voice Chat",
-        "icon": "$(unmute)"
-      },
-      {
-        "command": "adam.selectWorkspace",
-        "title": "ADAM: Select Workspace Folder",
-        "icon": "$(folder)"
-      },
-      {
-        "command": "adam.toggleStandalone",
-        "title": "ADAM: Toggle Standalone Mode",
-        "icon": "$(plug)"
-      },
-      {
-        "command": "adam.restartBackend",
-        "title": "ADAM: Restart Backend",
-        "icon": "$(debug-restart)"
-      },
-      {
-        "command": "adam.switchMode",
-        "title": "ADAM: Switch Between Backend/Standalone Mode",
-        "icon": "$(sync)"
-      },
-      {
-        "command": "adam.showStatus",
-        "title": "ADAM: Show Connection Status",
-        "icon": "$(info)"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "adam-container",
-          "title": "ADAM Assistant",
+          "title": "ADAM",
           "icon": "resources/adam-icon.svg"
         }
       ]
@@ -98,153 +36,19 @@
     "views": {
       "adam-container": [
         {
+          "type": "webview",
           "id": "adam.chatView",
-          "name": "Chat",
-          "type": "webview"
-        },
-        {
-          "id": "adam.memoryView",
-          "name": "Memory Network",
-          "icon": "$(circuit-board)",
-          "contextualTitle": "ADAM Memory"
-        },
-        {
-          "id": "adam.tasksView",
-          "name": "Tasks",
-          "icon": "$(checklist)",
-          "contextualTitle": "Current Tasks"
+          "name": "ADAM Chat"
         }
       ]
-    },
-    "configuration": {
-      "title": "ADAM Code",
-      "properties": {
-        "adam.standalone": {
-          "type": "boolean",
-          "default": true,
-          "description": "Use standalone mode (no backend required)"
-        },
-        "adam.backendPath": {
-          "type": "string",
-          "default": "/Users/vitoryago/ADAM",
-          "description": "Path to ADAM backend project (for non-standalone mode)"
-        },
-        "adam.autoStartBackend": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically start backend when extension activates (non-standalone mode)"
-        },
-        "adam.openaiApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "OpenAI API key for standalone mode"
-        },
-        "adam.grokApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Grok/xAI API key for standalone mode"
-        },
-        "adam.serverUrl": {
-          "type": "string",
-          "default": "http://localhost:8000",
-          "description": "ADAM backend server URL (only for non-standalone mode)"
-        },
-        "adam.projectId": {
-          "type": "string",
-          "default": "",
-          "description": "Current ADAM project ID"
-        },
-        "adam.enableVoice": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable voice interaction"
-        },
-        "adam.autoMemory": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically save important interactions to memory"
-        },
-        "adam.preferredModel": {
-          "type": "string",
-          "enum": [
-            "grok-4-reasoning",
-            "claude-opus-4.1",
-            "gpt-5-high"
-          ],
-          "default": "grok-4-reasoning",
-          "description": "Preferred high-performance model for complex tasks in VSCode"
-        },
-        "adam.sqlDialect": {
-          "type": "string",
-          "enum": [
-            "bigquery",
-            "snowflake",
-            "postgres",
-            "mysql",
-            "redshift"
-          ],
-          "default": "bigquery",
-          "description": "SQL dialect for query optimization"
-        },
-        "adam.dbtProject": {
-          "type": "string",
-          "default": "",
-          "description": "Path to dbt project"
-        },
-        "adam.tryBackendFirst": {
-          "type": "boolean",
-          "default": true,
-          "description": "Try to connect to backend for full RAG capabilities"
-        },
-        "adam.useRAG": {
-          "type": "boolean",
-          "default": true,
-          "description": "Use RAG (Retrieval-Augmented Generation) when backend is available"
-        },
-        "adam.useAdvancedMemory": {
-          "type": "boolean",
-          "default": true,
-          "description": "Use advanced memory system when backend is available"
-        },
-        "adam.enableFileOperations": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable file creation, editing, and deletion capabilities"
-        },
-        "adam.enableGitOperations": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable git operations (commit, push, branch, etc.)"
-        }
-      }
     },
     "keybindings": [
       {
         "command": "adam.chat",
         "key": "ctrl+shift+a",
         "mac": "cmd+shift+a"
-      },
-      {
-        "command": "adam.explain",
-        "key": "ctrl+shift+e",
-        "mac": "cmd+shift+e",
-        "when": "editorHasSelection"
       }
-    ],
-    "menus": {
-      "editor/context": [
-        {
-          "command": "adam.explain",
-          "when": "editorHasSelection",
-          "group": "adam@1"
-        },
-        {
-          "command": "adam.optimize",
-          "when": "resourceExtname == .sql",
-          "group": "adam@2"
-        }
-      ]
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -254,11 +58,9 @@
   "devDependencies": {
     "@types/node": "20.x",
     "@types/vscode": "^1.85.0",
-    "@types/ws": "^8.18.1",
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "axios": "^1.6.5",
-    "ws": "^8.16.0"
+    "axios": "^1.6.5"
   }
 }
