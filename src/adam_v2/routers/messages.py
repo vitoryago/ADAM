@@ -20,10 +20,13 @@ from models import (
 from services.llm_service import LLMService
 from services.memory_service import ProjectMemoryService, ADAM_MEMORY_AVAILABLE
 from services.tool_service import get_tool_service
+from tools.file_system_tools import FileSystemTools
+from tools.file_operation_handler import FileOperationHandler
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 tool_service = get_tool_service()
+file_handler = FileOperationHandler()
 
 
 @router.post("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
@@ -124,18 +127,72 @@ async def send_message(
     except Exception as e:
         logger.error(f"Error processing tool request: {e}")
     
-    # Generate AI response (incorporating tool results if any)
+    # Process workspace context and file operations
+    workspace_info = ""
+    file_operation_results = ""
+    
+    # Set workspace path for file handler if provided
+    if message_data.workspace_context:
+        try:
+            workspace = message_data.workspace_context.get('workspace', {})
+            active_file = message_data.workspace_context.get('activeFile', {})
+            
+            # Set workspace path for file operations
+            if workspace and not workspace.get('error'):
+                folders = workspace.get('folders', [])
+                if folders and folders[0].get('path'):
+                    file_handler.file_tools.workspace_path = folders[0]['path']
+            
+            # ALWAYS process file operations for ANY query
+            # The handler will determine if file operations are needed
+            file_ops_result = file_handler.process_query(message_data.content)
+            
+            # If file operations were performed, include the results
+            if file_ops_result.get('formatted_output'):
+                file_operation_results = file_ops_result['formatted_output']
+                logger.info(f"File operations performed: {file_ops_result.get('operations_performed', [])}")
+            
+            # Add workspace context to the message
+            if not active_file.get('error') and active_file.get('content'):
+                workspace_info = f"\n\n[Current File: {active_file.get('file', 'unknown')} ({active_file.get('language', 'unknown')})]"
+                workspace_info += f"\n```{active_file.get('language', '')}\n{active_file.get('content', '')[:5000]}\n```"
+            
+            if workspace and not workspace.get('error'):
+                folders = workspace.get('folders', [])
+                if folders:
+                    workspace_info += f"\n[Workspace: {folders[0].get('name', 'Unknown')} at {folders[0].get('path', 'Unknown')}]"
+        except Exception as e:
+            logger.error(f"Error processing workspace context: {e}")
+    
+    # Generate AI response (incorporating tool results and workspace context)
     try:
-        # Modify the message to include tool results for context
+        # Modify the message to include tool results, file operations and workspace context
         enhanced_message = message_data.content
         if tool_output:
             enhanced_message += tool_output
+        if file_operation_results:
+            enhanced_message += file_operation_results
+        if workspace_info:
+            enhanced_message += workspace_info
+        
+        # Build enhanced system prompt if workspace context exists
+        system_prompt = message_data.system_prompt
+        if message_data.workspace_context and not system_prompt:
+            system_prompt = """You are ADAM, an AI assistant with access to the user's VSCode workspace. 
+You can:
+- See and read the current file they have open
+- List directories and search for files when asked
+- Access any file in their workspace when they request it
+- Understand the project structure and context
+
+When users ask about files or folders, the relevant information will be provided to you automatically."""
         
         response = await llm_service.generate_response(
             message=enhanced_message,
             history=history,
             memory_context=memory_context,
             model=message_data.model,
+            system_prompt=system_prompt,
             image_data=message_data.image_data if message_data.has_image else None,
             use_search=message_data.use_search,
             search_mode=message_data.search_mode

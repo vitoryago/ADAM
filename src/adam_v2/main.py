@@ -25,6 +25,7 @@ from database import init_db, close_db
 
 # Import routers
 from routers import projects, conversations, messages, memories, voice, voice_streaming, tools
+from api import feedback_analyzer
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -75,6 +76,7 @@ app.include_router(memories.router, prefix="/api", tags=["memories"])
 app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 app.include_router(voice_streaming.router, tags=["voice-streaming"])
 app.include_router(tools.router, prefix="/api/tools", tags=["tools"])
+app.include_router(feedback_analyzer.router, tags=["feedback"])
 
 
 @app.get("/api/health")

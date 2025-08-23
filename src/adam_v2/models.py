@@ -10,6 +10,7 @@ from datetime import datetime
 import uuid
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field, ConfigDict
+from typing import Dict, Any
 from enum import Enum
 
 from database import Base
@@ -176,6 +177,10 @@ class MessageCreate(BaseModel):
     # For image attachments
     has_image: bool = False
     image_data: Optional[str] = None  # Base64 encoded image
+    
+    # For workspace context from VSCode
+    workspace_context: Optional[Dict[str, Any]] = None
+    system_prompt: Optional[str] = None
     
     # For live search
     use_search: bool = False
