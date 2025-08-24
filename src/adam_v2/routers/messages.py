@@ -230,35 +230,50 @@ async def send_message(
     
     # Generate AI response (incorporating tool results and workspace context)
     try:
-        # Modify the message to include tool results, file operations and workspace context
-        enhanced_message = message_data.content
-        if tool_output:
-            enhanced_message += tool_output
-        if file_operation_results:
-            enhanced_message += file_operation_results
-        if workspace_info:
-            enhanced_message += workspace_info
-        
-        # Build enhanced system prompt if workspace context exists
-        system_prompt = message_data.system_prompt
-        if message_data.workspace_context and not system_prompt:
-            system_prompt = """You are ADAM, an AI assistant with access to the user's VSCode workspace. 
+        # Check if we already have a complete response from the orchestrator
+        if tool_result and tool_result.get('status') == 'completed' and tool_result.get('response'):
+            # Use the orchestrator's response directly
+            response_content = tool_result['response']
+            # Create a mock response object for compatibility
+            from types import SimpleNamespace
+            response = SimpleNamespace(
+                content=response_content,
+                model_used=message_data.model or "gpt-5",
+                tokens_used=0,  # Would need to track this in orchestrator
+                cost=0.0,  # Would need to track this in orchestrator
+                metadata={}
+            )
+        else:
+            # Generate response with LLM (for non-orchestrator queries)
+            # Modify the message to include tool results, file operations and workspace context
+            enhanced_message = message_data.content
+            if tool_output:
+                enhanced_message += tool_output
+            if file_operation_results:
+                enhanced_message += file_operation_results
+            if workspace_info:
+                enhanced_message += workspace_info
+            
+            # Build enhanced system prompt if workspace context exists
+            system_prompt = message_data.system_prompt
+            if message_data.workspace_context and not system_prompt:
+                system_prompt = """You are ADAM, an AI assistant with access to the user's VSCode workspace. 
 You can help with code analysis, understanding, and providing guidance.
 File operation results will appear in your context automatically when you mention files."""
-        
-        response = await llm_service.generate_response(
-            message=enhanced_message,
-            history=history,
-            memory_context=memory_context,
-            model=message_data.model,
-            system_prompt=system_prompt,
-            image_data=message_data.image_data if message_data.has_image else None,
-            use_search=message_data.use_search,
-            search_mode=message_data.search_mode
-        )
-        
-        # Ensure response is not empty
-        response_content = response.content if response.content else "I understand your request. Let me help you with that."
+            
+            response = await llm_service.generate_response(
+                message=enhanced_message,
+                history=history,
+                memory_context=memory_context,
+                model=message_data.model,
+                system_prompt=system_prompt,
+                image_data=message_data.image_data if message_data.has_image else None,
+                use_search=message_data.use_search,
+                search_mode=message_data.search_mode
+            )
+            
+            # Ensure response is not empty
+            response_content = response.content if response.content else "I understand your request. Let me help you with that."
         
         # Create assistant message
         assistant_message = Message(
