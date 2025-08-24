@@ -338,13 +338,13 @@ class ADAMOrchestrator:
         We executed these tasks and got these results:
         {json.dumps(state['results'], indent=2)[:3000]}  # Truncate for context
         
-        Validate PRAGMATICALLY:
-        1. Do we have ENOUGH information to reasonably answer the user?
-        2. Are the key/main files or data obtained?
-        3. Is it practical to continue or should we respond with what we have?
+        Validate VERY PRAGMATICALLY:
+        1. Do we have ANY useful information about what the user asked?
+        2. Can we provide a reasonable response with what we have?
         
-        BE LENIENT - if we have 70%+ of what's needed, that's usually enough.
-        Don't ask for every single file in a directory.
+        BE VERY LENIENT - if we have ANYTHING useful, mark it as passed.
+        The user asked a simple question, we don't need perfect information.
+        If we listed files or got any data, that's usually enough!
         
         Return JSON:
         {{
@@ -498,8 +498,16 @@ class ADAMOrchestrator:
             # If no specific tool, try to use a general LLM call
             return await self._execute_llm_task(task)
         
-        # Execute the tool
-        result = await tool.execute(**task.params)
+        # Execute the tool - check if it's async or sync
+        import asyncio
+        import inspect
+        
+        if inspect.iscoroutinefunction(tool.execute):
+            # Tool is async, call directly
+            result = await tool.execute(**task.params)
+        else:
+            # Tool is synchronous, run in thread
+            result = await asyncio.to_thread(tool.execute, **task.params)
         
         # Convert result to serializable format
         if hasattr(result, 'to_dict'):
@@ -584,7 +592,7 @@ class ADAMOrchestrator:
             # Run the workflow with recursion limit
             final_state = await self.app.ainvoke(
                 initial_state,
-                config={"recursion_limit": 15}  # Increased slightly but still safe
+                config={"recursion_limit": 25}  # Increased for complex folder analysis
             )
             
             # Calculate execution time

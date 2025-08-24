@@ -122,7 +122,8 @@
       "Bash(out/integrations )",
       "Bash(scripts/ensure-project.py:*)",
       "Bash(\"/Users/vitoryago/Downloads/Visual Studio Code.app/Contents/Resources/app/bin/code\" --install-extension adam-code-0.3.1.vsix --force)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npm run:*)"
     ],
     "deny": []
   }
