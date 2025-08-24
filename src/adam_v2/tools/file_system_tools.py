@@ -262,3 +262,51 @@ class FileSystemTools:
             }
         except Exception as e:
             return {"error": str(e)}
+    
+    def write_file(self, path: str, content: str) -> Dict[str, Any]:
+        """
+        Write content to a file
+        
+        Args:
+            path: Relative path from workspace
+            content: Content to write
+            
+        Returns:
+            Dict with success status
+        """
+        try:
+            full_path = os.path.join(self.workspace_path, path)
+            
+            # Create directory if it doesn't exist
+            dir_path = os.path.dirname(full_path)
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path, exist_ok=True)
+            
+            # Write the file
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            return {
+                "success": True,
+                "path": path,
+                "full_path": full_path,
+                "size": len(content),
+                "message": f"File written successfully: {path}"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error writing file: {e}")
+            return {"error": str(e), "success": False}
+    
+    def create_file(self, path: str, content: str = "") -> Dict[str, Any]:
+        """
+        Create a new file (alias for write_file)
+        
+        Args:
+            path: Relative path from workspace
+            content: Initial content (optional)
+            
+        Returns:
+            Dict with success status
+        """
+        return self.write_file(path, content)

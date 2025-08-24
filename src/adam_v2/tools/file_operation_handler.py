@@ -3,6 +3,7 @@ File Operation Handler
 Intelligently processes file-related queries
 """
 
+import os
 import re
 import logging
 from typing import Dict, Any, Optional, List
@@ -15,8 +16,11 @@ class FileOperationHandler:
     
     def __init__(self, workspace_path: Optional[str] = None):
         self.file_tools = FileSystemTools(workspace_path)
+        # Default workspace if not provided
+        if not workspace_path:
+            self.file_tools.workspace_path = "/Users/vitoryago"
         
-    def process_query(self, query: str) -> Dict[str, Any]:
+    def process_query(self, query: str, content: str = "") -> Dict[str, Any]:
         """
         Process a query and execute any file operations needed
         
@@ -40,12 +44,18 @@ class FileOperationHandler:
             r"(list|show|what's in|check).*(folder|directory|path)": self._handle_directory_listing,
             # File reading
             r"(read|open|show|view).*(file|\.sql|\.py|\.txt)": self._handle_file_reading,
+            # File creation/writing
+            r"(create|write|make|generate|save).*(file|\.sql|\.py|model)": self._handle_file_creation,
         }
         
         # Check each pattern
         for pattern, handler in patterns.items():
             if re.search(pattern, query_lower):
-                result = handler(query)
+                # Pass content for file creation handlers
+                if handler == self._handle_file_creation:
+                    result = handler(query, content)
+                else:
+                    result = handler(query)
                 if result:
                     results["operations_performed"].append(result["operation"])
                     results["formatted_output"] += result["output"]
@@ -70,17 +80,30 @@ class FileOperationHandler:
         search_path = ""
         
         # Extract folder path if mentioned
-        if "marketing" in query_lower:
-            # Check for full path patterns
-            if "de-dbt-analytics" in query_lower or "dbt" in query_lower:
-                search_path = "de-dbt-analytics/marketing/models/main/tables"
-            elif "marketing/models" in query_lower:
-                search_path = "marketing/models/main/tables"
-            else:
-                # Default to the most likely path
-                search_path = "de-dbt-analytics/marketing/models/main/tables"
+        # Build path dynamically based on what's mentioned in the query
+        path_parts = []
+        
+        # Check for project-specific keywords
+        if "de-dbt-analytics" in query_lower or "dbt-analytics" in query_lower:
+            # Search for this specific project folder anywhere in workspace
+            search_path = self._find_folder_in_workspace("de-dbt-analytics")
+            if not search_path:
+                search_path = "de-dbt-analytics"
+        elif "marketing" in query_lower and "models" in query_lower:
+            # Look for marketing/models pattern
+            search_path = self._find_folder_in_workspace("marketing/models")
+            if not search_path:
+                search_path = "marketing/models"
+        elif "marketing" in query_lower:
+            search_path = self._find_folder_in_workspace("marketing")
+            if not search_path:
+                search_path = "marketing"
         elif "models" in query_lower:
-            search_path = "models"
+            search_path = self._find_folder_in_workspace("models")
+            if not search_path:
+                search_path = "models"
+        else:
+            search_path = ""
         
         # Execute search
         result = self.file_tools.find_files(pattern, search_path)
@@ -89,14 +112,25 @@ class FileOperationHandler:
             # Log the error and try alternative paths
             logger.warning(f"Search failed in {search_path}: {result.get('error')}")
             
-            # Try alternative paths
-            alt_paths = [
-                "de-dbt-analytics/marketing/models/main/tables",
-                "marketing/models/main/tables", 
-                "marketing/models",
-                "models/marketing",
-                "models"
-            ]
+            # Try alternative paths - search dynamically
+            alt_paths = []
+            
+            # Try to find common folder patterns
+            if "_inc" in pattern or "marketing" in query_lower:
+                # Look for marketing-related paths
+                marketing_path = self._find_folder_in_workspace("marketing")
+                if marketing_path:
+                    alt_paths.append(marketing_path)
+                    alt_paths.append(os.path.join(marketing_path, "models"))
+                    alt_paths.append(os.path.join(marketing_path, "models/main/tables"))
+            
+            # Add generic fallbacks
+            alt_paths.extend([
+                "models",
+                "src",
+                "lib",
+                "."  # Current directory
+            ])
             for alt_path in alt_paths:
                 if alt_path != search_path:
                     result = self.file_tools.find_files(pattern, alt_path)
@@ -144,10 +178,14 @@ class FileOperationHandler:
         pattern = "*_inc.sql" if "_inc" in query_lower else "*.sql"
         
         if "marketing" in query_lower:
-            # Use the correct marketing path
-            folder = "de-dbt-analytics/marketing/models/main/tables"
+            # Find marketing folder dynamically
+            folder = self._find_folder_in_workspace("marketing")
+            if not folder:
+                folder = "marketing"  # Fallback
         elif "staging" in query_lower:
-            folder = "models/staging"
+            folder = self._find_folder_in_workspace("staging")
+            if not folder:
+                folder = "staging"  # Fallback
         
         if not folder:
             return None
@@ -245,6 +283,50 @@ class FileOperationHandler:
             "raw": result
         }
     
+    def _handle_file_creation(self, query: str, content: str = "") -> Optional[Dict[str, Any]]:
+        """Handle file creation requests"""
+        # Extract file path from query
+        file_path = self._extract_file_path_from_query(query)
+        
+        if not file_path:
+            # Try to build path from context
+            query_lower = query.lower()
+            if "_inc" in query_lower and ".sql" in query_lower:
+                # Creating an incremental SQL model
+                if "marketing" in query_lower:
+                    base_path = self._find_folder_in_workspace("marketing/models/main/tables")
+                    if base_path:
+                        # Extract filename from query or generate one
+                        import re
+                        filename_match = re.search(r'(\w+_inc)\.sql', query_lower)
+                        if filename_match:
+                            filename = filename_match.group(0)
+                        else:
+                            filename = "new_model_inc.sql"
+                        file_path = os.path.join(base_path, filename)
+                    else:
+                        file_path = "new_model_inc.sql"
+                else:
+                    file_path = "new_model_inc.sql"
+            else:
+                return None
+        
+        # Write the file
+        result = self.file_tools.write_file(file_path, content)
+        
+        if result.get('error'):
+            return None
+        
+        output = f"\n[File Created: {file_path}]\n"
+        output += f"✅ Successfully created file: {result.get('full_path', file_path)}\n"
+        output += f"Size: {result.get('size', 0)} bytes\n"
+        
+        return {
+            "operation": "file_creation",
+            "output": output,
+            "raw": result
+        }
+    
     def _handle_general_search(self, query: str) -> Optional[Dict[str, Any]]:
         """Handle general file/folder queries"""
         # Try to be helpful with a general search
@@ -293,14 +375,47 @@ class FileOperationHandler:
         query_lower = query.lower()
         
         if "marketing" in query_lower:
-            # Use the correct marketing path
-            return "de-dbt-analytics/marketing/models/main/tables"
+            # Find marketing folder dynamically
+            path = self._find_folder_in_workspace("marketing")
+            return path if path else "marketing"
         elif "staging" in query_lower:
-            return "models/staging"
+            path = self._find_folder_in_workspace("staging")
+            return path if path else "staging"
         elif "models" in query_lower:
-            return "models"
+            path = self._find_folder_in_workspace("models")
+            return path if path else "models"
         
         return ""
+    
+    def _find_folder_in_workspace(self, folder_name: str) -> Optional[str]:
+        """Find a folder anywhere in the workspace"""
+        import os
+        from pathlib import Path
+        
+        # Start from workspace root
+        workspace_root = Path(self.file_tools.workspace_path)
+        
+        # First check if the folder exists directly
+        direct_path = workspace_root / folder_name
+        if direct_path.exists() and direct_path.is_dir():
+            return folder_name
+        
+        # Search for the folder recursively (limit depth for performance)
+        for root, dirs, files in os.walk(workspace_root):
+            # Limit search depth to avoid searching too deep
+            depth = root.count(os.sep) - str(workspace_root).count(os.sep)
+            if depth > 5:  # Don't go more than 5 levels deep
+                dirs[:] = []  # Don't recurse further
+                continue
+                
+            for dir_name in dirs:
+                full_path = os.path.join(root, dir_name)
+                # Check if this directory ends with or contains our target
+                if full_path.endswith(folder_name) or folder_name in full_path:
+                    # Return relative path from workspace
+                    return os.path.relpath(full_path, workspace_root)
+        
+        return None
     
     def _extract_file_path_from_query(self, query: str) -> Optional[str]:
         """Extract file path from query"""
