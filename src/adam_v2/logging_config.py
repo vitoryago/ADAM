@@ -8,6 +8,7 @@ import logging.handlers
 import sys
 from datetime import datetime
 import os
+from typing import Dict, Optional
 
 # Color codes for terminal output
 class ColoredFormatter(logging.Formatter):
@@ -156,7 +157,7 @@ def setup_logging(log_level=None):
     return root_logger
 
 # Utility function for agent task logging
-def log_agent_step(task_id: str, step: str, details: Dict = None):
+def log_agent_step(task_id: str, step: str, details: Optional[dict] = None):
     """Log an agent execution step"""
     logger = logging.getLogger('agents')
     extra = {'task_id': task_id}

@@ -182,7 +182,6 @@ def get_agent_service() -> AgentService:
     
     if _agent_service is None:
         _agent_service = AgentService()
-        # Start the background processor
-        asyncio.create_task(_agent_service.start_background_processor())
+        # Background processor will be started on first task submission
     
     return _agent_service

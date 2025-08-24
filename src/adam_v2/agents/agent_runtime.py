@@ -13,7 +13,7 @@ import json
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.tools import Tool as LangChainTool
+from langchain_core.tools import Tool as LangChainTool, StructuredTool
 from langchain_core.messages import HumanMessage, AIMessage
 
 # Import ADAM's actual tools
@@ -204,8 +204,8 @@ class AgentRuntime:
             max_iterations=5
         )
     
-    def _wrap_tool(self, adam_tool, name: str, description: str) -> LangChainTool:
-        """Wrap ADAM tool as LangChain tool"""
+    def _wrap_tool(self, adam_tool, name: str, description: str) -> StructuredTool:
+        """Wrap ADAM tool as LangChain StructuredTool"""
         
         async def tool_func(**kwargs):
             """Execute ADAM tool and return result"""
@@ -220,15 +220,15 @@ class AgentRuntime:
             except Exception as e:
                 return f"Error: {str(e)}"
         
-        # Create sync wrapper
+        # Create sync wrapper for StructuredTool
         def sync_tool_func(**kwargs):
             return asyncio.run(tool_func(**kwargs))
         
-        return LangChainTool(
-            name=name,
+        # Use StructuredTool to handle parameters properly
+        return StructuredTool.from_function(
             func=sync_tool_func,
-            description=description,
-            args_schema=adam_tool._get_param_schema() if hasattr(adam_tool, '_get_param_schema') else None
+            name=name,
+            description=description
         )
     
     async def _run_agent(self, agent_name: str, task: str) -> str:

@@ -140,47 +140,38 @@ async def send_message(
                     workspace_path = folders[0]['path']
         
         if needs_agent:
-            logger.info(f"🚀 Agent execution triggered for: {message_data.content[:100]}...")
+            logger.info(f"🚀 Autonomous agent execution triggered for: {message_data.content[:100]}...")
             
-            # Try Celery task execution first
+            # Use the new LangGraph orchestrator for autonomous execution
             try:
-                from tasks.agent_tasks import execute_agent_task
+                from agents.orchestrator import get_orchestrator
+                orchestrator = get_orchestrator()
                 
-                # Submit to Celery for background execution
-                task = execute_agent_task.delay(
-                    request=message_data.content,
-                    workspace_path=workspace_path
+                logger.info("🤖 Running autonomous agent workflow...")
+                
+                # Process the request autonomously
+                result = await orchestrator.process_request(
+                    user_message=message_data.content,
+                    workspace_path=workspace_path or "/Users/vitoryago"
                 )
                 
-                # Wait for result (with timeout)
-                logger.info(f"⏳ Waiting for Celery task {task.id}...")
-                result = task.get(timeout=10)  # 10 second timeout
-                
-                if result and result.get('status') == 'success':
-                    agent_result = result.get('result', {})
-                    tool_output = f"\n\n✅ **Agent Execution Complete**\n\n{agent_result.get('output', '')}\n"
-                    if agent_result.get('steps'):
-                        tool_output += f"\n📋 **Steps executed:** {len(agent_result.get('steps', []))}\n"
-                    logger.info(f"✅ Celery task completed successfully")
+                if result['status'] == 'completed':
+                    tool_output = result['response']
+                    logger.info(f"✅ Autonomous execution completed in {result['execution_time']:.2f}s")
+                    logger.info(f"📊 Executed {result['tasks_executed']} tasks")
                     tool_result = result
                 else:
-                    logger.error(f"❌ Celery task failed: {result}")
+                    logger.error(f"❌ Autonomous execution failed: {result.get('error')}")
+                    tool_output = f"I encountered an error: {result.get('error', 'Unknown error')}"
                     
-            except Exception as celery_error:
-                logger.warning(f"⚠️ Celery not available: {celery_error}")
-                
-                # Fallback to direct execution
-                if agent_service:
-                    logger.info("🔄 Falling back to direct agent execution...")
-                    
-                    if agent_service.runtime and workspace_path:
-                        agent_service.runtime.workspace_path = workspace_path
-                    
+            except Exception as e:
+                logger.error(f"❌ Failed to run autonomous agent: {e}")
+                # Fallback to old agent service if needed
+                if agent_service and agent_service.runtime:
+                    agent_service.runtime.workspace_path = workspace_path
                     agent_result = await agent_service.execute_immediate(message_data.content)
-                    
                     if agent_result and agent_result.get('status') == 'success':
                         tool_output = f"\n\n{agent_result.get('output', '')}\n"
-                        logger.info(f"✅ Direct agent execution successful")
                         tool_result = agent_result
         
         # Fallback to simple tool service

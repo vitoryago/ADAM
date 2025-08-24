@@ -100,7 +100,7 @@ export class SimpleChatProvider implements vscode.WebviewViewProvider {
                     workspace_context: workspaceContext
                 },
                 {
-                    timeout: 60000
+                    timeout: 120000  // Increase to 2 minutes for complex requests
                 }
             );
             
