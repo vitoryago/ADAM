@@ -184,20 +184,39 @@ class ADAMOrchestrator:
         prompt = f"""
         User request: "{state['user_message']}"
         Intent: {state['intent']}
+        Workspace: {state.get('workspace_path', '/Users/vitoryago')}
         
-        Break this down into SIMPLE executable tasks using ONLY these valid actions:
-        - list_files: params must have ONLY "path" and optionally "recursive" (true/false)
-        - read_file: params must have ONLY "file_path"
-        - run_command: params must have ONLY "command"
+        Create an AUTONOMOUS execution plan that IMMEDIATELY fulfills the request.
         
-        Keep it simple! For showing folder contents, usually just list_files is enough.
+        CRITICAL RULES:
+        1. NEVER ask for clarification or user input
+        2. NEVER generate tasks like "ask user", "get preference", "request path"
+        3. ALWAYS try reasonable defaults first
+        4. If a path doesn't work, search for it
         
-        Example:
+        Available actions (use EXACTLY these names):
+        - list_files: List directory contents
+          params: {{"path": "string", "recursive": true/false}}
+        - read_file: Read file contents
+          params: {{"file_path": "string"}}
+        - run_command: Execute shell command
+          params: {{"command": "string"}}
+        
+        AUTONOMOUS BEHAVIOR:
+        - If user mentions a folder name without path, try common locations:
+          1. ./folder_name (relative to workspace)
+          2. workspace/folder_name
+          3. /Users/vitoryago/Documents/GitHub/*/folder_name
+        - If listing fails, use run_command with "find . -name folder_name -type d"
+        - Always prefer action over asking questions
+        
+        Example for "list marketing folder":
         [
-            {{"action": "list_files", "params": {{"path": "/some/path", "recursive": false}}}}
+            {{"action": "list_files", "params": {{"path": "./marketing", "recursive": false}}}},
+            {{"action": "run_command", "params": {{"command": "find . -maxdepth 3 -name 'marketing' -type d 2>/dev/null | head -5"}}}}
         ]
         
-        Return ONLY a valid JSON array with simple tasks, no other text.
+        Return ONLY a JSON array of tasks. Execute, don't ask!
         """
         
         try:
@@ -382,53 +401,129 @@ class ADAMOrchestrator:
     
     async def respond_node(self, state: AgentState) -> AgentState:
         """
-        Generate the final response for the user
-        Synthesizes all results into a comprehensive answer
+        Generate the final response showing ACTUAL RESULTS, not LLM interpretation
+        This is crucial for autonomous execution - show what we DID, not what we THINK
         """
-        logger.info("💬 Generating final response...")
+        logger.info("💬 Formatting actual results for response...")
         
-        from adam.llm.client import UnifiedLLMClient
-        llm = UnifiedLLMClient()
+        results = state.get('results', [])
         
-        # Build context from results
-        results_summary = []
-        for result in state['results']:
-            if result['status'] == 'success':
-                results_summary.append(f"- {result['task']}: {str(result.get('result', ''))[:200]}")
-        
-        prompt = f"""
-        User asked: {state['user_message']}
-        
-        Based on our execution results:
-        {chr(10).join(results_summary)}
-        
-        Provide a comprehensive, well-structured response that:
-        1. Directly answers their question
-        2. Includes all relevant details from our findings
-        3. Is organized and easy to understand
-        4. Uses markdown formatting where appropriate
-        
-        Be thorough but concise.
-        """
-        
-        try:
-            # Call async method with better model for final response
-            response = await llm.complete(
-                prompt=prompt,
-                model="gpt-5"
-            )
+        # Build response from actual execution results
+        if results:
+            response_parts = []
             
-            state['final_response'] = response.content
-            state['status'] = "completed"
-            logger.info("✅ Response generated successfully")
+            # Process each result based on the task type
+            for result in results:
+                if result['status'] == 'success':
+                    task_action = result['task']
+                    
+                    # Handle file listing results specially
+                    if task_action in ['list_files', 'explore_folder', 'check_directory']:
+                        file_result = result.get('result', {})
+                        if isinstance(file_result, dict):
+                            # Extract the actual file listing
+                            output = file_result.get('data', file_result.get('output', ''))
+                            if output:
+                                response_parts.append(self._format_file_listing(output, result['params']))
+                        elif isinstance(file_result, str):
+                            response_parts.append(self._format_file_listing(file_result, result['params']))
+                    
+                    # Handle file reading results
+                    elif task_action in ['read_file', 'view_file']:
+                        file_result = result.get('result', {})
+                        file_path = result['params'].get('file_path', 'unknown')
+                        if isinstance(file_result, dict):
+                            content = file_result.get('data', file_result.get('output', ''))
+                            if content:
+                                response_parts.append(f"### Contents of {file_path}:\n```\n{content[:1000]}\n```\n")
+                        elif isinstance(file_result, str):
+                            response_parts.append(f"### Contents of {file_path}:\n```\n{file_result[:1000]}\n```\n")
+                    
+                    # Handle command execution results
+                    elif task_action == 'run_command':
+                        cmd_result = result.get('result', {})
+                        command = result['params'].get('command', 'unknown')
+                        if isinstance(cmd_result, dict):
+                            output = cmd_result.get('data', cmd_result.get('output', ''))
+                            response_parts.append(f"### Command: `{command}`\n```\n{output}\n```\n")
+                        else:
+                            response_parts.append(f"### Command: `{command}`\n```\n{cmd_result}\n```\n")
+                    
+                    # For other tasks, include raw result
+                    else:
+                        result_data = result.get('result', '')
+                        if isinstance(result_data, dict):
+                            result_str = result_data.get('output', str(result_data))
+                        else:
+                            result_str = str(result_data)
+                        response_parts.append(f"### {task_action}:\n{result_str[:500]}\n")
+                
+                elif result['status'] == 'failed':
+                    # Include error information
+                    response_parts.append(f"❌ Failed to {result['task']}: {result.get('error', 'Unknown error')}\n")
             
-        except Exception as e:
-            logger.error(f"❌ Response generation failed: {e}")
-            state['error'] = str(e)
-            state['final_response'] = "I encountered an error while generating the response."
-            state['status'] = "error"
+            # Combine all parts into final response
+            if response_parts:
+                state['final_response'] = "\n".join(response_parts)
+            else:
+                state['final_response'] = "I completed the tasks but didn't find any results to display."
+        else:
+            # No results means nothing was executed
+            state['final_response'] = "I wasn't able to execute any tasks. Please check the logs for details."
         
+        state['status'] = "completed"
+        logger.info("✅ Response formatted with actual results")
         return state
+    
+    def _format_file_listing(self, output: str, params: dict) -> str:
+        """Format file listing output for display"""
+        path = params.get('path', 'the folder')
+        
+        lines = output.strip().split('\n')
+        files = []
+        directories = []
+        
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith('total'):  # Skip summary lines
+                # Clean up the line
+                clean_line = line.replace('│', '').replace('├──', '').replace('└──', '').strip()
+                if clean_line:
+                    # Try to determine if it's a file or directory
+                    if '.' in clean_line and not clean_line.startswith('.'):
+                        files.append(clean_line)
+                    elif clean_line and not clean_line.startswith('.'):
+                        directories.append(clean_line + '/')
+        
+        # Build formatted response
+        response = f"## Contents of {path}:\n\n"
+        
+        if directories:
+            response += "### Directories:\n"
+            for d in sorted(directories):
+                response += f"📁 {d}\n"
+            response += "\n"
+        
+        if files:
+            response += "### Files:\n"
+            for f in sorted(files):
+                # Add appropriate icon based on extension
+                if f.endswith(('.py', '.js', '.ts', '.jsx', '.tsx')):
+                    icon = "📄"
+                elif f.endswith(('.md', '.txt', '.rst')):
+                    icon = "📝"
+                elif f.endswith(('.json', '.yaml', '.yml', '.toml')):
+                    icon = "⚙️"
+                elif f.endswith(('.sql',)):
+                    icon = "🗃️"
+                else:
+                    icon = "📄"
+                response += f"{icon} {f}\n"
+        
+        if not files and not directories:
+            response = f"The folder {path} appears to be empty or doesn't exist."
+        
+        return response
     
     async def error_node(self, state: AgentState) -> AgentState:
         """Handle errors gracefully"""
