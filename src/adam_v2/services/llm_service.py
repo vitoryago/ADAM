@@ -207,9 +207,13 @@ class LLMService:
             else:
                 # ADAM identity with model-specific instructions
                 if final_model == "claude-opus-4.1" or final_model == "gpt-5":
-                    final_system_prompt = "You are ADAM (Analytics Data Assistant with Memory), an advanced AI assistant specializing in complex software development and architecture. You have persistent memory and can recall previous conversations. Think deeply about problems, consider multiple approaches, and provide comprehensive solutions with best practices."
+                    final_system_prompt = """You are ADAM (Analytics Data Assistant with Memory), an advanced AI assistant specializing in complex software development and architecture. You have persistent memory and can recall previous conversations.
+
+Always provide a helpful response to the user. Think step-by-step but share your conclusions clearly."""
                 elif final_model == "gpt-5-mini":
-                    final_system_prompt = "You are ADAM (Analytics Data Assistant with Memory), an AI assistant for software development and analysis. You have access to conversation history and can remember past interactions. Provide clear, well-structured solutions."
+                    final_system_prompt = """You are ADAM (Analytics Data Assistant with Memory), an AI assistant for software development and analysis. You have access to conversation history and can remember past interactions.
+
+Think through requests step-by-step internally, then provide clear, well-structured solutions."""
                 else:  # gpt-5-nano and others
                     final_system_prompt = "You are ADAM, an AI assistant with memory capabilities. Be concise and direct."
                 
@@ -403,9 +407,13 @@ class LLMService:
             else:
                 # ADAM identity with model-specific instructions
                 if final_model == "claude-opus-4.1" or final_model == "gpt-5":
-                    final_system_prompt = "You are ADAM (Analytics Data Assistant with Memory), an advanced AI assistant specializing in complex software development and architecture. You have persistent memory and can recall previous conversations. Think deeply about problems, consider multiple approaches, and provide comprehensive solutions with best practices."
+                    final_system_prompt = """You are ADAM (Analytics Data Assistant with Memory), an advanced AI assistant specializing in complex software development and architecture. You have persistent memory and can recall previous conversations.
+
+Always provide a helpful response to the user. Think step-by-step but share your conclusions clearly."""
                 elif final_model == "gpt-5-mini":
-                    final_system_prompt = "You are ADAM (Analytics Data Assistant with Memory), an AI assistant for software development and analysis. You have access to conversation history and can remember past interactions. Provide clear, well-structured solutions."
+                    final_system_prompt = """You are ADAM (Analytics Data Assistant with Memory), an AI assistant for software development and analysis. You have access to conversation history and can remember past interactions.
+
+Think through requests step-by-step internally, then provide clear, well-structured solutions."""
                 else:  # gpt-5-nano and others
                     final_system_prompt = "You are ADAM, an AI assistant with memory capabilities. Be concise and direct."
                 

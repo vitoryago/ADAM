@@ -4,6 +4,7 @@ Main FastAPI application for ADAM v2.0 API
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
 import logging
@@ -24,11 +25,12 @@ load_dotenv()
 from database import init_db, close_db
 
 # Import routers
-from routers import projects, conversations, messages, memories, voice, voice_streaming, tools
+from routers import projects, conversations, messages, memories, voice, voice_streaming, tools, agent_monitor
 from api import feedback_analyzer
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
+# Setup enhanced logging
+from logging_config import setup_logging
+logger = setup_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -77,7 +79,11 @@ app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 app.include_router(voice_streaming.router, tags=["voice-streaming"])
 app.include_router(tools.router, prefix="/api/tools", tags=["tools"])
 app.include_router(feedback_analyzer.router, tags=["feedback"])
+app.include_router(agent_monitor.router, prefix="/api/monitor", tags=["monitoring"])
 
+# Mount static files for monitoring UI
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/api/health")
 async def health_check():

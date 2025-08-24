@@ -20,6 +20,8 @@ from models import (
 from services.llm_service import LLMService
 from services.memory_service import ProjectMemoryService, ADAM_MEMORY_AVAILABLE
 from services.tool_service import get_tool_service
+from services.workflow_service import get_workflow_service
+from services.agent_service import get_agent_service
 from tools.file_system_tools import FileSystemTools
 from tools.file_operation_handler import FileOperationHandler
 
@@ -27,6 +29,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 tool_service = get_tool_service()
 file_handler = FileOperationHandler()
+workflow_service = get_workflow_service()
+agent_service = get_agent_service()
 
 
 @router.post("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
@@ -113,19 +117,84 @@ async def send_message(
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}")
     
-    # Check if message requires tool usage
+    # Check if message requires agent/tool execution
     tool_result = None
     tool_output = ""
     
     try:
-        # Check if the message is requesting a tool operation
-        tool_result = tool_service.process_tool_request(message_data.content)
+        # Determine if this needs agent execution
+        message_lower = message_data.content.lower()
+        needs_agent = any(word in message_lower for word in [
+            'check', 'explore', 'navigate', 'find', 'search',
+            'create', 'write', 'edit', 'read', 'list',
+            'folder', 'directory', 'file', 'model', 'repository', 'banking', 'crypto'
+        ])
         
-        if tool_result and tool_result.get('status') == 'success':
-            tool_output = f"\n\n**Tool Execution Result:**\n```\n{tool_result.get('output', '')}\n```\n"
-            logger.info(f"Tool executed successfully: {tool_result.get('metadata', {})}")
+        # Extract workspace path
+        workspace_path = None
+        if message_data.workspace_context:
+            workspace = message_data.workspace_context.get('workspace', {})
+            if workspace and not workspace.get('error'):
+                folders = workspace.get('folders', [])
+                if folders and folders[0].get('path'):
+                    workspace_path = folders[0]['path']
+        
+        if needs_agent:
+            logger.info(f"🚀 Agent execution triggered for: {message_data.content[:100]}...")
+            
+            # Try Celery task execution first
+            try:
+                from tasks.agent_tasks import execute_agent_task
+                
+                # Submit to Celery for background execution
+                task = execute_agent_task.delay(
+                    request=message_data.content,
+                    workspace_path=workspace_path
+                )
+                
+                # Wait for result (with timeout)
+                logger.info(f"⏳ Waiting for Celery task {task.id}...")
+                result = task.get(timeout=10)  # 10 second timeout
+                
+                if result and result.get('status') == 'success':
+                    agent_result = result.get('result', {})
+                    tool_output = f"\n\n✅ **Agent Execution Complete**\n\n{agent_result.get('output', '')}\n"
+                    if agent_result.get('steps'):
+                        tool_output += f"\n📋 **Steps executed:** {len(agent_result.get('steps', []))}\n"
+                    logger.info(f"✅ Celery task completed successfully")
+                    tool_result = result
+                else:
+                    logger.error(f"❌ Celery task failed: {result}")
+                    
+            except Exception as celery_error:
+                logger.warning(f"⚠️ Celery not available: {celery_error}")
+                
+                # Fallback to direct execution
+                if agent_service:
+                    logger.info("🔄 Falling back to direct agent execution...")
+                    
+                    if agent_service.runtime and workspace_path:
+                        agent_service.runtime.workspace_path = workspace_path
+                    
+                    agent_result = await agent_service.execute_immediate(message_data.content)
+                    
+                    if agent_result and agent_result.get('status') == 'success':
+                        tool_output = f"\n\n{agent_result.get('output', '')}\n"
+                        logger.info(f"✅ Direct agent execution successful")
+                        tool_result = agent_result
+        
+        # Fallback to simple tool service
+        if not tool_result:
+            tool_result = tool_service.process_tool_request(message_data.content)
+            
+            if tool_result and tool_result.get('status') == 'success':
+                tool_output = f"\n\n**Tool Result:**\n```\n{tool_result.get('output', '')}\n```\n"
+                logger.info(f"Tool executed: {tool_result.get('metadata', {})}")
+                
     except Exception as e:
-        logger.error(f"Error processing tool request: {e}")
+        logger.error(f"❌ Error in agent/tool execution: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
     
     # Process workspace context and file operations
     workspace_info = ""
@@ -145,12 +214,16 @@ async def send_message(
             
             # ALWAYS process file operations for ANY query
             # The handler will determine if file operations are needed
-            file_ops_result = file_handler.process_query(message_data.content)
-            
-            # If file operations were performed, include the results
-            if file_ops_result.get('formatted_output'):
-                file_operation_results = file_ops_result['formatted_output']
-                logger.info(f"File operations performed: {file_ops_result.get('operations_performed', [])}")
+            try:
+                file_ops_result = file_handler.process_query(message_data.content)
+                
+                # If file operations were performed, include the results
+                if file_ops_result and file_ops_result.get('formatted_output'):
+                    file_operation_results = file_ops_result['formatted_output']
+                    logger.info(f"File operations performed: {file_ops_result.get('operations_performed', [])}")
+            except Exception as e:
+                logger.error(f"Error processing file operations: {e}")
+                # Continue without file operations rather than failing the whole request
             
             # Add workspace context to the message
             if not active_file.get('error') and active_file.get('content'):
@@ -179,13 +252,8 @@ async def send_message(
         system_prompt = message_data.system_prompt
         if message_data.workspace_context and not system_prompt:
             system_prompt = """You are ADAM, an AI assistant with access to the user's VSCode workspace. 
-You can:
-- See and read the current file they have open
-- List directories and search for files when asked
-- Access any file in their workspace when they request it
-- Understand the project structure and context
-
-When users ask about files or folders, the relevant information will be provided to you automatically."""
+You can help with code analysis, understanding, and providing guidance.
+File operation results will appear in your context automatically when you mention files."""
         
         response = await llm_service.generate_response(
             message=enhanced_message,
@@ -198,11 +266,14 @@ When users ask about files or folders, the relevant information will be provided
             search_mode=message_data.search_mode
         )
         
+        # Ensure response is not empty
+        response_content = response.content if response.content else "I understand your request. Let me help you with that."
+        
         # Create assistant message
         assistant_message = Message(
             conversation_id=conversation_id,
             role="assistant",
-            content=response.content,
+            content=response_content,
             model=response.model_used,
             tokens_used=response.tokens_used,
             cost=response.cost
