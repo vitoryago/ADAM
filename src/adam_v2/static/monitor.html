@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADAM Agent Monitor</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #00ff00;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        .status-box {
+            background: #2a2a2a;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .task-list {
+            background: #2a2a2a;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .task-item {
+            background: #333;
+            border-left: 3px solid #666;
+            padding: 10px;
+            margin: 10px 0;
+            transition: all 0.3s;
+        }
+        .task-item.running {
+            border-left-color: #ffff00;
+            background: #3a3a2a;
+        }
+        .task-item.completed {
+            border-left-color: #00ff00;
+        }
+        .task-item.failed {
+            border-left-color: #ff0000;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .status-indicator.active {
+            background: #00ff00;
+            box-shadow: 0 0 10px #00ff00;
+        }
+        .status-indicator.inactive {
+            background: #ff0000;
+        }
+        .log-box {
+            background: #000;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .log-entry {
+            margin: 2px 0;
+        }
+        .log-entry.info { color: #00ff00; }
+        .log-entry.warning { color: #ffff00; }
+        .log-entry.error { color: #ff0000; }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        button:hover {
+            background: #00cc00;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 ADAM Agent Monitor</h1>
+        
+        <div class="status-box">
+            <h2>System Status</h2>
+            <p>
+                <span class="status-indicator" id="status-indicator"></span>
+                <span id="status-text">Connecting...</span>
+            </p>
+            <p>Runtime: <span id="runtime-status">Unknown</span></p>
+            <p>Queue Size: <span id="queue-size">0</span></p>
+            <p>Active Tasks: <span id="active-tasks">0</span></p>
+        </div>
+
+        <div class="task-list">
+            <h2>Task History</h2>
+            <div id="task-container"></div>
+        </div>
+
+        <div class="log-box">
+            <h2>Live Agent Logs</h2>
+            <div id="log-container"></div>
+        </div>
+
+        <div>
+            <button onclick="refreshStatus()">Refresh Status</button>
+            <button onclick="clearLogs()">Clear Logs</button>
+            <button onclick="testAgent()">Test Agent</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        
+        // Connect to WebSocket for real-time updates
+        function connectWebSocket() {
+            ws = new WebSocket('ws://localhost:8000/api/monitor/agent/monitor');
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                document.getElementById('status-indicator').className = 'status-indicator active';
+                document.getElementById('status-text').textContent = 'Connected';
+                addLog('Connected to agent monitor', 'info');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleUpdate(data);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                addLog('WebSocket error: ' + error, 'error');
+            };
+            
+            ws.onclose = () => {
+                document.getElementById('status-indicator').className = 'status-indicator inactive';
+                document.getElementById('status-text').textContent = 'Disconnected';
+                addLog('Disconnected from agent monitor', 'warning');
+                // Reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+        
+        // Handle updates from WebSocket
+        function handleUpdate(data) {
+            if (data.type === 'status') {
+                updateStatus(data.data);
+            } else if (data.type === 'task_update') {
+                updateTask(data.data);
+            } else if (data.type === 'log') {
+                addLog(data.data.message, data.data.level);
+            }
+        }
+        
+        // Update status display
+        function updateStatus(status) {
+            document.getElementById('runtime-status').textContent = status.runtime_available ? 'Active' : 'Inactive';
+            document.getElementById('queue-size').textContent = status.tasks_in_queue || 0;
+        }
+        
+        // Refresh status from API
+        async function refreshStatus() {
+            try {
+                const response = await fetch('/api/monitor/agent/status');
+                const data = await response.json();
+                
+                document.getElementById('runtime-status').textContent = data.runtime_available ? 'Active' : 'Inactive';
+                document.getElementById('queue-size').textContent = data.queue_size;
+                
+                // Update task list
+                const taskContainer = document.getElementById('task-container');
+                taskContainer.innerHTML = '';
+                
+                if (data.tasks && data.tasks.length > 0) {
+                    data.tasks.forEach(task => {
+                        const taskEl = document.createElement('div');
+                        taskEl.className = `task-item ${task.status}`;
+                        taskEl.innerHTML = `
+                            <strong>Task ${task.id.substring(0, 8)}...</strong><br>
+                            Status: ${task.status}<br>
+                            Request: ${task.request.substring(0, 100)}...<br>
+                            Created: ${new Date(task.created_at).toLocaleTimeString()}
+                        `;
+                        taskContainer.appendChild(taskEl);
+                    });
+                } else {
+                    taskContainer.innerHTML = '<p>No tasks yet</p>';
+                }
+                
+                addLog('Status refreshed', 'info');
+            } catch (error) {
+                addLog('Failed to refresh status: ' + error, 'error');
+            }
+        }
+        
+        // Add log entry
+        function addLog(message, level = 'info') {
+            const logContainer = document.getElementById('log-container');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${level}`;
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        // Clear logs
+        function clearLogs() {
+            document.getElementById('log-container').innerHTML = '';
+            addLog('Logs cleared', 'info');
+        }
+        
+        // Test agent with a simple request
+        async function testAgent() {
+            addLog('Sending test request to agent...', 'info');
+            // This would trigger a test through the API
+            // For now, just log it
+            addLog('Test request sent (not implemented yet)', 'warning');
+        }
+        
+        // Initialize
+        connectWebSocket();
+        refreshStatus();
+        
+        // Auto-refresh every 5 seconds
+        setInterval(refreshStatus, 5000);
+    </script>
+</body>
+</html>
