@@ -100,7 +100,7 @@ export class BackendConnector {
                     project_id: this.config.projectId
                 },
                 {
-                    timeout: 60000 // 60 second timeout for complex queries
+                    timeout: 120000 // 120 second timeout for complex queries
                 }
             );
             
