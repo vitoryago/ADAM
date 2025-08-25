@@ -225,21 +225,41 @@
   min-width: 0;
   max-width: 100%;
   word-wrap: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere; /* Better for long paths */
+  word-break: break-word;
 }
 
-/* Ensure code blocks preserve formatting */
-.message-bubble-content pre,
+/* Chat container constraints */
+.chat-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Ensure proper message spacing */
+.message-wrapper {
+  padding: 0 1rem;
+}
+
+/* Ensure code blocks preserve formatting but allow wrapping */
+.message-bubble-content pre {
+  white-space: pre-wrap !important; /* Allow wrapping in code blocks */
+  word-wrap: break-word;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
 .message-bubble-content pre code,
 .message-bubble-content .react-syntax-highlighter-line-number,
 .message-bubble-content .react-syntax-highlighter-line {
-  white-space: pre !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
 }
 
-/* Fix for syntax highlighter */
+/* Fix for syntax highlighter with better wrapping */
 .message-bubble-content [class*="language-"] {
-  white-space: pre !important;
-  word-wrap: normal !important;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow-wrap: anywhere !important;
 }
 
 .message-bubble-content code[class*="language-"] {
@@ -275,4 +295,20 @@
   padding: 0.1rem 0.3rem;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 0.875rem;
+  word-break: break-all; /* Allow breaking long file paths */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Special handling for file paths in messages */
+.message-bubble-content code:has-text("/"),
+.message-bubble-content code:has-text("\\") {
+  word-break: break-all;
+  hyphens: none;
+}
+
+/* Ensure lists with code don't overflow */
+.message-bubble-content li code {
+  word-break: break-all;
+  display: inline;
 }

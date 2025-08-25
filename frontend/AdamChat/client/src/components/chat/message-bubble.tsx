@@ -45,27 +45,35 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   return (
     <div className={cn(
-      "flex animate-slide-up",
+      "flex w-full animate-slide-up",
       isUser ? "justify-end" : "justify-start"
     )}>
-      <div className="flex items-start space-x-3 max-w-2xl">
+      <div className={cn(
+        "flex items-start gap-3",
+        isUser ? "flex-row-reverse" : "flex-row",
+        "max-w-[65%]" // Limit to 65% of container width for better balance
+      )}>
+        {/* Avatar for bot */}
         {!isUser && (
-          <div className="w-8 h-8 bg-gradient-to-br from-adam-primary to-emerald-600 rounded-full flex items-center justify-center flex-shrink-0">
+          <div className="w-8 h-8 bg-gradient-to-br from-adam-primary to-emerald-600 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
             <Brain className="w-4 h-4 text-white" />
           </div>
         )}
         
         <div className={cn(
-          "rounded-2xl px-4 py-3 shadow-sm relative group min-w-0 max-w-full",
-          "inline-block fit-content",
+          "rounded-2xl px-4 py-3 shadow-sm relative group",
+          "min-w-[80px]", // Minimum width for short messages
+          "max-w-full",
+          "break-words",
           isUser ? (
-            "bg-adam-primary text-white rounded-tr-md"
+            "bg-adam-primary text-white rounded-tr-sm"
           ) : (
-            "bg-muted rounded-tl-md"
+            "bg-muted rounded-tl-sm"
           )
         )}>
           <div className={cn(
             "prose-chat text-sm leading-relaxed message-bubble-content",
+            "break-words overflow-wrap-anywhere",
             isUser ? "text-white" : "text-foreground"
           )}>
             {/* Display attached file if present */}
@@ -145,8 +153,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           )}
         </div>
         
+        {/* Avatar for user */}
         {isUser && (
-          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
             <User className="w-4 h-4 text-white" />
           </div>
         )}
