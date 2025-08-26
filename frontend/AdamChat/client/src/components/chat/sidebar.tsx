@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTheme } from "@/components/theme-provider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Brain, Plus, Moon, Sun, Settings, Trash2, X, MessageSquare, Edit2 } from "lucide-react";
+import { Brain, Plus, Moon, Sun, Settings, Trash2, X, MessageSquare, Edit2, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type { Conversation, Project } from "@shared/schema";
 
 interface SidebarProps {
@@ -28,8 +29,10 @@ export function Sidebar({
 }: SidebarProps) {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [showActionsFor, setShowActionsFor] = useState<string | null>(null);
 
   const { data: conversations = [], isLoading } = useQuery<Conversation[]>({
     queryKey: ["/api/projects", project.id, "conversations"],
@@ -190,6 +193,8 @@ export function Sidebar({
                     currentConversationId === conversation.id && "bg-muted"
                   )}
                   onClick={() => editingId !== conversation.id && onConversationSelect(conversation.id)}
+                  onMouseEnter={() => !isMobile && setShowActionsFor(conversation.id)}
+                  onMouseLeave={() => !isMobile && setShowActionsFor(null)}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -220,46 +225,99 @@ export function Sidebar({
                         </>
                       )}
                     </div>
-                    <div className={cn(
-                      "flex items-center gap-1 flex-shrink-0 transition-opacity",
-                      editingId === conversation.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                    )}>
+                    
+                    {/* Mobile: Always show a menu button */}
+                    {isMobile ? (
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (editingId === conversation.id) {
-                            handleCancelEdit();
-                          } else {
-                            handleStartEdit(conversation);
-                          }
+                          setShowActionsFor(showActionsFor === conversation.id ? null : conversation.id);
                         }}
-                        title="Edit conversation name"
                       >
-                        {editingId === conversation.id ? (
-                          <X className="w-4 h-4" />
-                        ) : (
-                          <Edit2 className="w-4 h-4" />
-                        )}
+                        <MoreHorizontal className="w-4 h-4" />
+                      </Button>
+                    ) : (
+                      /* Desktop: Show on hover or when editing */
+                      <div className={cn(
+                        "flex items-center gap-1 flex-shrink-0 transition-opacity duration-200",
+                        (editingId === conversation.id || showActionsFor === conversation.id)
+                          ? "opacity-100" 
+                          : "opacity-0 group-hover:opacity-100"
+                      )}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-accent"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (editingId === conversation.id) {
+                              handleCancelEdit();
+                            } else {
+                              handleStartEdit(conversation);
+                            }
+                          }}
+                          title="Edit conversation name"
+                        >
+                          {editingId === conversation.id ? (
+                            <X className="w-3 h-3" />
+                          ) : (
+                            <Edit2 className="w-3 h-3" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-destructive/20 hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm('Are you sure you want to delete this conversation?')) {
+                              deleteConversationMutation.mutate(conversation.id);
+                            }
+                          }}
+                          title="Delete conversation"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Mobile action menu */}
+                  {isMobile && showActionsFor === conversation.id && (
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartEdit(conversation);
+                          setShowActionsFor(null);
+                        }}
+                      >
+                        <Edit2 className="w-3 h-3 mr-1" />
+                        Rename
                       </Button>
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 hover:bg-destructive/20 hover:text-destructive"
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-8 hover:bg-destructive/20 hover:text-destructive hover:border-destructive"
                         onClick={(e) => {
                           e.stopPropagation();
                           if (confirm('Are you sure you want to delete this conversation?')) {
                             deleteConversationMutation.mutate(conversation.id);
                           }
+                          setShowActionsFor(null);
                         }}
-                        title="Delete conversation"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        Delete
                       </Button>
                     </div>
-                  </div>
+                  )}
                 </div>
               ))
             )}

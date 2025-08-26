@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Sidebar Hover</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        
+        /* Test the group hover functionality */
+        .conversation-item {
+            padding: 12px;
+            margin: 8px 0;
+            background: #2a2a2a;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .conversation-item:hover {
+            background: #3a3a3a;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        
+        .conversation-item:hover .action-buttons {
+            opacity: 1;
+        }
+        
+        .btn {
+            padding: 4px 8px;
+            background: #4a4a4a;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+        }
+        
+        .btn:hover {
+            background: #5a5a5a;
+        }
+        
+        /* Test with group class (Tailwind style) */
+        .group:hover .group-hover-visible {
+            opacity: 1 !important;
+        }
+        
+        .group-hover-visible {
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+    </style>
+</head>
+<body>
+    <h1>Hover Test</h1>
+    <p>Hover over the conversations below. You should see Edit and Delete buttons appear.</p>
+    
+    <h2>Test 1: Basic CSS Hover</h2>
+    <div class="conversation-item">
+        <span>Conversation 1</span>
+        <div class="action-buttons">
+            <button class="btn">Edit</button>
+            <button class="btn">Delete</button>
+        </div>
+    </div>
+    
+    <h2>Test 2: Group Hover (Tailwind style)</h2>
+    <div class="conversation-item group">
+        <span>Conversation 2</span>
+        <div class="action-buttons group-hover-visible">
+            <button class="btn">Edit</button>
+            <button class="btn">Delete</button>
+        </div>
+    </div>
+    
+    <h2>Test 3: Always Visible (Mobile style)</h2>
+    <div class="conversation-item">
+        <span>Conversation 3</span>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn">⋯</button>
+        </div>
+    </div>
+    
+    <script>
+        // Log when hovering
+        document.querySelectorAll('.conversation-item').forEach(item => {
+            item.addEventListener('mouseenter', () => {
+                console.log('Mouse entered:', item.innerText);
+            });
+            item.addEventListener('mouseleave', () => {
+                console.log('Mouse left:', item.innerText);
+            });
+        });
+        
+        // Check if browser supports hover
+        if (window.matchMedia('(hover: hover)').matches) {
+            console.log('✅ Browser supports hover');
+        } else {
+            console.log('❌ Browser does NOT support hover (likely touch device)');
+        }
+    </script>
+</body>
+</html>

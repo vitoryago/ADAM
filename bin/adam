@@ -50,12 +50,19 @@ case "$1" in
         echo -e "${BLUE}🚀 Launching ADAM Web Interface...${NC}"
         echo ""
         
+        # Variables to track what we started
+        BACKEND_PID=""
+        FRONTEND_PID=""
+        STARTED_BACKEND=false
+        STARTED_FRONTEND=false
+        
         # Check if backend is running
         if ! curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
             echo -e "${YELLOW}⏳ Starting ADAM backend...${NC}"
             cd "$ADAM_ROOT/src/adam_v2"
             $PYTHON_CMD main.py > "$ADAM_ROOT/backend.log" 2>&1 &
             BACKEND_PID=$!
+            STARTED_BACKEND=true
             
             # Wait for backend to be ready
             for i in {1..10}; do
@@ -75,6 +82,7 @@ case "$1" in
             cd "$ADAM_ROOT/frontend/AdamChat"
             npm run dev > "$ADAM_ROOT/frontend.log" 2>&1 &
             FRONTEND_PID=$!
+            STARTED_FRONTEND=true
             
             # Wait for frontend to be ready
             for i in {1..10}; do
@@ -101,9 +109,52 @@ case "$1" in
         echo ""
         echo -e "${YELLOW}Press Ctrl+C to stop the servers${NC}"
         
-        # Keep running and handle Ctrl+C
-        trap "echo -e '\n${YELLOW}Shutting down...${NC}'; kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT
-        wait
+        # Function to cleanup on exit
+        cleanup() {
+            echo -e "\n${YELLOW}Shutting down...${NC}"
+            if [ "$STARTED_BACKEND" = true ] && [ ! -z "$BACKEND_PID" ]; then
+                echo -e "${YELLOW}Stopping backend...${NC}"
+                kill $BACKEND_PID 2>/dev/null
+            fi
+            if [ "$STARTED_FRONTEND" = true ] && [ ! -z "$FRONTEND_PID" ]; then
+                echo -e "${YELLOW}Stopping frontend...${NC}"
+                kill $FRONTEND_PID 2>/dev/null
+            fi
+            exit
+        }
+        
+        # Set up trap for Ctrl+C
+        trap cleanup INT
+        
+        # Keep the script running - monitor the servers
+        while true; do
+            # Check if servers are still running
+            SERVERS_RUNNING=true
+            
+            # Check backend
+            if ! curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
+                if [ "$STARTED_BACKEND" = true ]; then
+                    echo -e "${RED}⚠️  Backend stopped unexpectedly${NC}"
+                    SERVERS_RUNNING=false
+                fi
+            fi
+            
+            # Check frontend
+            if ! curl -s http://localhost:5173 > /dev/null 2>&1; then
+                if [ "$STARTED_FRONTEND" = true ]; then
+                    echo -e "${RED}⚠️  Frontend stopped unexpectedly${NC}"
+                    SERVERS_RUNNING=false
+                fi
+            fi
+            
+            # If we started servers and they stopped, exit
+            if [ "$SERVERS_RUNNING" = false ]; then
+                cleanup
+            fi
+            
+            # Sleep for a bit before checking again
+            sleep 5
+        done
         ;;
     *)
         show_help
