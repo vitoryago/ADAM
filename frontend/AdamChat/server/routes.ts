@@ -228,6 +228,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to get conversations" });
     }
   });
+
+  // Create new conversation in a project
+  app.post("/api/projects/:id/conversations", async (req, res) => {
+    try {
+      const validatedData = insertConversationSchema.parse({
+        ...req.body,
+        projectId: req.params.id
+      });
+      const conversation = await storage.createConversation(validatedData);
+      res.status(201).json(conversation);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ message: "Invalid conversation data", errors: error.errors });
+      } else {
+        console.error("Failed to create conversation:", error);
+        res.status(500).json({ message: "Failed to create conversation" });
+      }
+    }
+  });
   
   // Get all conversations (deprecated, but keeping for backward compatibility)
   app.get("/api/conversations", async (_req, res) => {
@@ -270,6 +289,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Update conversation title
+  app.patch("/api/conversations/:id", async (req, res) => {
+    try {
+      const { title } = req.body;
+      if (!title || typeof title !== 'string') {
+        return res.status(400).json({ message: "Title is required" });
+      }
+      
+      const conversation = await storage.getConversation(req.params.id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      
+      const updated = await storage.updateConversation(req.params.id, { 
+        title: title.trim(),
+        updatedAt: new Date()
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update conversation:", error);
+      res.status(500).json({ message: "Failed to update conversation" });
+    }
+  });
+
   // Delete conversation
   app.delete("/api/conversations/:id", async (req, res) => {
     try {
@@ -292,6 +336,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Failed to get messages:", error);
       res.status(500).json({ message: "Failed to get messages" });
+    }
+  });
+
+  // Create message with streaming response
+  app.post("/api/conversations/:id/messages/stream", async (req, res) => {
+    try {
+      const { content, use_memory, model, use_search, search_mode, has_image, image_data } = req.body;
+      
+      // Create user message
+      const userMessage = await storage.createMessage({
+        conversationId: req.params.id,
+        content,
+        role: 'user'
+      });
+      
+      // Setup SSE response
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      });
+      
+      // Get conversation and project context
+      const conversation = await storage.getConversation(req.params.id);
+      const project = conversation ? await storage.getProject(conversation.projectId) : null;
+      
+      // Get recent messages for context
+      const recentMessages = await storage.getMessages(req.params.id);
+      const previousMessages = recentMessages
+        .slice(-10)
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
+      
+      try {
+        // Prepare ADAM request
+        const adamRequest: ADAMRequest = {
+          query: content,
+          conversationId: req.params.id,
+          projectId: conversation?.projectId || 'default',
+          userId: conversation?.userId || 'anonymous',
+          context: {
+            previousMessages,
+            projectMemory: project?.memory || '',
+            userPreferences: { 
+              model,
+              use_search,
+              search_mode,
+              has_image,
+              image_data 
+            }
+          }
+        };
+        
+        // Get ADAM bridge and process query
+        const adamBridge = getADAMBridge();
+        const adamResponse: ADAMResponse = await adamBridge.processQuery(adamRequest);
+        
+        // Stream the response in chunks
+        const chunks = adamResponse.response.match(/.{1,50}/g) || [];
+        for (const chunk of chunks) {
+          res.write(`data: ${JSON.stringify({ type: 'assistant_chunk', content: chunk })}\n\n`);
+          await new Promise(resolve => setTimeout(resolve, 50)); // Simulate streaming
+        }
+        
+        // Send completion event
+        res.write(`data: ${JSON.stringify({ 
+          type: 'complete',
+          model: adamResponse.modelUsed,
+          tokens: adamResponse.processingTime,
+          cost: adamResponse.cost
+        })}\n\n`);
+        
+        // Save assistant message
+        await storage.createMessage({
+          conversationId: req.params.id,
+          content: adamResponse.response,
+          role: 'assistant'
+        });
+        
+        // Update project memory if valuable
+        if (project && adamResponse.conversationState.shouldStore) {
+          const updatedMemory = `${project.memory || ''}\n\nRecent: ${content.substring(0, 100)}... -> ${adamResponse.response.substring(0, 100)}...`.trim();
+          await storage.updateProject(project.id, { memory: updatedMemory });
+        }
+        
+      } catch (error) {
+        console.error('ADAM processing error:', error);
+        res.write(`data: ${JSON.stringify({ 
+          type: 'error', 
+          message: 'Failed to process message' 
+        })}\n\n`);
+      }
+      
+      res.end();
+    } catch (error) {
+      console.error("Failed to create streaming message:", error);
+      res.status(500).json({ message: "Failed to create message" });
     }
   });
   
