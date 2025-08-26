@@ -88,7 +88,7 @@ async def send_message(
                 memories = await memory_service.advanced_search(
                     query=message_data.content,
                     conversation_id=None,  # Search across all conversations in the project
-                    limit=5,
+                    limit=15,  # Increased from 5 to retrieve more relevant memories
                     use_bm25=True,
                     use_semantic=True
                 )
@@ -98,12 +98,12 @@ async def send_message(
                 memories = await memory_service.search_memories(
                     query=message_data.content,
                     conversation_id=None,  # Search across all conversations in the project
-                    limit=5
+                    limit=15  # Increased from 5 to retrieve more relevant memories
                 )
             
             if memories:
                 memory_context = "\n\n=== Relevant Memories ===\n"
-                for mem in memories[:3]:  # Top 3 memories
+                for mem in memories[:10]:  # Use up to 10 memories in context (was 3)  # Top 3 memories
                     memory_context += f"- {mem.content[:200]}...\n"
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}")
@@ -151,7 +151,7 @@ async def send_message(
         is_substantial = len(response.content.split()) > 100 or any(term in response.content.upper() for term in ["DBT", "PDT", "MODEL", "SQL", "CREATE", "SELECT"])
         
         # Much lower thresholds to ensure memory storage
-        cost_threshold = 0.00001 if (is_code_content or is_substantial) else 0.0001
+        cost_threshold = 0.000001  # Ultra-low threshold to store virtually all responses
         token_threshold = 200 if is_substantial else 500
         
         logger.info(f"Memory check - use_memory: {message_data.use_memory}, cost: {response.cost}, threshold: {cost_threshold}, tokens: {response.tokens_used}, substantial: {is_substantial}")
@@ -159,7 +159,7 @@ async def send_message(
         if message_data.use_memory and (response.cost > cost_threshold or response.tokens_used > token_threshold):
             try:
                 memory_service = ProjectMemoryService(project.id, project.name)
-                await memory_service.store_memory(
+                memory_id = await memory_service.store_memory(
                     content=f"Q: {message_data.content}\n\nA: {response.content}",
                     memory_type="conversation",
                     metadata={
@@ -170,6 +170,7 @@ async def send_message(
                     conversation_id=conversation_id,
                     cost=response.cost
                 )
+                logger.info(f"Stored memory {memory_id} for conversation {conversation_id}, cost: {response.cost}, tokens: {response.tokens_used}")
             except Exception as e:
                 logger.error(f"Error storing memory: {e}")
         
@@ -251,7 +252,7 @@ async def send_message_stream(
                 memories = await memory_service.advanced_search(
                     query=message_data.content,
                     conversation_id=None,  # Search across all conversations in the project
-                    limit=5,
+                    limit=15,  # Increased from 5 to retrieve more relevant memories
                     use_bm25=True,
                     use_semantic=True
                 )
@@ -261,13 +262,16 @@ async def send_message_stream(
                 memories = await memory_service.search_memories(
                     query=message_data.content,
                     conversation_id=None,  # Search across all conversations in the project
-                    limit=5
+                    limit=15  # Increased from 5 to retrieve more relevant memories
                 )
             
             if memories:
+                logger.info(f"Found {len(memories)} memories for query: '{message_data.content[:50]}...'")
                 memory_context = "\n\n=== Relevant Memories ===\n"
-                for mem in memories[:3]:
+                for mem in memories[:10]:  # Use up to 10 memories in context (was 3)
                     memory_context += f"- {mem.content[:200]}...\n"
+            else:
+                logger.warning(f"No memories found for query: '{message_data.content[:50]}...'")
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}")
     
@@ -324,7 +328,7 @@ async def send_message_stream(
             is_substantial = len(full_response.split()) > 100 or any(term in full_response.upper() for term in ["DBT", "PDT", "MODEL", "SQL", "CREATE", "SELECT"])
             
             # Much lower thresholds to ensure memory storage
-            cost_threshold = 0.00001 if (is_code_content or is_substantial) else 0.0001
+            cost_threshold = 0.000001  # Ultra-low threshold to store virtually all responses
             token_threshold = 200 if is_substantial else 500
             
             logger.info(f"Memory check (streaming) - use_memory: {message_data.use_memory}, cost: {cost}, threshold: {cost_threshold}, tokens: {tokens_used}, substantial: {is_substantial}")

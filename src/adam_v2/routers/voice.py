@@ -248,13 +248,18 @@ async def voice_chat_endpoint(
                     memories = await memory_service.search_memories(
                         query=user_text,
                         conversation_id=None,
-                        limit=5
+                        limit=15  # Increased from 5 to retrieve more relevant memories
                     )
                     
                     if memories:
+                        logger.info(f"Found {len(memories)} memories for voice query: '{user_text[:50]}...'")
                         memory_context = "\n\n=== Relevant Memories ===\n"
-                        for mem in memories[:3]:
+                        # Include ALL retrieved memories for voice (up to 15)
+                        for mem in memories:  # Use ALL retrieved memories in voice mode
                             memory_context += f"- {mem.content[:200]}...\n"
+                        logger.info(f"Including {len(memories)} memories in voice context")
+                    else:
+                        logger.warning(f"No memories found for voice query: '{user_text[:50]}...'")
             except Exception as e:
                 logger.error(f"Error retrieving memories: {e}")
         
@@ -301,11 +306,12 @@ async def voice_chat_endpoint(
         await db.commit()
         
         # Store in memory if worthy
-        if use_memory and full_response.cost > 0.0001:
+        logger.info(f"Voice memory check - use_memory: {use_memory}, cost: {full_response.cost}, threshold: 0.000001")
+        if use_memory and full_response.cost > 0.000001:  # Ultra-low threshold to store virtually all responses
             try:
                 from services.memory_service import ProjectMemoryService
                 memory_service = ProjectMemoryService(project.id, project.name)
-                await memory_service.store_memory(
+                memory_id = await memory_service.store_memory(
                     content=f"Q: {user_text}\n\nA: {full_response.content}",
                     memory_type="voice_conversation",
                     metadata={
@@ -318,6 +324,7 @@ async def voice_chat_endpoint(
                     conversation_id=conversation_id,
                     cost=full_response.cost
                 )
+                logger.info(f"Stored voice memory {memory_id} for conversation {conversation_id}, cost: {full_response.cost}")
             except Exception as e:
                 logger.error(f"Error storing memory: {e}")
         
