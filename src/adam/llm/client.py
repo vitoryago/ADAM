@@ -337,135 +337,87 @@ class UnifiedLLMClient:
         """Handle OpenAI model completion"""
         client = self.clients[ModelProvider.OPENAI]
         
-        # Build input array for responses API
-        input_messages = []
-        if system_prompt:
-            input_messages.append({"role": "system", "content": system_prompt})
-        input_messages.append({"role": "user", "content": prompt})
+        # All OpenAI models use chat completions API
+        # The Responses API is not yet available in the OpenAI Python client
         
-        # For o4-mini, use the responses API
-        if model_config.api_name.startswith("o"):
-            # Build reasoning parameter with correct format
-            reasoning_params = {}
-            if model_config.reasoning_param:
-                # Map our effort levels to OpenAI's format
-                effort_map = {"low": "low", "medium": "medium", "high": "high"}
-                reasoning_params = {"effort": effort_map.get(reasoning_effort, "medium")}
-            
-            try:
-                # Make request to responses API with correct format
-                response = await client.responses.create(
-                    model=model_config.api_name,
-                    input=input_messages,
-                    reasoning=reasoning_params,
-                    max_output_tokens=max_tokens or model_config.max_tokens
-                )
-                
-                if stream:
-                    # Handle streaming for responses API
-                    async def stream_generator():
-                        # Note: OpenAI responses API streaming might work differently
-                        yield response.output_text
-                    return stream_generator()
-                else:
-                    # Build unified response
-                    # Build response with routing info for OpenAI responses API
-                    raw_response_data = {}
-                    if routing_decision:
-                        raw_response_data['routing_decision'] = routing_decision
-                    
-                    return LLMResponse(
-                        content=response.output_text,
-                        model=model_config.name,
-                        reasoning_content=None,  # OpenAI doesn't expose reasoning content
-                        total_tokens=response.usage.total_tokens,
-                        reasoning_tokens=response.usage.output_tokens_details.reasoning_tokens,
-                        completion_tokens=response.usage.output_tokens,
-                        cost=self._calculate_openai_cost(model_config, response.usage),
-                        raw_response=raw_response_data
-                    )
-            except Exception as e:
-                # If o4-mini fails, it might be an access issue
-                if "401" in str(e) or "invalid_api_key" in str(e):
-                    raise Exception(f"OpenAI API key issue: {str(e)}")
-                elif "404" in str(e):
-                    raise Exception(f"Model {model_config.api_name} not available. You may need organization verification for o4-mini.")
-                else:
-                    raise
-        else:
-            # Standard chat completion for GPT models (including GPT-5)
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            
-            # Handle image data for vision models
-            if image_data and (model_config.supports_vision or "gpt-4" in model_config.api_name):
-                # For GPT-4/GPT-5 vision, format message with image
-                import base64
-                image_base64 = base64.b64encode(image_data).decode('utf-8')
-                messages.append({
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"
-                            }
+        # Build messages for chat completions
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        
+        # Handle image data for vision models
+        if image_data and (model_config.supports_vision or "gpt-4" in model_config.api_name):
+            # For GPT-4 vision, format message with image
+            import base64
+            image_base64 = base64.b64encode(image_data).decode('utf-8')
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_base64}"
                         }
-                    ]
-                })
-            else:
-                messages.append({"role": "user", "content": prompt})
-            
-            # Build request parameters
-            request_params = {
-                "model": model_config.api_name,
-                "messages": messages,
-                "stream": stream
-            }
-            
-            # GPT-5 specific parameters
-            if "gpt-5" in model_config.api_name:
-                # GPT-5 only supports temperature=1 (default), so we omit it
-                request_params["max_completion_tokens"] = max_tokens or 2000
-                # Don't add temperature for GPT-5
-                logger.info(f"Using default temperature for {model_config.api_name} (GPT-5 doesn't support custom temperature)")
-            else:
-                # Other models support temperature
-                request_params["temperature"] = temperature
-                request_params["max_tokens"] = max_tokens
-            
-            # Add reasoning_effort for GPT-5 models
-            if "gpt-5" in model_config.api_name and reasoning_effort:
-                # GPT-5 uses reasoning_effort parameter
-                effort_map = {"low": "low", "medium": "medium", "high": "high", "minimal": "minimal"}
+                    }
+                ]
+            })
+        else:
+            messages.append({"role": "user", "content": prompt})
+        
+        # Build request parameters
+        request_params = {
+            "model": model_config.api_name,
+            "messages": messages,
+            "stream": stream
+        }
+        
+        # Special parameters for GPT-5 and o4-mini models
+        if "gpt-5" in model_config.api_name or model_config.api_name.startswith("o"):
+            # GPT-5 and o-models use different parameters
+            request_params["max_completion_tokens"] = max_tokens or 2000
+            # Add reasoning_effort if supported
+            if reasoning_effort and model_config.reasoning_param:
+                effort_map = {"minimal": "minimal", "low": "low", "medium": "medium", "high": "high"}
                 request_params["reasoning_effort"] = effort_map.get(reasoning_effort, "medium")
-                logger.info(f"Using reasoning_effort={request_params['reasoning_effort']} for {model_config.api_name}")
+            # Add verbosity parameter for GPT-5
+            if "gpt-5" in model_config.api_name:
+                request_params["verbosity"] = "medium"
+            logger.info(f"Using chat completions for {model_config.api_name}")
+        else:
+            # Other models support temperature
+            request_params["temperature"] = temperature
+            request_params["max_tokens"] = max_tokens
+        
+        response = await client.chat.completions.create(**request_params)
+        
+        if stream:
+            # Return async generator
+            async def stream_generator():
+                async for chunk in response:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            return stream_generator()
+        else:
+            # Build response with routing info for OpenAI
+            raw_response_data = {}
+            if routing_decision:
+                raw_response_data['routing_decision'] = routing_decision
             
-            response = await client.chat.completions.create(**request_params)
+            # Handle empty responses
+            content = response.choices[0].message.content
+            if not content or content.strip() == "":
+                logger.warning(f"Empty response from {model_config.api_name}, providing fallback")
+                content = "I apologize, but I wasn't able to generate a complete response. Please try again or use a different model."
             
-            if stream:
-                # Return async generator
-                async def stream_generator():
-                    async for chunk in response:
-                        if chunk.choices[0].delta.content:
-                            yield chunk.choices[0].delta.content
-                return stream_generator()
-            else:
-                # Build response with routing info for OpenAI
-                raw_response_data = {}
-                if routing_decision:
-                    raw_response_data['routing_decision'] = routing_decision
-                
-                return LLMResponse(
-                    content=response.choices[0].message.content,
-                    model=model_config.name,
-                    total_tokens=response.usage.total_tokens,
-                    completion_tokens=response.usage.completion_tokens,
-                    cost=self._calculate_openai_cost(model_config, response.usage),
-                    raw_response=raw_response_data
-                )
+            return LLMResponse(
+                content=content,
+                model=model_config.name,
+                total_tokens=response.usage.total_tokens,
+                completion_tokens=response.usage.completion_tokens,
+                cost=self._calculate_openai_cost(model_config, response.usage),
+                raw_response=raw_response_data
+            )
     
     async def _complete_anthropic(
         self,

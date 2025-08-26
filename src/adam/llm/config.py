@@ -252,6 +252,64 @@ class LLMConfig:
                 cost_per_1k_input_tokens=0.00005,  # $0.05 / 1000
                 cost_per_1k_output_tokens=0.0004   # $0.40 / 1000
             ),
+            # GPT-5 Models
+            "gpt-5": ModelConfig(
+                name="gpt-5",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-5-2025-08-07",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",
+                max_tokens=8192,
+                supports_streaming=False,  # Responses API doesn't support streaming yet
+                supports_vision=False,  # Update when vision support is added
+                cost_per_1k_tokens=0.002,  # $2 per 1M tokens average
+                cost_per_1k_input_tokens=0.001,
+                cost_per_1k_output_tokens=0.003
+            ),
+            
+            "gpt-5-mini": ModelConfig(
+                name="gpt-5-mini",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-5-mini-2025-08-07",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.CODE_GENERATION,
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",
+                max_tokens=4096,
+                supports_streaming=False,
+                supports_vision=False,
+                cost_per_1k_tokens=0.0005,
+                cost_per_1k_input_tokens=0.0002,
+                cost_per_1k_output_tokens=0.0008
+            ),
+            
+            "gpt-5-nano": ModelConfig(
+                name="gpt-5-nano",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-5-nano-2025-08-07",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",
+                max_tokens=2000,
+                supports_streaming=False,
+                supports_vision=False,
+                cost_per_1k_tokens=0.000225,
+                cost_per_1k_input_tokens=0.00005,
+                cost_per_1k_output_tokens=0.0004
+            ),
+            
             "grok-4-reasoning": ModelConfig(
                 name="grok-4-reasoning",
                 provider=ModelProvider.GROK,
