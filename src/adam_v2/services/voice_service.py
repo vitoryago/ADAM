@@ -46,11 +46,11 @@ class VoiceConfig:
     tts_model: TTSModel = TTSModel.ELEVENLABS_MULTILINGUAL  # Use standard model for better quality
     voice_id: Optional[str] = None  # For ElevenLabs voice selection
     language: str = "en"
-    speaking_rate: float = 1.0  # Normal speech rate
+    speaking_rate: float = 1.15  # Slightly faster speech rate (for OpenAI)
     pitch: float = 0.0
-    stability: float = 0.5  # Balanced for natural speech
+    stability: float = 0.35  # Lower stability for slightly faster, more dynamic speech
     similarity_boost: float = 0.75  # Good balance
-    style: float = 0.0
+    style: float = 0.15  # Slight style boost for more energetic delivery
     use_speaker_boost: bool = True
 
 @dataclass
@@ -295,6 +295,87 @@ class VoiceService:
             return await self._synthesize_elevenlabs(text, voice_id, stream, with_timing)
         else:
             raise NotImplementedError(f"TTS provider {self.config.tts_provider} not implemented")
+    
+    async def _synthesize_chunked_elevenlabs(
+        self,
+        text: str,
+        voice_id: Optional[str],
+        stream: bool,
+        with_timing: bool = False
+    ) -> Union[AudioResponse, AsyncGenerator[bytes, None], Dict]:
+        """
+        Synthesize long text by splitting into chunks
+        """
+        MAX_CHARS = 9500  # Safe limit below 10,000
+        
+        # Split text into chunks at sentence boundaries when possible
+        chunks = []
+        current_chunk = ""
+        sentences = text.replace('\n', ' ').split('. ')
+        
+        for sentence in sentences:
+            # Add the period back except for the last sentence
+            if sentence != sentences[-1]:
+                sentence = sentence + '.'
+            
+            # If adding this sentence would exceed limit, save current chunk
+            if current_chunk and len(current_chunk) + len(sentence) + 1 > MAX_CHARS:
+                chunks.append(current_chunk.strip())
+                current_chunk = sentence
+            else:
+                current_chunk = current_chunk + ' ' + sentence if current_chunk else sentence
+                
+        # Add the last chunk
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        
+        logger.info(f"Split text into {len(chunks)} chunks")
+        
+        # If streaming, combine all chunks into a single stream
+        if stream:
+            async def combined_stream():
+                for i, chunk_text in enumerate(chunks):
+                    logger.info(f"Processing chunk {i+1}/{len(chunks)}")
+                    # Add a small pause between chunks for natural flow
+                    if i > 0:
+                        # Add a tiny silence between chunks (optional)
+                        pass
+                    
+                    # Get stream for this chunk
+                    chunk_stream = await self._synthesize_elevenlabs(
+                        chunk_text, voice_id, stream=True, with_timing=False
+                    )
+                    
+                    # Yield all bytes from this chunk
+                    async for audio_bytes in chunk_stream:
+                        yield audio_bytes
+                        
+            return combined_stream()
+        else:
+            # For non-streaming, combine all audio chunks
+            all_audio = []
+            for i, chunk_text in enumerate(chunks):
+                logger.info(f"Processing chunk {i+1}/{len(chunks)}")
+                response = await self._synthesize_elevenlabs(
+                    chunk_text, voice_id, stream=False, with_timing=False
+                )
+                
+                # Extract audio data from response
+                if isinstance(response, AudioResponse):
+                    all_audio.append(response.audio_data)
+                elif isinstance(response, dict) and 'audio_data' in response:
+                    all_audio.append(response['audio_data'])
+                else:
+                    logger.error(f"Unexpected response type: {type(response)}")
+                    
+            # Combine all audio
+            combined_audio = b''.join(all_audio)
+            
+            return AudioResponse(
+                audio_data=combined_audio,
+                format="mp3",
+                sample_rate=44100
+            )
             
     async def _synthesize_elevenlabs(
         self,
@@ -306,6 +387,12 @@ class VoiceService:
         """Synthesize using ElevenLabs"""
         # Use provided voice_id or default
         voice_id = voice_id or self.config.voice_id
+        
+        # Check text length and chunk if necessary (ElevenLabs has 10,000 char limit)
+        MAX_CHARS = 9500  # Leave some buffer below 10,000 limit
+        if len(text) > MAX_CHARS:
+            logger.warning(f"Text length ({len(text)}) exceeds ElevenLabs limit, chunking...")
+            return await self._synthesize_chunked_elevenlabs(text, voice_id, stream, with_timing)
         
         # Try to use SDK first
         elevenlabs_client = self.clients.get("elevenlabs")
@@ -439,7 +526,7 @@ class VoiceService:
                 voice=voice,
                 input=text,
                 response_format="mp3",
-                speed=1.0
+                speed=self.config.speaking_rate  # Use configured speed
             )
             
             # Handle the response properly - OpenAI returns an HttpxBinaryResponseContent object

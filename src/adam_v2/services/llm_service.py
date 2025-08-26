@@ -13,6 +13,16 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+# Try to import DBT knowledge service
+try:
+    from services.dbt_knowledge_service import DBTKnowledgeService
+    DBT_KNOWLEDGE_AVAILABLE = True
+    logger.info("DBT Knowledge Service available")
+except ImportError:
+    DBT_KNOWLEDGE_AVAILABLE = False
+    DBTKnowledgeService = None
+    logger.debug("DBT Knowledge Service not available")
+
 # Add parent directory to path to import ADAM modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -92,6 +102,16 @@ class LLMService:
             self.query_analyzer = None
             logger.warning("ADAM LLM client not available, using mock responses")
         
+        # Initialize DBT knowledge service if available
+        self.dbt_knowledge = None
+        if DBT_KNOWLEDGE_AVAILABLE:
+            try:
+                self.dbt_knowledge = DBTKnowledgeService()
+                logger.info("DBT Knowledge Service initialized")
+            except Exception as e:
+                self.dbt_knowledge = None
+                logger.warning(f"Failed to initialize DBT Knowledge Service: {e}")
+        
         # Initialize memory service if available
         self.memory_service = None
         if MEMORY_AVAILABLE and project_id:
@@ -143,10 +163,42 @@ class LLMService:
         if memory_context:
             full_prompt = f"{memory_context}\n\nUser: {message}"
         
-        # Analyze query complexity if no model specified
-        if not model:
-            complexity, _ = self.query_analyzer.analyze_query(message)
-            model = self._select_model_by_complexity(complexity)
+        # Add DBT context if detected
+        if self.dbt_knowledge and self.dbt_knowledge.detect_dbt_context(message):
+            try:
+                dbt_enhanced_prompt = self.dbt_knowledge.enhance_query_with_dbt_context(full_prompt)
+                full_prompt = dbt_enhanced_prompt
+                logger.info("Enhanced prompt with DBT knowledge")
+            except Exception as e:
+                logger.warning(f"Failed to enhance with DBT context: {e}")
+        
+        # Try to use intelligent router if available
+        routing_config = None
+        try:
+            from .intelligent_routing_service import IntelligentRoutingService
+            router = IntelligentRoutingService()
+            routing_config = await router.route_and_configure(
+                query=message,
+                project_id=self.project_id,
+                conversation_id=None  # Could pass this if available
+            )
+            logger.info(f"Intelligent routing: {routing_config['model']} (confidence: {routing_config['confidence']:.2f})")
+            
+            # Override model and get specialized prompt
+            if not model:  # Only use router if no model explicitly specified
+                model = routing_config['model']
+                
+            # Update memory depth if available
+            if routing_config['memory_config']['enabled'] and memory_context:
+                # Memory already retrieved, but we can log the recommendation
+                logger.info(f"Router suggests memory depth: {routing_config['memory_config']['depth']}")
+                
+        except (ImportError, Exception) as e:
+            logger.debug(f"Intelligent router not available, falling back to analyzer: {e}")
+            # Fallback to original complexity analyzer
+            if not model:
+                complexity, _ = self.query_analyzer.analyze_query(message)
+                model = self._select_model_by_complexity(complexity)
         
         # Use the specified model or default
         final_model = model or self.default_model or "grok-3-mini-fast"
@@ -160,6 +212,10 @@ class LLMService:
                 final_system_prompt = system_prompt
             else:
                 final_system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
+                
+                # Add specialized prompt from router if available
+                if routing_config and routing_config.get('system_prompt_addon'):
+                    final_system_prompt += "\n\n" + routing_config['system_prompt_addon']
                 
             if messages and len(messages) > 1:
                 # Create a conversation context from history
@@ -326,6 +382,15 @@ class LLMService:
         full_prompt = message
         if memory_context:
             full_prompt = f"{memory_context}\n\nUser: {message}"
+        
+        # Add DBT context if detected
+        if self.dbt_knowledge and self.dbt_knowledge.detect_dbt_context(message):
+            try:
+                dbt_enhanced_prompt = self.dbt_knowledge.enhance_query_with_dbt_context(full_prompt)
+                full_prompt = dbt_enhanced_prompt
+                logger.info("Enhanced streaming prompt with DBT knowledge")
+            except Exception as e:
+                logger.warning(f"Failed to enhance with DBT context in stream: {e}")
         
         # Analyze query complexity if no model specified
         if not model:
