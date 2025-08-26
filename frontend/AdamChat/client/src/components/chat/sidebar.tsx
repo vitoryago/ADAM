@@ -191,8 +191,44 @@ export function Sidebar({
                   )}
                   onClick={() => editingId !== conversation.id && onConversationSelect(conversation.id)}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 w-full">
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (editingId === conversation.id) {
+                            handleCancelEdit();
+                          } else {
+                            handleStartEdit(conversation);
+                          }
+                        }}
+                        title="Edit conversation name"
+                      >
+                        {editingId === conversation.id ? (
+                          <X className="w-4 h-4" />
+                        ) : (
+                          <Edit2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm('Are you sure you want to delete this conversation?')) {
+                            deleteConversationMutation.mutate(conversation.id);
+                          }
+                        }}
+                        title="Delete conversation"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="flex-1 min-w-0 overflow-hidden">
                       {editingId === conversation.id ? (
                         <input
                           type="text"
@@ -219,45 +255,6 @@ export function Sidebar({
                           </p>
                         </>
                       )}
-                    </div>
-                    <div className={cn(
-                      "flex items-center gap-1 flex-shrink-0 transition-opacity",
-                      editingId === conversation.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                    )}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (editingId === conversation.id) {
-                            handleCancelEdit();
-                          } else {
-                            handleStartEdit(conversation);
-                          }
-                        }}
-                        title="Edit conversation name"
-                      >
-                        {editingId === conversation.id ? (
-                          <X className="w-4 h-4" />
-                        ) : (
-                          <Edit2 className="w-4 h-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 hover:bg-destructive/20 hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm('Are you sure you want to delete this conversation?')) {
-                            deleteConversationMutation.mutate(conversation.id);
-                          }
-                        }}
-                        title="Delete conversation"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
                     </div>
                   </div>
                 </div>
