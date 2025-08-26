@@ -1,0 +1,534 @@
+# DBT Patterns and Templates for ADAM
+# Structured patterns for programmatic DBT model generation
+
+metadata:
+  version: "1.0.0"
+  target_warehouse: "snowflake"
+  dbt_version: "1.7+"
+  last_updated: "2024-12-10"
+
+# Layer-specific patterns
+layers:
+  staging:
+    prefix: "stg_"
+    materialization: "view"
+    schema_name: "staging"
+    naming_pattern: "stg_<source>__<entity>"
+    description_template: |
+      Staging layer for {entity} from {source}.
+      Performs light transformations: column renaming, type casting, and filtering.
+      **Grain**: One row per {entity}
+      **Source**: {source_table}
+    config_template: |
+      {{
+        config(
+          materialized='view',
+          schema='staging',
+          tags=['staging', '{source}'],
+          transient=true,
+          secure=false
+        )
+      }}
+    sql_template: |
+      WITH source AS (
+          SELECT * FROM {{ source('{source_schema}', '{source_table}') }}
+          {% if is_incremental() %}
+          WHERE updated_at > (SELECT MAX(updated_at) FROM {{ this }})
+          {% endif %}
+      ),
+      
+      renamed AS (
+          SELECT
+              {column_mappings}
+              -- Metadata
+              CURRENT_TIMESTAMP() AS _loaded_at,
+              '{{ invocation_id }}' AS _batch_id
+          FROM source
+          WHERE 1=1
+            {filters}
+      )
+      
+      SELECT * FROM renamed
+
+  intermediate:
+    prefix: "int_"
+    materialization: "ephemeral"
+    schema_name: "intermediate"
+    naming_pattern: "int_<entity>__<transformation>"
+    description_template: |
+      Intermediate transformation: {transformation} for {entity}.
+      {business_logic_description}
+      **Grain**: {grain}
+      **Dependencies**: {dependencies}
+    config_template: |
+      {{
+        config(
+          materialized='{materialization}',
+          schema='intermediate',
+          tags=['intermediate', '{domain}']
+          {%- if materialization == 'table' %},
+          cluster_by={cluster_keys},
+          transient=false,
+          post_hook="ALTER TABLE {{ this }} SET DATA_RETENTION_TIME_IN_DAYS = 7"
+          {%- endif %}
+        )
+      }}
+    sql_template: |
+      {%- for cte in ctes %}
+      WITH {{ cte.name }} AS (
+          {{ cte.sql }}
+      ),
+      {%- endfor %}
+      
+      final AS (
+          SELECT
+              {select_columns}
+          FROM {from_clause}
+          {joins}
+          WHERE 1=1
+            {where_conditions}
+          {group_by}
+          {having}
+      )
+      
+      SELECT * FROM final
+
+  marts:
+    fact:
+      prefix: "fct_"
+      materialization: "incremental"
+      schema_pattern: "analytics_{domain}"
+      naming_pattern: "fct_<entity>"
+      description_template: |
+        Fact table for {entity}.
+        {business_description}
+        **Grain**: One row per {grain}
+        **Update Frequency**: {frequency}
+        **SLA**: {sla_tier}
+      config_template: |
+        {{
+          config(
+            materialized='incremental',
+            unique_key='{unique_key}',
+            on_schema_change='sync_all_columns',
+            cluster_by={cluster_keys},
+            incremental_strategy='merge',
+            merge_update_columns={merge_columns},
+            tags=['marts', 'fact', '{domain}'],
+            pre_hook="ALTER SESSION SET QUERY_TAG = 'dbt:{{ this }}'",
+            post_hook=[
+              "ALTER TABLE {{ this }} SET AUTO_CLUSTERING = TRUE",
+              "GRANT SELECT ON {{ this }} TO ROLE ANALYTICS_READER"
+            ]
+          )
+        }}
+      sql_template: |
+        WITH source_data AS (
+            SELECT * FROM {{ ref('{source_model}') }}
+        ),
+        
+        transformations AS (
+            SELECT
+                -- Primary Key
+                {primary_key} AS {unique_key},
+                
+                -- Foreign Keys
+                {foreign_keys}
+                
+                -- Dimensions
+                {dimensions}
+                
+                -- Measures
+                {measures}
+                
+                -- Calculated Metrics
+                {calculations}
+                
+                -- Metadata
+                {metadata_columns}
+            FROM source_data
+            {joins}
+        )
+        
+        SELECT * FROM transformations
+        {% if is_incremental() %}
+            WHERE {timestamp_column} > (SELECT MAX({timestamp_column}) FROM {{ this }})
+              -- Safety lookback
+              OR {timestamp_column} >= DATEADD('day', -3, CURRENT_DATE())
+        {% endif %}
+
+    dimension:
+      prefix: "dim_"
+      materialization: "table"
+      schema_pattern: "analytics_{domain}"
+      naming_pattern: "dim_<entity>"
+      description_template: |
+        Dimension table for {entity}.
+        Type: {dimension_type}
+        **Grain**: One row per {grain}
+        **SCD Type**: {scd_type}
+      config_template: |
+        {{
+          config(
+            materialized='table',
+            schema='analytics_{domain}',
+            cluster_by=['{primary_key}'],
+            tags=['marts', 'dimension', '{domain}'],
+            post_hook="GRANT SELECT ON {{ this }} TO ROLE ANALYTICS_READER"
+          )
+        }}
+      sql_template: |
+        WITH source_data AS (
+            SELECT * FROM {{ ref('{source_model}') }}
+        ),
+        
+        deduped AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY {natural_key}
+                    ORDER BY {order_by} DESC
+                ) AS rn
+            FROM source_data
+        ),
+        
+        final AS (
+            SELECT
+                {surrogate_key} AS {primary_key},
+                {attributes}
+            FROM deduped
+            WHERE rn = 1
+        )
+        
+        SELECT * FROM final
+
+# Incremental patterns
+incremental_strategies:
+  append_only:
+    description: "For immutable event data"
+    strategy: "append"
+    unique_key: null
+    config: |
+      incremental_strategy='append'
+    filter: |
+      WHERE created_at > (SELECT COALESCE(MAX(created_at), '1900-01-01') FROM {{ this }})
+    
+  merge_on_unique_key:
+    description: "For updating existing records"
+    strategy: "merge"
+    unique_key: "required"
+    config: |
+      incremental_strategy='merge',
+      unique_key='{unique_key}'
+    filter: |
+      WHERE updated_at >= (SELECT DATEADD('day', -3, MAX(updated_at)) FROM {{ this }})
+    
+  delete_insert:
+    description: "For full partition replacement"
+    strategy: "delete+insert"
+    unique_key: "partition_key"
+    config: |
+      incremental_strategy='delete+insert',
+      unique_key='{partition_key}'
+    filter: |
+      WHERE date_partition >= DATEADD('day', -7, CURRENT_DATE())
+
+# Macro library
+macros:
+  safe_divide:
+    description: "Prevents division by zero errors"
+    parameters:
+      - name: numerator
+        type: column
+      - name: denominator  
+        type: column
+      - name: precision
+        type: integer
+        default: 2
+    template: |
+      {% macro safe_divide(numerator, denominator, precision=2) %}
+        ROUND(
+          CASE 
+            WHEN {{ denominator }} = 0 OR {{ denominator }} IS NULL 
+            THEN 0
+            ELSE {{ numerator }}::FLOAT / {{ denominator }}
+          END, 
+          {{ precision }}
+        )
+      {% endmacro %}
+
+  generate_surrogate_key:
+    description: "Creates MD5 hash for surrogate keys"
+    parameters:
+      - name: fields
+        type: list
+    template: |
+      {% macro generate_surrogate_key(fields) %}
+        MD5_BINARY(
+          CONCAT(
+            {%- for field in fields %}
+              COALESCE(CAST({{ field }} AS VARCHAR), 'null')
+              {%- if not loop.last %}, '|', {% endif -%}
+            {%- endfor %}
+          )
+        )
+      {% endmacro %}
+
+  incremental_filter:
+    description: "Standard incremental filter with lookback"
+    parameters:
+      - name: timestamp_field
+        type: column
+      - name: lookback_days
+        type: integer
+        default: 3
+    template: |
+      {% macro incremental_filter(timestamp_field, lookback_days=3) %}
+        {% if is_incremental() %}
+          WHERE {{ timestamp_field }} >= (
+            SELECT DATEADD('day', -{{ lookback_days }}, 
+                          MAX({{ timestamp_field }}))
+            FROM {{ this }}
+          )
+        {% endif %}
+      {% endmacro %}
+
+  date_spine:
+    description: "Generates continuous date range"
+    parameters:
+      - name: start_date
+        type: date
+      - name: end_date
+        type: date
+    template: |
+      {% macro generate_date_spine(start_date, end_date) %}
+        WITH date_spine AS (
+          SELECT 
+            DATEADD('day', SEQ4(), '{{ start_date }}'::DATE) AS date_day
+          FROM TABLE(GENERATOR(ROWCOUNT => 
+            DATEDIFF('day', '{{ start_date }}'::DATE, '{{ end_date }}'::DATE) + 1
+          ))
+        )
+        SELECT * FROM date_spine
+      {% endmacro %}
+
+  clean_string:
+    description: "Standardizes string values"
+    parameters:
+      - name: column
+        type: column
+    template: |
+      {% macro clean_string(column) %}
+        TRIM(LOWER(REGEXP_REPLACE({{ column }}, '[^a-zA-Z0-9 ]', '')))
+      {% endmacro %}
+
+  pivot_values:
+    description: "Dynamic pivot for known values"
+    parameters:
+      - name: column_name
+        type: column
+      - name: values_list
+        type: list
+      - name: agg_func
+        type: string
+        default: "SUM"
+      - name: agg_column
+        type: column
+        default: "amount"
+    template: |
+      {% macro pivot(column_name, values_list, agg_func='SUM', agg_column='amount') %}
+        {% for value in values_list %}
+        {{ agg_func }}(
+          CASE WHEN {{ column_name }} = '{{ value }}' 
+          THEN {{ agg_column }} 
+          END
+        ) AS {{ value }}_{{ agg_column }}
+        {%- if not loop.last %},{% endif %}
+        {% endfor %}
+      {% endmacro %}
+
+  union_sources:
+    description: "Union multiple similar sources"
+    parameters:
+      - name: sources
+        type: list
+      - name: source_prefix
+        type: string
+    template: |
+      {% macro union_sources(sources, source_prefix) %}
+        {% for source in sources %}
+        SELECT 
+          '{{ source }}' AS source_system,
+          * 
+        FROM {{ ref(source_prefix ~ source ~ '__' ~ entity) }}
+        {% if not loop.last %}UNION ALL{% endif %}
+        {% endfor %}
+      {% endmacro %}
+
+# Snowflake-specific optimizations
+snowflake_optimizations:
+  clustering:
+    when_to_use: "Tables > 1GB with frequent filters"
+    common_patterns:
+      - ["date_column", "high_cardinality_id"]
+      - ["user_id", "created_at"]
+      - ["account_id", "transaction_date"]
+    auto_clustering: |
+      ALTER TABLE {{ this }} SET AUTO_CLUSTERING = TRUE
+    monitor_clustering: |
+      SELECT SYSTEM$CLUSTERING_INFORMATION('{{ this }}')
+
+  warehouse_sizing:
+    default: "ANALYTICS_WH"
+    heavy_transformation: "ANALYTICS_XL_WH"
+    config: |
+      pre_hook="ALTER SESSION SET WAREHOUSE = 'ANALYTICS_XL_WH'",
+      post_hook="ALTER SESSION SET WAREHOUSE = 'ANALYTICS_WH'"
+
+  grants:
+    reader_role: "ANALYTICS_READER"
+    writer_role: "ANALYTICS_WRITER"
+    post_hook: |
+      GRANT SELECT ON {{ this }} TO ROLE ANALYTICS_READER
+
+  performance_settings:
+    query_tag: "ALTER SESSION SET QUERY_TAG = 'dbt:{{ this }}'"
+    result_caching: "ALTER SESSION SET USE_CACHED_RESULT = TRUE"
+    timeout: "ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = 3600"
+
+  time_travel:
+    staging: 0  # No time travel needed
+    intermediate: 7  # One week for debugging
+    marts: 30  # One month for production
+
+# Test patterns
+test_patterns:
+  basic_tests:
+    - unique
+    - not_null
+    - relationships
+    - accepted_values
+
+  data_quality_tests:
+    volume_check:
+      description: "Detect abnormal row count changes"
+      template: |
+        WITH daily_counts AS (
+          SELECT 
+            DATE_TRUNC('day', created_at) AS date_day,
+            COUNT(*) AS row_count
+          FROM {{ ref(model) }}
+          WHERE created_at >= DATEADD('day', -30, CURRENT_DATE())
+          GROUP BY 1
+        ),
+        stats AS (
+          SELECT 
+            AVG(row_count) AS avg_count,
+            STDDEV(row_count) AS stddev_count
+          FROM daily_counts
+        )
+        SELECT * FROM daily_counts
+        CROSS JOIN stats
+        WHERE date_day = CURRENT_DATE()
+          AND ABS(row_count - avg_count) > 3 * stddev_count
+
+    freshness_check:
+      description: "Ensure data is recent"
+      template: |
+        SELECT COUNT(*) AS stale_rows
+        FROM {{ ref(model) }}
+        WHERE {{ timestamp_column }} < DATEADD('hour', -{{ max_hours }}, CURRENT_TIMESTAMP())
+        HAVING COUNT(*) > 0
+
+    completeness_check:
+      description: "Check for required fields"
+      template: |
+        SELECT 
+          COUNT(*) AS total_rows,
+          {%- for field in required_fields %}
+          COUNT({{ field }}) AS {{ field }}_count,
+          {%- endfor %}
+        FROM {{ ref(model) }}
+        HAVING 
+          {%- for field in required_fields %}
+          {{ field }}_count < total_rows
+          {%- if not loop.last %} OR {% endif %}
+          {%- endfor %}
+
+# Documentation templates
+documentation:
+  model_template: |
+    {% docs {model_name} %}
+    ## Overview
+    {description}
+    
+    ### Details
+    - **Grain**: {grain}
+    - **Source Systems**: {sources}
+    - **Update Frequency**: {frequency}
+    - **Owner**: {owner}
+    - **SLA**: {sla}
+    
+    ### Business Context
+    {business_context}
+    
+    ### Known Issues
+    {known_issues}
+    
+    ### Change Log
+    {change_log}
+    {% enddocs %}
+
+  column_template: |
+    - name: {column_name}
+      description: |
+        {description}
+        {%- if values %}
+        **Possible Values**: {{ values | join(', ') }}
+        {%- endif %}
+        {%- if calculation %}
+        **Calculation**: {{ calculation }}
+        {%- endif %}
+
+# Common transformations
+transformations:
+  currency_conversion:
+    cents_to_dollars: "CAST({column} AS DECIMAL(19,2)) / 100"
+    round_currency: "ROUND({column}, 2)"
+  
+  date_transformations:
+    unix_to_timestamp: "TO_TIMESTAMP({column})"
+    to_utc: "CONVERT_TIMEZONE('UTC', {column})"
+    date_only: "DATE_TRUNC('day', {column})"
+  
+  string_cleaning:
+    email: "LOWER(TRIM({column}))"
+    phone: "REGEXP_REPLACE({column}, '[^0-9]', '')"
+    alphanumeric: "REGEXP_REPLACE({column}, '[^a-zA-Z0-9]', '')"
+
+# Model selection patterns
+selection_patterns:
+  run_staging: "dbt run --select staging"
+  run_changed: "dbt run --select state:modified+"
+  test_marts: "dbt test --select marts"
+  build_model_and_downstream: "dbt build --select +{model}+"
+  exclude_heavy: "dbt run --exclude tag:heavy"
+
+# Learning patterns for self-improvement
+learning_metadata:
+  capture_on_success:
+    - model_name
+    - run_time
+    - rows_affected
+    - warehouse_used
+    - credits_consumed
+  
+  capture_on_failure:
+    - error_message
+    - failed_step
+    - last_successful_run
+  
+  pattern_scoring:
+    - test_coverage: "COUNT(tests) / COUNT(columns)"
+    - documentation_coverage: "COUNT(documented_columns) / COUNT(columns)"
+    - query_performance: "execution_time_seconds"
+    - maintenance_frequency: "COUNT(modifications) / age_in_days"
