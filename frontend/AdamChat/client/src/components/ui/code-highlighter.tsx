@@ -172,10 +172,10 @@ export function CodeBlock({ code, language, inline = false, className }: CodeBlo
               borderRadius: 0,
               background: 'transparent',
               fontSize: '14px',
-              lineHeight: '1.5',
+              lineHeight: '1.6',
               whiteSpace: 'pre',
-              wordBreak: 'break-word',
-              overflowWrap: 'break-word',
+              overflowX: 'auto',
+              padding: '1rem',
             }}
             showLineNumbers={code.split('\n').length > 5}
             lineNumberStyle={{
@@ -184,9 +184,10 @@ export function CodeBlock({ code, language, inline = false, className }: CodeBlo
               color: 'var(--muted-foreground)',
               borderRight: '1px solid var(--border)',
               marginRight: '1em',
+              userSelect: 'none',
             }}
-            wrapLines={true}
-            wrapLongLines={true}
+            wrapLines={false}
+            wrapLongLines={false}
             PreTag="div"
           >
             {code}

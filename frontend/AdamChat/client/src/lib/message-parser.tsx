@@ -26,14 +26,24 @@ export function parseMessageContent(content: string): ParsedContent[] {
     const codeBlockMatch = remaining.match(/^```(\w+)?\s*\n?([\s\S]*?)```/);
     if (codeBlockMatch) {
       const [fullMatch, language, code] = codeBlockMatch;
-      // Don't trim the code to preserve formatting
-      const codeContent = code.startsWith('\n') ? code.slice(1) : code;
+      // Clean up the code content
+      let codeContent = code;
       
+      // Remove leading/trailing newlines but preserve internal formatting
+      if (codeContent.startsWith('\n')) {
+        codeContent = codeContent.slice(1);
+      }
+      if (codeContent.endsWith('\n')) {
+        codeContent = codeContent.slice(0, -1);
+      }
+      
+      // Detect SQL specifically for better formatting
+      const detectedLang = language || (codeContent.match(/\b(SELECT|FROM|WHERE|WITH|INSERT|UPDATE|DELETE)\b/i) ? 'sql' : undefined);
       
       parts.push({
         type: 'code',
         content: codeContent,
-        language: language || undefined
+        language: detectedLang
       });
       remaining = remaining.slice(fullMatch.length);
       continue;
