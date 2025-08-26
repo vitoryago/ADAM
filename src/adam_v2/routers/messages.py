@@ -272,8 +272,23 @@ File operation results will appear in your context automatically when you mentio
                 search_mode=message_data.search_mode
             )
             
+            # Apply formatting to response content if formatter is available
+            response_content = response.content
+            if llm_service.formatter:
+                try:
+                    formatted = await llm_service.formatter.format_response(
+                        content=response_content,
+                        model=response.model_used,
+                        context={'message': enhanced_message}
+                    )
+                    if formatted.was_reformatted:
+                        response_content = formatted.content
+                        logger.info(f"Applied formatting for {response.model_used}")
+                except Exception as e:
+                    logger.error(f"Failed to apply formatting: {e}")
+            
             # Ensure response is not empty
-            response_content = response.content if response.content else "I understand your request. Let me help you with that."
+            response_content = response_content if response_content and response_content.strip() else "I understand your request. Let me help you with that."
         
         # Create assistant message
         assistant_message = Message(
@@ -452,8 +467,33 @@ async def send_message_stream(
                 cost = chunk.cost
                 model_used = chunk.model_used
                 
+                # Apply real-time formatting fixes for problematic models
+                chunk_content = chunk.content
+                if llm_service.formatter and model_used in ["grok-4-reasoning", "grok-4", "grok-3-mini-high"]:
+                    # Apply Grok-specific formatting fixes in real-time
+                    chunk_content = llm_service.formatter._fix_grok_formatting(chunk_content)
+                
                 # Send chunk
-                yield f"data: {json.dumps({'type': 'assistant_chunk', 'content': chunk.content})}\n\n"
+                yield f"data: {json.dumps({'type': 'assistant_chunk', 'content': chunk_content})}\n\n"
+            
+            # Apply final formatting to the complete response
+            if llm_service.formatter:
+                try:
+                    formatted = await llm_service.formatter.format_response(
+                        content=full_response,
+                        model=model_used,
+                        context={'streaming': True}
+                    )
+                    if formatted.was_reformatted:
+                        full_response = formatted.content
+                        logger.info(f"Applied post-stream formatting for {model_used}")
+                except Exception as e:
+                    logger.error(f"Failed to apply post-stream formatting: {e}")
+            
+            # Ensure we have non-empty content
+            if not full_response or full_response.strip() == "":
+                logger.warning(f"Empty response detected from {model_used}, providing fallback")
+                full_response = "I apologize, but I wasn't able to generate a complete response. Please try again or use a different model."
             
             # Create assistant message in database
             assistant_message = Message(

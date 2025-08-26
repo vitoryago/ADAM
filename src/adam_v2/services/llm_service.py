@@ -13,6 +13,14 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+# Import response formatter
+try:
+    from .response_formatter import ResponseFormatter, FormattedResponse
+    FORMATTER_AVAILABLE = True
+except ImportError:
+    FORMATTER_AVAILABLE = False
+    logger.warning("Response formatter not available")
+
 # Add parent directory to path to import ADAM modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -74,10 +82,14 @@ class LLMService:
         self.project_settings = project_settings or {}
         self.project_id = project_id
         # Use project model, then env default, then hardcoded default
-        env_default = os.getenv("DEFAULT_MODEL", "gpt-5-mini")
+        # Changed from gpt-5-mini to grok-3-mini-high as GPT-5 doesn't exist
+        env_default = os.getenv("DEFAULT_MODEL", "grok-3-mini-high")
         self.default_model = self.project_settings.get("model", env_default)
         self.temperature = self.project_settings.get("temperature", 0.7)
         self.max_tokens = self.project_settings.get("max_tokens", None)  # No limit by default
+        
+        # Initialize response formatter
+        self.formatter = ResponseFormatter() if FORMATTER_AVAILABLE else None
         
         # Initialize ADAM's LLM client if available
         if ADAM_LLM_AVAILABLE:
@@ -206,11 +218,11 @@ class LLMService:
                 final_system_prompt = system_prompt
             else:
                 # ADAM identity with model-specific instructions
-                if final_model == "claude-opus-4.1" or final_model == "gpt-5":
+                if final_model == "claude-opus-4.1" or final_model == "grok-4-reasoning" or final_model == "grok-4":
                     final_system_prompt = """You are ADAM (Analytics Data Assistant with Memory), an advanced AI assistant specializing in complex software development and architecture. You have persistent memory and can recall previous conversations.
 
 Always provide a helpful response to the user. Think step-by-step but share your conclusions clearly."""
-                elif final_model == "gpt-5-mini":
+                elif final_model == "grok-3-mini-high" or final_model == "claude-3.5-haiku":
                     final_system_prompt = """You are ADAM (Analytics Data Assistant with Memory), an AI assistant for software development and analysis. You have access to conversation history and can remember past interactions.
 
 Think through requests step-by-step internally, then provide clear, well-structured solutions."""
@@ -262,6 +274,27 @@ Think through requests step-by-step internally, then provide clear, well-structu
             # Make the API call
             response = await self.llm_client.complete(**complete_kwargs)
             
+            # Format and fix the response if formatter is available
+            response_content = response.content
+            if self.formatter:
+                try:
+                    formatted = await self.formatter.format_response(
+                        content=response.content,
+                        model=final_model,
+                        context={'message': message, 'has_image': bool(image_data)}
+                    )
+                    response_content = formatted.content
+                    
+                    # Log if formatting was needed
+                    if formatted.was_reformatted:
+                        logger.info(f"Response reformatted for {final_model}: {formatted.formatting_issues}")
+                    if formatted.was_truncated:
+                        logger.warning(f"Response was truncated from {final_model}")
+                except Exception as e:
+                    logger.error(f"Failed to format response: {e}")
+                    # Fall back to original content
+                    response_content = response.content
+            
             # Calculate cost based on tokens
             # Simple cost estimation - you may want to adjust these rates
             model_config = MODEL_CONFIGS.get(final_model)
@@ -288,7 +321,7 @@ Think through requests step-by-step internally, then provide clear, well-structu
                 logger.info(f"Response includes {len(response.raw_response['citations'])} citations")
             
             llm_response = LLMResponse(
-                content=response.content,
+                content=response_content,
                 model_used=response.model,
                 tokens_used=response.total_tokens,
                 cost=response.cost if hasattr(response, 'cost') else estimated_cost,
@@ -393,7 +426,7 @@ Think through requests step-by-step internally, then provide clear, well-structu
             complexity, _ = self.query_analyzer.analyze_query(message)
             model = self._select_model_by_complexity(complexity)
         
-        final_model = model or self.default_model or "gpt-5-mini"
+        final_model = model or self.default_model or "grok-3-mini-high"
         
         try:
             # Check if model supports vision
@@ -406,11 +439,11 @@ Think through requests step-by-step internally, then provide clear, well-structu
                 final_system_prompt = system_prompt
             else:
                 # ADAM identity with model-specific instructions
-                if final_model == "claude-opus-4.1" or final_model == "gpt-5":
+                if final_model == "claude-opus-4.1" or final_model == "grok-4-reasoning" or final_model == "grok-4":
                     final_system_prompt = """You are ADAM (Analytics Data Assistant with Memory), an advanced AI assistant specializing in complex software development and architecture. You have persistent memory and can recall previous conversations.
 
 Always provide a helpful response to the user. Think step-by-step but share your conclusions clearly."""
-                elif final_model == "gpt-5-mini":
+                elif final_model == "grok-3-mini-high" or final_model == "claude-3.5-haiku":
                     final_system_prompt = """You are ADAM (Analytics Data Assistant with Memory), an AI assistant for software development and analysis. You have access to conversation history and can remember past interactions.
 
 Think through requests step-by-step internally, then provide clear, well-structured solutions."""
@@ -482,6 +515,10 @@ Think through requests step-by-step internally, then provide clear, well-structu
                         
                         logger.debug(f"Streaming chunk {chunk_count}: {len(chunk)} chars")
                         
+                        # Apply real-time formatting fixes for all models that need it
+                        if self.formatter and final_model in ["grok-4-reasoning", "grok-4", "grok-3-mini-high"]:
+                            chunk = self.formatter._fix_grok_formatting(chunk)
+                        
                         yield StreamChunk(
                             content=chunk,
                             model_used=final_model,
@@ -491,7 +528,20 @@ Think through requests step-by-step internally, then provide clear, well-structu
             else:
                 # Fallback: Got a regular response, simulate streaming
                 logger.warning("Streaming not supported, falling back to chunking")
-                content = stream_response.content if hasattr(stream_response, 'content') else str(stream_response)
+                # Handle different response types
+                if hasattr(stream_response, 'content'):
+                    content = stream_response.content
+                elif hasattr(stream_response, 'output'):
+                    content = stream_response.output
+                elif hasattr(stream_response, 'output_text'):
+                    content = stream_response.output_text
+                else:
+                    content = str(stream_response)
+                
+                # Check if content is empty and log details
+                if not content or content == "":
+                    logger.error(f"Empty content from {final_model}. Response object: {stream_response}")
+                    content = "I apologize, but I encountered an issue generating a response. Please try again."
                 
                 # Use word-based chunking for more natural streaming
                 words = content.split(' ')
@@ -561,14 +611,14 @@ Think through requests step-by-step internally, then provide clear, well-structu
                     return model
             return "grok-4-reasoning"  # Default to Grok-4-reasoning
         elif complexity == QueryComplexity.MEDIUM:
-            # Use GPT-5 for medium complexity
-            preferred_models = ["gpt-5", "claude-sonnet-4", "claude-sonnet-3.7", "gpt-5-mini"]
+            # Use Grok-4 or Claude for medium complexity
+            preferred_models = ["grok-4", "claude-sonnet-4", "claude-sonnet-3.7", "grok-3-mini-high"]
             for model in preferred_models:
                 if model in MODEL_CONFIGS:
                     return model
-            return "gpt-5"  # Default to GPT-5
+            return "grok-4"  # Default to Grok-4
         else:
-            return "gpt-5-mini"  # GPT-5-mini for simple queries
+            return "grok-3-mini-high"  # Grok-3-mini for simple queries
     
     def estimate_cost(
         self,
@@ -583,7 +633,7 @@ Think through requests step-by-step internally, then provide clear, well-structu
         # Rough token estimation
         estimated_tokens = len(message.split()) * 1.5  # 1.5 tokens per word average
         
-        model_name = model or self.default_model or "gpt-5-mini"
+        model_name = model or self.default_model or "grok-3-mini-high"
         model_config = MODEL_CONFIGS.get(model_name)
         
         if not model_config:
