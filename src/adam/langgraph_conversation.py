@@ -57,7 +57,7 @@ class ConversationState(TypedDict):
     should_use_memory: bool  # Final decision on whether to use the found memory
     
     # LLM routing
-    selected_model: Literal["grok-3-mini-fast-high", "grok-4-reasoning"]  # Model selected based on complexity
+    selected_model: Literal["grok-3-mini-high", "grok-4-reasoning"]  # Model selected based on complexity
     
     # Response and metadata
     response: Optional[str]  # The final response from the LLM
@@ -432,7 +432,7 @@ def generate_response_node(state: ConversationState) -> ConversationState:
         context = f"\nRelevant previous knowledge:\n{state['memory_content']}\n"
     
     # Craft model-specific prompts for optimal results
-    if state["selected_model"] == "grok-3-mini-fast-high":
+    if state["selected_model"] == "grok-3-mini-high":
         # Grok-3 excels at clear explanations with step-by-step reasoning
         prompt = f"{context}\nQuestion: {state['query']}\nProvide a clear, accurate answer with reasoning."
     else:  # grok-4-reasoning
@@ -473,7 +473,7 @@ def handle_error_node(state: ConversationState) -> ConversationState:
     # Move to simpler, more reliable models on error
     if state["selected_model"] == "grok-4-reasoning":
         # Grok-4 failed, try simpler model
-        state["selected_model"] = "grok-3-mini-fast-high"
+        state["selected_model"] = "grok-3-mini-high"
     else:
         # Already at simplest model, just retry
         pass
@@ -680,7 +680,7 @@ class LangGraphConversationSystem:
             memory_age_days=None,
             should_verify=False,
             should_use_memory=False,
-            selected_model="grok-3-mini-fast-high",  # Default model
+            selected_model="grok-3-mini-high",  # Default model
             response=None,
             total_cost=0.0,
             retry_count=0,

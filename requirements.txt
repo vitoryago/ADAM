@@ -51,3 +51,4 @@ ipykernel==6.28.0  # For Jupyter notebooks
 # Documentation
 mkdocs==1.5.3
 mkdocs-material==9.5.3
+rank-bm25==0.2.2

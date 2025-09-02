@@ -60,7 +60,15 @@
       "Bash(npm run server:*)",
       "Bash(export USE_OPENAI_TTS=true)",
       "Bash(export LOG_LEVEL=DEBUG)",
-      "Bash(USE_OPENAI_TTS=true python /Users/vitoryago/ADAM/test_voice_complete.py)"
+      "Bash(USE_OPENAI_TTS=true python /Users/vitoryago/ADAM/test_voice_complete.py)",
+      "Bash(./test_styles_api.sh:*)",
+      "Read(//Users/vitoryago/.vscode/extensions/adamassistant.adam-code-0.3.1/**)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run compile:*)",
+      "Bash(npx @vscode/vsce package:*)",
+      "Bash(code:*)",
+      "Bash(git reset:*)",
+      "WebSearch"
     ],
     "deny": []
   }

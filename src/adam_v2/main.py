@@ -11,6 +11,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Fix tokenizers warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # Load environment variables from parent ADAM .env if it exists
 parent_env = Path(__file__).parent.parent.parent / ".env"
 if parent_env.exists():
@@ -23,12 +26,18 @@ load_dotenv()
 # Import database
 from database import init_db, close_db
 
-# Import routers
-from routers import projects, conversations, messages, memories, voice, voice_streaming
-
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import routers
+from routers import projects, conversations, messages, memories, voice, voice_streaming
+try:
+    from routers import lineage, onboarding
+    LINEAGE_AVAILABLE = True
+except ImportError:
+    LINEAGE_AVAILABLE = False
+    logger.info("Lineage and onboarding routers not available")
 
 
 @asynccontextmanager
@@ -75,11 +84,21 @@ app.include_router(memories.router, prefix="/api", tags=["memories"])
 app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 app.include_router(voice_streaming.router, tags=["voice-streaming"])
 
+# Include optional routers
+if LINEAGE_AVAILABLE:
+    app.include_router(lineage.router, prefix="/api", tags=["lineage"])
+    app.include_router(onboarding.router, prefix="/api", tags=["onboarding"])
+
 
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "version": "2.0.0", "type": "api"}
+
+@app.get("/health")
+async def simple_health():
+    """Simple health check endpoint for monitoring"""
+    return {"status": "ok"}
 
 
 @app.get("/api/debug/cors")
