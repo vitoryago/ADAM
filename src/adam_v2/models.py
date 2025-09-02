@@ -172,6 +172,7 @@ class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
     use_memory: bool = True
     model: Optional[str] = None  # If None, use automatic routing
+    response_style: Optional[str] = None  # Response style: concise, normal, explanatory, etc.
     
     # For image attachments
     has_image: bool = False
@@ -180,6 +181,9 @@ class MessageCreate(BaseModel):
     # For live search
     use_search: bool = False
     search_mode: Optional[str] = None  # auto, web, x, news, rss
+    
+    # For VSCode workspace context
+    workspace_context: Optional[Dict[str, Any]] = None
 
 
 class MessageResponse(MessageBase):

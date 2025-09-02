@@ -263,7 +263,7 @@ class StreamingVoiceSession:
                 "type": "completion",
                 "full_text": full_response,
                 "user_text": user_text,  # Include user text for display
-                "model": self.actual_model_used or self.llm_service.default_model or "grok-3-mini-fast",  # Include actual model used
+                "model": self.actual_model_used or self.llm_service.default_model or "grok-3-mini-high",  # Include actual model used
                 "tts_provider": "ElevenLabs" if not use_openai_tts else "OpenAI"  # Include TTS provider
             })
             
@@ -386,7 +386,7 @@ class StreamingVoiceSession:
                 conversation_id=self.conversation_id,
                 role="assistant",
                 content=assistant_text,
-                model=self.actual_model_used or self.llm_service.default_model or "grok-3-mini-fast"
+                model=self.actual_model_used or self.llm_service.default_model or "grok-3-mini-high"
             )
             self.db.add(assistant_msg)
             

@@ -7,6 +7,7 @@ import { MessageInput } from "./message-input";
 import { TypingIndicator } from "./typing-indicator";
 import { ModelSelector } from "./model-selector";
 import { SearchToggle } from "./search-toggle";
+import { ResponseStyleSelector } from "./response-style-selector";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useTheme } from "@/components/theme-provider";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +32,7 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
   const [selectedModel, setSelectedModel] = useState<string>("automatic");
   const [searchEnabled, setSearchEnabled] = useState(false);
   const [searchMode, setSearchMode] = useState<string>("auto");
+  const [responseStyle, setResponseStyle] = useState<string>("normal");
   
   const { isConnected, isTyping, error, sendMessage, onMessage, reconnect } = useWebSocket();
 
@@ -162,7 +164,8 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
         use_memory: true,
         model: modelToUse === "automatic" ? null : modelToUse,
         use_search: searchEnabled,
-        search_mode: searchEnabled ? searchMode : null
+        search_mode: searchEnabled ? searchMode : null,
+        response_style: responseStyle
       };
 
       // Handle file attachments
@@ -427,7 +430,7 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
         </div>
       )}
 
-      {/* Model Selector and Search Toggle */}
+      {/* Model Selector, Response Style, and Search Toggle */}
       <div className="px-4 py-2 border-t border-border">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-4">
@@ -436,6 +439,11 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
               value={selectedModel} 
               onChange={setSelectedModel} 
               disabled={!isConnected || isProcessing}
+            />
+            <div className="text-sm text-muted-foreground">Style:</div>
+            <ResponseStyleSelector
+              value={responseStyle}
+              onValueChange={setResponseStyle}
             />
           </div>
           <SearchToggle

@@ -19,6 +19,7 @@ from models import (
 )
 from services.llm_service import LLMService
 from services.memory_service import ProjectMemoryService, ADAM_MEMORY_AVAILABLE
+from services.onboarding_integration_service import OnboardingIntegrationService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ async def send_message(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at.asc())
-        .limit(10)  # Last 10 messages for context
+        .limit(30)  # Last 30 messages for better context retention
     )
     history = history_result.scalars().all()
     
@@ -98,7 +99,7 @@ async def send_message(
                 memories = await memory_service.search_memories(
                     query=message_data.content,
                     conversation_id=None,  # Search across all conversations in the project
-                    limit=15  # Increased from 5 to retrieve more relevant memories
+                    limit=20  # Further increased to retrieve more relevant memories for better context
                 )
             
             if memories:
@@ -108,16 +109,124 @@ async def send_message(
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}")
     
+    # Check if VSCode sent workspace context with file content
+    enhanced_content = message_data.content
+    workspace_instructions = ""
+    
+    # Check for file operation requests AND set concise mode for VSCode
+    if message_data.workspace_context:
+        # Always use concise style in VSCode unless specified
+        if not message_data.response_style:
+            message_data.response_style = "concise"
+        
+        # Use Claude Haiku to intelligently detect file operations needed
+        try:
+            from services.fast_routing_service import FastRoutingService
+            routing_service = FastRoutingService()
+            
+            # Ask Haiku what operations are needed
+            operation_prompt = f"""Analyze this VSCode user request and determine what file operations are needed.
+User request: "{message_data.content}"
+Active file: {message_data.workspace_context.get('activeFile', {}).get('file', 'none')}
+
+Respond with ONLY valid JSON:
+{{"needs_file_creation": true/false, "needs_file_edit": true/false, "action_type": "create|edit|debug|analyze|none"}}"""
+            
+            operation_response = await routing_service.client.complete(
+                prompt=operation_prompt,
+                model="claude-3.5-haiku",
+                temperature=0.0,
+                max_tokens=50,
+                stream=False
+            )
+            
+            import json
+            operation_info = json.loads(operation_response.content.strip())
+            
+            if operation_info.get("needs_file_creation"):
+                workspace_instructions = "\n\n[SYSTEM: User is in VSCode. You can create files by responding with: <<<CREATE_FILE:path/to/file.ext>>> followed by the file content and <<<END_FILE>>>. Be concise.]"
+            elif operation_info.get("needs_file_edit") or operation_info.get("action_type") in ["debug", "edit", "fix"]:
+                workspace_instructions = "\n\n[SYSTEM: User is in VSCode. When fixing/debugging code, ALWAYS provide the corrected version using: <<<CREATE_FILE:path/to/file.ext>>> with the FULL corrected content and <<<END_FILE>>>. Don't just explain - fix it! Be concise.]"
+            
+        except Exception as e:
+            logger.warning(f"Failed to use Haiku for operation detection: {e}, using fallback")
+            # Minimal fallback - just check for obvious keywords
+            if "create" in message_data.content.lower() and "file" in message_data.content.lower():
+                workspace_instructions = "\n\n[SYSTEM: User is in VSCode. You can create files. Be concise.]"
+    
+    if message_data.workspace_context and message_data.workspace_context.get('activeFile'):
+        active_file = message_data.workspace_context['activeFile']
+        if isinstance(active_file, dict) and active_file.get('content'):
+            # Detect if the user is referring to a file/code contextually
+            content_lower = message_data.content.lower()
+            
+            # Keywords that suggest the user is referring to something contextual
+            file_reference_indicators = ['this', 'that', 'here', 'current', 'above', 'it', 'the file', 'the code']
+            action_verbs = ['read', 'analyze', 'explain', 'review', 'check', 'look', 'help', 'understand', 'optimize', 'improve', 'debug', 'fix']
+            
+            # Check if the message seems to reference the active file
+            seems_to_reference_file = (
+                # Short questions like "What about this?" or "Can you read it?"
+                (len(content_lower.split()) <= 8 and any(ref in content_lower for ref in file_reference_indicators)) or
+                # Any action verb with a reference indicator
+                (any(verb in content_lower for verb in action_verbs) and any(ref in content_lower for ref in file_reference_indicators)) or
+                # Very short contextual questions
+                content_lower in ['?', 'and this?', 'this one?', 'how about this?', 'what about this one?']
+            )
+            
+            if seems_to_reference_file:
+                file_info = f"\n\n**Current file: {active_file.get('file', 'unknown')}** ({active_file.get('language', 'unknown')} file)\n"
+                file_info += f"```{active_file.get('language', '')}\n{active_file.get('content', '')}\n```"
+                enhanced_content = f"{message_data.content}\n{file_info}"
+    
+    # Add workspace instructions if any
+    enhanced_content = enhanced_content + workspace_instructions
+    
+    # Check for onboarding request
+    onboarding_service = OnboardingIntegrationService(llm_service)
+    if onboarding_service.is_onboarding_request(message_data.content):
+        try:
+            # Process as onboarding request
+            onboarding_response = await onboarding_service.process_onboarding_request(
+                message=message_data.content,
+                project_id=project.id,
+                project_name=project.name,
+                project_path=project.settings.get("project_path")
+            )
+            
+            if onboarding_response["type"] == "onboarding":
+                # Create assistant message with onboarding content
+                assistant_message = Message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=onboarding_response["content"],
+                    metadata=onboarding_response.get("metadata", {})
+                )
+                
+                db.add(assistant_message)
+                await db.commit()
+                await db.refresh(assistant_message)
+                
+                # Return both messages
+                return [
+                    MessageResponse.model_validate(user_message),
+                    MessageResponse.model_validate(assistant_message)
+                ]
+        except Exception as e:
+            logger.error(f"Error in onboarding processing: {e}")
+            # Fall through to regular message handling
+    
     # Generate AI response
     try:
         response = await llm_service.generate_response(
-            message=message_data.content,
+            message=enhanced_content,
             history=history,
             memory_context=memory_context,
             model=message_data.model,
             image_data=message_data.image_data if message_data.has_image else None,
             use_search=message_data.use_search,
-            search_mode=message_data.search_mode
+            search_mode=message_data.search_mode,
+            response_style=message_data.response_style
         )
         
         # Create assistant message
@@ -238,6 +347,48 @@ async def send_message_stream(
     # Initialize services with project ID for memory storage
     llm_service = LLMService(project_settings=project.settings, project_id=project.id)
     
+    # Check if VSCode sent workspace context with file content  
+    enhanced_content = message_data.content
+    workspace_instructions = ""
+    
+    # Set concise mode for VSCode and detect file operations
+    if message_data.workspace_context:
+        # Always use concise style in VSCode unless specified
+        if not message_data.response_style:
+            message_data.response_style = "concise"
+        
+        # Detect file operations
+        if any(phrase in message_data.content.lower() for phrase in ['debug', 'fix', 'create a file', 'edit this', 'modify this']):
+            workspace_instructions = "\n\n[SYSTEM: User is in VSCode. For code fixes, provide the corrected version using <<<CREATE_FILE:filename>>> with full content and <<<END_FILE>>>. Be concise.]"
+    
+    if message_data.workspace_context and message_data.workspace_context.get('activeFile'):
+        active_file = message_data.workspace_context['activeFile']
+        if isinstance(active_file, dict) and active_file.get('content'):
+            # Detect if the user is referring to a file/code contextually
+            content_lower = message_data.content.lower()
+            
+            # Keywords that suggest the user is referring to something contextual
+            file_reference_indicators = ['this', 'that', 'here', 'current', 'above', 'it', 'the file', 'the code']
+            action_verbs = ['read', 'analyze', 'explain', 'review', 'check', 'look', 'help', 'understand', 'optimize', 'improve', 'debug', 'fix']
+            
+            # Check if the message seems to reference the active file
+            seems_to_reference_file = (
+                # Short questions like "What about this?" or "Can you read it?"
+                (len(content_lower.split()) <= 8 and any(ref in content_lower for ref in file_reference_indicators)) or
+                # Any action verb with a reference indicator
+                (any(verb in content_lower for verb in action_verbs) and any(ref in content_lower for ref in file_reference_indicators)) or
+                # Very short contextual questions
+                content_lower in ['?', 'and this?', 'this one?', 'how about this?', 'what about this one?']
+            )
+            
+            if seems_to_reference_file:
+                file_info = f"\n\n**Current file: {active_file.get('file', 'unknown')}** ({active_file.get('language', 'unknown')} file)\n"
+                file_info += f"```{active_file.get('language', '')}\n{active_file.get('content', '')}\n```"
+                enhanced_content = f"{message_data.content}\n{file_info}"
+    
+    # Add workspace instructions if any
+    enhanced_content = enhanced_content + workspace_instructions
+    
     # Get memory context
     memory_context = ""
     if message_data.use_memory and ADAM_MEMORY_AVAILABLE:
@@ -262,7 +413,7 @@ async def send_message_stream(
                 memories = await memory_service.search_memories(
                     query=message_data.content,
                     conversation_id=None,  # Search across all conversations in the project
-                    limit=15  # Increased from 5 to retrieve more relevant memories
+                    limit=20  # Further increased to retrieve more relevant memories for better context
                 )
             
             if memories:
@@ -288,11 +439,12 @@ async def send_message_stream(
             model_used = message_data.model or "automatic"
             
             async for chunk in llm_service.stream_response(
-                message=message_data.content,
+                message=enhanced_content,
                 history=history,
                 memory_context=memory_context,
                 model=message_data.model,
                 image_data=message_data.image_data if message_data.has_image else None,
+                response_style=message_data.response_style,
                 use_search=message_data.use_search,
                 search_mode=message_data.search_mode
             ):
