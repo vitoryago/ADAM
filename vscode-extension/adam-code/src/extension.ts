@@ -18,8 +18,12 @@ export function activate(context: vscode.ExtensionContext) {
     // Use the actual project ID from your backend
     adamClient = new ADAMClient(
         config.get('serverUrl') || 'http://localhost:8000',
-        config.get('projectId') || '3a859e97-16fd-46c6-b018-1ede9fade704'  // Your actual project ID
+        config.get('projectId') || '788d358e-4089-405b-9614-237583ea5dc2'  // VSCode Extension project
     );
+
+    // Set initial response style from settings
+    const responseStyle = config.get<'normal' | 'concise' | 'explanatory'>('responseStyle') || 'normal';
+    adamClient.setResponseStyle(responseStyle);
 
     // Initialize chat provider
     chatProvider = new ADAMChatProvider(context.extensionUri, adamClient);
@@ -58,6 +62,32 @@ function registerCommands(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('adam.chat', () => {
             chatProvider.show();
+        })
+    );
+
+    // Response style command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.setResponseStyle', async () => {
+            const style = await vscode.window.showQuickPick(
+                [
+                    { label: '📝 Normal', description: 'Balanced responses with moderate detail', value: 'normal' },
+                    { label: '⚡ Concise', description: 'Brief, to-the-point responses', value: 'concise' },
+                    { label: '📚 Explanatory', description: 'Detailed responses with thorough explanations', value: 'explanatory' }
+                ],
+                {
+                    placeHolder: 'Select ADAM response style',
+                    title: 'ADAM Response Style'
+                }
+            );
+
+            if (style) {
+                adamClient.setResponseStyle(style.value as 'normal' | 'concise' | 'explanatory');
+                vscode.window.showInformationMessage(`ADAM response style set to: ${style.label}`);
+                
+                // Update the setting
+                const config = vscode.workspace.getConfiguration('adam');
+                await config.update('responseStyle', style.value, true);
+            }
         })
     );
 

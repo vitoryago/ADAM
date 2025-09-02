@@ -1,0 +1,147 @@
+{
+  "name": "adam-code",
+  "displayName": "ADAM Code Assistant",
+  "description": "AI-powered coding assistant with advanced memory and context awareness",
+  "version": "0.3.3",
+  "publisher": "adam-ai",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["AI", "Programming Languages", "Other"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "adam.chat",
+        "title": "ADAM: Open Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "adam.setResponseStyle",
+        "title": "ADAM: Set Response Style",
+        "icon": "$(symbol-property)"
+      },
+      {
+        "command": "adam.explain",
+        "title": "ADAM: Explain Selected Code",
+        "icon": "$(book)"
+      },
+      {
+        "command": "adam.optimize",
+        "title": "ADAM: Optimize SQL",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "adam.generateDBT",
+        "title": "ADAM: Generate DBT Model",
+        "icon": "$(database)"
+      },
+      {
+        "command": "adam.generatePR",
+        "title": "ADAM: Generate PR Description",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "adam.createBranch",
+        "title": "ADAM: Create Smart Branch",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "adam.voiceChat",
+        "title": "ADAM: Start Voice Chat",
+        "icon": "$(mic)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "adam.chat",
+        "key": "cmd+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "adam.setResponseStyle",
+        "key": "cmd+shift+s",
+        "mac": "cmd+shift+s"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "adam",
+          "title": "ADAM",
+          "icon": "$(circuit-board)"
+        }
+      ]
+    },
+    "views": {
+      "adam": [
+        {
+          "type": "webview",
+          "id": "adam.chatView",
+          "name": "Chat",
+          "contextualTitle": "ADAM Chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ADAM",
+      "properties": {
+        "adam.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "ADAM backend server URL"
+        },
+        "adam.projectId": {
+          "type": "string",
+          "default": "788d358e-4089-405b-9614-237583ea5dc2",
+          "description": "Project ID for ADAM"
+        },
+        "adam.responseStyle": {
+          "type": "string",
+          "enum": ["normal", "concise", "explanatory"],
+          "default": "normal",
+          "description": "Response style for ADAM",
+          "enumDescriptions": [
+            "Balanced responses with moderate detail",
+            "Brief, to-the-point responses", 
+            "Detailed responses with thorough explanations"
+          ]
+        },
+        "adam.enableMemory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable ADAM memory system"
+        },
+        "adam.enableVoice": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable voice interaction"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.0",
+    "@types/node": "16.x",
+    "@typescript-eslint/eslint-plugin": "^5.53.0",
+    "@typescript-eslint/parser": "^5.53.0",
+    "eslint": "^8.34.0",
+    "typescript": "^5.1.3"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "ws": "^8.13.0"
+  }
+}

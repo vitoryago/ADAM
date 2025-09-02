@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import * as vscode from 'vscode';
-import WebSocket from 'ws';
+// WebSocket will be added when backend supports it
 
 export interface Message {
     role: 'user' | 'assistant' | 'system';
@@ -36,9 +36,10 @@ export interface DBTModel {
 
 export class ADAMClient {
     private api: AxiosInstance;
-    private ws: WebSocket | null = null;
+    private ws: any | null = null;  // Will be WebSocket when implemented
     private projectId: string;
     private conversationId: string | null = null;
+    private responseStyle: 'normal' | 'concise' | 'explanatory' = 'normal';
 
     constructor(baseURL: string, projectId: string) {
         this.api = axios.create({
@@ -99,6 +100,15 @@ export class ADAMClient {
         }
     }
 
+    setResponseStyle(style: 'normal' | 'concise' | 'explanatory') {
+        this.responseStyle = style;
+        console.log(`Response style set to: ${style}`);
+    }
+
+    getResponseStyle(): string {
+        return this.responseStyle;
+    }
+
     async sendMessage(content: string, useMemory: boolean = true): Promise<Message> {
         try {
             // Create or get conversation
@@ -109,10 +119,62 @@ export class ADAMClient {
                 this.conversationId = convResponse.data.id;
             }
 
-            // Send message
+            // Get workspace context for better responses
+            const activeEditor = vscode.window.activeTextEditor;
+            let workspaceContext: any = null;
+            
+            // Always include the active file content if there's an active editor
+            if (activeEditor) {
+                const selection = activeEditor.selection;
+                const selectedText = !selection.isEmpty ? activeEditor.document.getText(selection) : null;
+                
+                // Get the full file content if user seems to be referring to it
+                const contentLower = content.toLowerCase();
+                const isReferringToFile = (
+                    contentLower.includes('this') ||
+                    contentLower.includes('file') ||
+                    contentLower.includes('code') ||
+                    contentLower.includes('show') ||
+                    contentLower.includes('dependencies') ||
+                    contentLower.includes('explain') ||
+                    contentLower.includes('analyze') ||
+                    contentLower.includes('what') ||
+                    contentLower.includes('read') ||
+                    contentLower.includes('review') ||
+                    contentLower.includes('shared') ||
+                    contentLower.includes('sharing') ||
+                    contentLower.includes('update') ||
+                    contentLower.includes('edit') ||
+                    contentLower.includes('modify') ||
+                    contentLower.includes('change') ||
+                    contentLower.includes('fix') ||
+                    contentLower.includes('improve') ||
+                    contentLower.includes('refactor') ||
+                    contentLower.includes('optimize')
+                );
+                
+                workspaceContext = {
+                    activeFile: {
+                        file: activeEditor.document.fileName,
+                        language: activeEditor.document.languageId,
+                        content: isReferringToFile ? activeEditor.document.getText() : selectedText,
+                        isUpdateRequest: contentLower.includes('update') || contentLower.includes('edit') || 
+                                       contentLower.includes('modify') || contentLower.includes('change') ||
+                                       contentLower.includes('fix') || contentLower.includes('improve')
+                    }
+                };
+                
+                // Log for debugging
+                console.log('Active file:', activeEditor.document.fileName);
+                console.log('Is referring to file:', isReferringToFile);
+            }
+
+            // Send message with response style
             const response = await this.api.post(`/api/conversations/${this.conversationId}/messages`, {
                 content,
                 use_memory: useMemory,
+                response_style: this.responseStyle,  // Add response style
+                workspace_context: workspaceContext,  // Enhanced context
                 context: {
                     editor: 'vscode',
                     workspace: vscode.workspace.name || 'VSCode',
