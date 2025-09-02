@@ -56,20 +56,22 @@ class DBTKnowledgeService:
     
     def __init__(self):
         """Initialize the DBT knowledge service"""
-        self.knowledge_base_path = Path(__file__).parent.parent.parent.parent
-        self.patterns_file = self.knowledge_base_path / "dbt_patterns.yaml"
-        self.knowledge_file = self.knowledge_base_path / "DBT_KNOWLEDGE.md"
+        self.knowledge_base_path = Path(__file__).parent.parent.parent.parent / "knowledge"
+        self.patterns_file = self.knowledge_base_path / "dbt" / "dbt_patterns.yaml"
+        self.knowledge_file = self.knowledge_base_path / "dbt" / "DBT_KNOWLEDGE.md"
         
         # Load patterns and knowledge
         self.patterns = self._load_patterns()
         self.knowledge = self._load_knowledge()
         
-        # Pattern matchers for detecting DBT needs
+        # Pattern matchers for detecting DBT needs (more specific to avoid false positives)
         self.dbt_indicators = [
-            'dbt', 'incremental', 'macro', 'jinja',
-            'materialized', 'ref(', 'source(', 'snapshot',
-            'staging', 'intermediate', 'mart', 'fact', 'dimension',
-            'pdt', 'looker', 'derived_table'
+            'dbt', 'incremental model', 'jinja',
+            'materialized=', 'ref(', 'source(', '{{ ', '{% ',
+            'staging model', 'staging layer', 'intermediate model',
+            'fact table', 'dimension table', 'data mart',
+            'pdt', 'looker', 'derived_table', 'analytics engineering',
+            'data transformation', 'data warehouse', 'snowflake model'
         ]
         
     def _load_patterns(self) -> Dict[str, Any]:
@@ -103,9 +105,90 @@ class DBTKnowledgeService:
             return ""
     
     def detect_dbt_context(self, query: str) -> bool:
-        """Detect if a query needs DBT knowledge"""
+        """Detect if a query needs DBT knowledge using simple keyword check (fallback)"""
         query_lower = query.lower()
         return any(indicator in query_lower for indicator in self.dbt_indicators)
+    
+    async def intelligent_dbt_detection(self, query: str) -> tuple[bool, float]:
+        """Use LLM to intelligently detect if query needs DBT knowledge"""
+        try:
+            # Use Claude Haiku for fast, accurate detection
+            from adam.llm.client import UnifiedLLMClient
+            
+            detection_prompt = """Analyze if this query requires DBT (Data Build Tool) knowledge or assistance.
+
+Query: "{query}"
+
+DBT-related queries include:
+- Creating or converting data models (staging, intermediate, marts, facts, dimensions)
+- Writing SQL transformations for analytics engineering
+- Incremental materializations and strategies
+- Jinja templating and macros
+- Data testing and documentation
+- Converting Looker PDTs or other BI tool models
+- Data warehouse best practices for analytics
+- Anything explicitly mentioning dbt, models, or data transformation pipelines
+
+Non-DBT queries include:
+- General programming questions
+- Non-analytics SQL queries
+- Machine learning or AI topics
+- Web development
+- System administration
+- General conversation
+
+Respond with ONLY a JSON object:
+{{"needs_dbt": true/false, "confidence": 0.0-1.0, "reason": "brief explanation"}}
+"""
+            
+            llm_client = UnifiedLLMClient()
+            response = await llm_client.complete(
+                prompt=detection_prompt.format(query=query),
+                model="gpt-4o-mini",  # Fast and accurate
+                temperature=0.1,  # Low temperature for consistency
+                max_tokens=100
+            )
+            
+            # Parse response
+            import json
+            content = response.content.strip()
+            
+            # Clean JSON response
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+            
+            # Find JSON object
+            if not content.startswith('{'):
+                json_start = content.find('{')
+                if json_start != -1:
+                    content = content[json_start:]
+            
+            # Find matching closing brace
+            if content.startswith('{'):
+                brace_count = 0
+                end_pos = 0
+                for i, char in enumerate(content):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_pos = i + 1
+                            break
+                if end_pos > 0:
+                    content = content[:end_pos]
+            
+            result = json.loads(content)
+            
+            logger.info(f"DBT detection: {result['needs_dbt']} (confidence: {result['confidence']:.2f}) - {result['reason']}")
+            return result['needs_dbt'], result['confidence']
+            
+        except Exception as e:
+            logger.warning(f"Intelligent DBT detection failed, falling back to keywords: {e}")
+            # Fallback to keyword detection
+            return self.detect_dbt_context(query), 0.5
     
     def identify_model_layer(self, description: str) -> ModelLayer:
         """Identify which DBT layer a model belongs to"""
@@ -438,24 +521,74 @@ SELECT * FROM final
         # Get relevant knowledge
         knowledge = self.get_relevant_knowledge(query)
         
-        # Build context string
+        # Build comprehensive context string
         context_parts = []
         
-        if knowledge['detected_need']:
-            context_parts.append(f"DBT Context Detected: {', '.join(knowledge['detected_need'])}")
+        # Add a comprehensive summary from our knowledge base
+        context_parts.append("[DBT Knowledge Base - Snowflake Optimized]")
+        context_parts.append("=" * 50)
         
+        # Core principles
+        context_parts.append("\n📋 DBT Best Practices (from your knowledge base):")
+        context_parts.append("• Layer Architecture: Staging → Intermediate → Marts")
+        context_parts.append("• Naming: stg_<source>__<entity>, int_<entity>__<transform>, fct_/dim_")
+        context_parts.append("• Staging: Views, light transforms only (rename, cast, filter)")
+        context_parts.append("• Intermediate: Ephemeral, business logic, cross-source joins")
+        context_parts.append("• Marts: Tables/Incremental, business-ready, clustered")
+        
+        # Snowflake specifics
+        context_parts.append("\n❄️ Snowflake Optimizations:")
+        context_parts.append("• Cluster large tables (>1GB) by [date_column, high_cardinality_id]")
+        context_parts.append("• Use transient=true for staging (no Time Travel needed)")
+        context_parts.append("• Set AUTO_CLUSTERING = TRUE for fact tables")
+        context_parts.append("• Warehouse sizing: Use XL for heavy transforms")
+        
+        # If incremental detected, add incremental patterns
+        if 'incremental' in knowledge['detected_need']:
+            context_parts.append("\n🔄 Incremental Patterns:")
+            if 'incremental' in knowledge['patterns']:
+                strategies = knowledge['patterns']['incremental']
+                for strategy_name, strategy_data in list(strategies.items())[:2]:
+                    context_parts.append(f"• {strategy_name}: {strategy_data.get('description', '')}")
+            context_parts.append("• Always add lookback safety (3 days)")
+            context_parts.append("• Use merge strategy for updates, append for immutable events")
+        
+        # If testing detected, add test patterns
+        if 'test' in query.lower():
+            context_parts.append("\n🧪 Testing Strategy:")
+            context_parts.append("• Schema tests: unique, not_null, relationships")
+            context_parts.append("• Custom tests: volume anomalies, freshness checks")
+            context_parts.append("• Severity: error (blocks deploy), warn (alerts)")
+        
+        # Add relevant macros if detected
+        if 'macro' in query.lower() and knowledge['macros']:
+            context_parts.append(f"\n🔧 Available Macros: {', '.join(knowledge['macros'][:5])}")
+        
+        # Include actual best practice sections if available
         if knowledge['best_practices']:
-            context_parts.append("\nRelevant Best Practices:")
-            context_parts.extend(knowledge['best_practices'][:1])  # Add first best practice
+            context_parts.append("\n📚 Detailed Best Practices:")
+            # Include more substantial content
+            for section in knowledge['best_practices'][:2]:  # Include 2 sections
+                # Limit each section to avoid token overflow
+                section_lines = section.split('\n')[:20]  # First 20 lines
+                context_parts.append('\n'.join(section_lines))
         
+        # Add example if relevant pattern exists
         if knowledge['patterns']:
-            context_parts.append("\nAvailable Patterns:")
-            for pattern_type, pattern_data in list(knowledge['patterns'].items())[:2]:
-                context_parts.append(f"- {pattern_type}: {pattern_data.get('description', 'Available')}")
+            context_parts.append("\n💡 Remember:")
+            context_parts.append("• One source = one staging model")
+            context_parts.append("• Test everything (100% coverage on keys)")
+            context_parts.append("• Document as you build")
+            context_parts.append("• Use ref() and source() always")
         
         if context_parts:
             context = "\n".join(context_parts)
-            return f"{query}\n\n[DBT Knowledge Base Context]\n{context}"
+            enhanced = f"{query}\n\n{context}"
+            
+            # Log size of enhancement
+            logger.info(f"Enhanced query from {len(query)} to {len(enhanced)} chars")
+            
+            return enhanced
         
         return query
 

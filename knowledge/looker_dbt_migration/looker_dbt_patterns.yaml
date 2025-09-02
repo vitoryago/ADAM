@@ -1,0 +1,576 @@
+# Looker PDT to DBT Migration Patterns
+# Structured patterns for automated conversion
+
+metadata:
+  version: "1.0.0"
+  description: "Patterns for converting Looker PDTs to DBT models"
+  last_updated: "2024-12-10"
+
+# PDT Type Detection Patterns
+pdt_detection:
+  simple_aggregate:
+    indicators:
+      - "GROUP BY"
+      - "SUM("
+      - "COUNT("
+      - "AVG("
+      - "MAX("
+      - "MIN("
+    materialization: "table"
+    suggested_layer: "marts"
+    
+  complex_joins:
+    indicators:
+      - "WITH.*AS"
+      - "JOIN"
+      - "UNION"
+    materialization: "table"
+    suggested_layer: "intermediate"
+    
+  event_based:
+    indicators:
+      - "created_at"
+      - "event_time"
+      - "timestamp"
+      - "WHERE.*>="
+    materialization: "incremental"
+    suggested_layer: "marts"
+    
+  dimension_table:
+    indicators:
+      - "DISTINCT"
+      - "first_value"
+      - "last_value"
+      - "row_number"
+    materialization: "table"
+    suggested_layer: "marts"
+
+# Conversion Templates
+conversion_templates:
+  basic_pdt:
+    input_pattern: |
+      derived_table: {
+        sql: {sql_content} ;;
+        persist_for: "{persist_duration}"
+        indexes: {index_columns}
+      }
+    
+    dbt_template: |
+      {{
+          config(
+              materialized='table',
+              cluster_by={cluster_columns},
+              tags=['looker_migration', '{original_view_name}'],
+              meta={{
+                  'looker_view': '{original_view_name}',
+                  'original_persist': '{persist_duration}',
+                  'migration_date': '{migration_date}'
+              }}
+          )
+      }}
+      
+      {sql_content_formatted}
+    
+    looker_view_template: |
+      # Auto-generated from DBT model
+      view: {view_name} {{
+        sql_table_name: {database}.{schema}.{dbt_model_name} ;;
+        label: "{view_label}"
+        
+        {dimensions}
+        
+        {measures}
+      }}
+  
+  incremental_pdt:
+    input_pattern: |
+      derived_table: {
+        datagroup_trigger: {datagroup_name}
+        sql: {sql_content} ;;
+        partition_keys: {partition_columns}
+      }
+    
+    dbt_template: |
+      {{
+          config(
+              materialized='incremental',
+              unique_key={unique_key_columns},
+              on_schema_change='sync_all_columns',
+              cluster_by={cluster_columns},
+              incremental_strategy='merge',
+              tags=['looker_migration', '{original_view_name}', 'incremental']
+          )
+      }}
+      
+      WITH source_data AS (
+          {sql_content_formatted}
+      )
+      
+      SELECT 
+          *,
+          CURRENT_TIMESTAMP() AS dbt_updated_at
+      FROM source_data
+      
+      {{% if is_incremental() %}}
+          WHERE {timestamp_column} >= (
+              SELECT DATEADD('day', -{lookback_days}, MAX({timestamp_column}))
+              FROM {{ this }}
+          )
+      {{% endif %}}
+
+# Looker to DBT Mappings
+feature_mappings:
+  persist_strategies:
+    persist_for:
+      "1 hour": 
+        strategy: "incremental"
+        refresh_frequency: "hourly"
+      "24 hours":
+        strategy: "table"
+        refresh_frequency: "daily"
+      "7 days":
+        strategy: "table"
+        refresh_frequency: "weekly"
+    
+    datagroup_trigger:
+      default:
+        strategy: "incremental"
+        detection_method: "timestamp"
+    
+    sql_trigger_value:
+      default:
+        strategy: "table"
+        detection_method: "custom_macro"
+  
+  distribution_options:
+    distribution_style:
+      "all": "broadcast"
+      "even": "round_robin"
+      "auto": "automatic"
+    
+    sortkeys:
+      conversion: "sort"
+      platform: "redshift"
+    
+    indexes:
+      snowflake: "cluster_by"
+      bigquery: "cluster_by"
+      redshift: "distkey + sortkey"
+      postgres: "indexes"
+
+# SQL Pattern Replacements
+sql_replacements:
+  looker_specific:
+    - pattern: '\$\{TABLE\}\.(\w+)'
+      replacement: '\1'
+      description: "Remove Looker TABLE references"
+    
+    - pattern: '\$\{(\w+)\.SQL_TABLE_NAME\}'
+      replacement: '{{ ref(''\1'') }}'
+      description: "Convert Looker view references to DBT refs"
+    
+    - pattern: '{% date_start .* %}'
+      replacement: "DATE_TRUNC('day', DATEADD('day', -30, CURRENT_DATE()))"
+      description: "Replace Looker date parameters"
+    
+    - pattern: '{% date_end .* %}'
+      replacement: "CURRENT_DATE()"
+      description: "Replace Looker date parameters"
+  
+  optimization_patterns:
+    - pattern: 'SELECT \* FROM'
+      replacement: 'SELECT\n    {explicit_columns}\nFROM'
+      description: "Replace SELECT * with explicit columns"
+    
+    - pattern: '(\w+)\.created_at::date'
+      replacement: "DATE_TRUNC('day', \1.created_at)"
+      description: "Optimize date truncation"
+
+# View Generation Patterns
+looker_view_generation:
+  dimension_templates:
+    string:
+      template: |
+        dimension: {field_name} {{
+          type: string
+          sql: ${{TABLE}}.{column_name} ;;
+          description: "{field_description}"
+        }}
+    
+    number:
+      template: |
+        dimension: {field_name} {{
+          type: number
+          sql: ${{TABLE}}.{column_name} ;;
+          value_format_name: decimal_2
+        }}
+    
+    date:
+      template: |
+        dimension_group: {field_name} {{
+          type: time
+          timeframes: [raw, date, week, month, quarter, year]
+          sql: ${{TABLE}}.{column_name} ;;
+        }}
+    
+    boolean:
+      template: |
+        dimension: {field_name} {{
+          type: yesno
+          sql: ${{TABLE}}.{column_name} ;;
+        }}
+  
+  measure_templates:
+    sum:
+      template: |
+        measure: total_{field_name} {{
+          type: sum
+          sql: ${{TABLE}}.{column_name} ;;
+          value_format_name: decimal_2
+          drill_fields: [detail*]
+        }}
+    
+    count:
+      template: |
+        measure: count_{field_name} {{
+          type: count_distinct
+          sql: ${{TABLE}}.{column_name} ;;
+          drill_fields: [detail*]
+        }}
+    
+    average:
+      template: |
+        measure: avg_{field_name} {{
+          type: average
+          sql: ${{TABLE}}.{column_name} ;;
+          value_format_name: decimal_2
+        }}
+
+# Migration Steps
+migration_workflow:
+  steps:
+    1_analyze:
+      name: "Analyze PDT"
+      tasks:
+        - "Extract SQL from PDT"
+        - "Identify refresh strategy"
+        - "Detect dependencies"
+        - "Note performance settings"
+    
+    2_classify:
+      name: "Classify PDT Type"
+      tasks:
+        - "Determine if aggregate, join, or event-based"
+        - "Identify if incremental candidate"
+        - "Assess complexity level"
+    
+    3_convert:
+      name: "Convert to DBT"
+      tasks:
+        - "Apply conversion template"
+        - "Replace Looker-specific syntax"
+        - "Add DBT configuration"
+        - "Set up incremental logic if applicable"
+    
+    4_optimize:
+      name: "Optimize Model"
+      tasks:
+        - "Add clustering keys"
+        - "Implement incremental strategy"
+        - "Split complex CTEs into intermediate models"
+        - "Add performance hints"
+    
+    5_generate_view:
+      name: "Generate Looker View"
+      tasks:
+        - "Create view referencing DBT model"
+        - "Map all dimensions and measures"
+        - "Preserve formatting and labels"
+        - "Add drill fields"
+    
+    6_test:
+      name: "Test and Validate"
+      tasks:
+        - "Compare row counts"
+        - "Validate key metrics"
+        - "Test Looker dashboards"
+        - "Check performance"
+
+# Real-World PDT Patterns from Your Organization
+your_specific_patterns:
+  segment_event_unions:
+    description: "UNION multiple Segment event tables"
+    detection_regex: "segment.*UNION ALL.*segment"
+    typical_structure: |
+      SELECT fields FROM segment_schema.table1
+      UNION ALL
+      SELECT fields FROM segment_schema.table2
+      UNION ALL
+      SELECT fields FROM segment_schema.table3
+    
+    dbt_conversion:
+      strategy: "incremental_with_union"
+      template: |
+        {{
+            config(
+                materialized='incremental',
+                unique_key='id',
+                cluster_by=['timestamp', 'anonymous_id'],
+                incremental_strategy='merge'
+            )
+        }}
+        
+        {% set event_tables = [
+            'pages',
+            'content_feed_vertical_view_rendered',
+            'content_feed_horizontal_view_rendered'
+        ] %}
+        
+        {% for table in event_tables %}
+        {% if not loop.first %}UNION ALL{% endif %}
+        SELECT
+            id,
+            anonymous_id,
+            channel,
+            zone,
+            device_id,
+            referrer,
+            timestamp,
+            '{{ table }}' AS source_table
+        FROM {{ source('segment_schema', table) }}
+        {% if is_incremental() %}
+            WHERE timestamp > (SELECT MAX(timestamp) FROM {{ this }})
+        {% endif %}
+        {% endfor %}
+    
+    optimization_notes:
+      - "Always make incremental - Segment events are append-only"
+      - "Cluster by timestamp and user identifiers"
+      - "Consider partitioning by date for very large datasets"
+      - "Add source_table field to track event origin"
+  
+  first_last_aggregations:
+    description: "Find first or last occurrence of events"
+    detection_regex: "MIN\\(.*\\)|MAX\\(.*\\)|first_value|last_value"
+    typical_structure: |
+      SELECT 
+        entity_id,
+        MIN(event_date) AS first_event,
+        MAX(event_date) AS last_event
+      FROM events
+      GROUP BY entity_id
+    
+    dbt_conversion:
+      strategy: "table_with_clustering"
+      template: |
+        {{
+            config(
+                materialized='table',
+                cluster_by=['entity_id'],
+                post_hook="ANALYZE TABLE {{ this }}"
+            )
+        }}
+        
+        SELECT 
+            entity_id,
+            MIN(event_date) AS first_event_date,
+            MAX(event_date) AS last_event_date,
+            COUNT(*) AS event_count,
+            -- Add useful derived metrics
+            DATEDIFF('day', MIN(event_date), MAX(event_date)) AS days_active
+        FROM {{ ref('stg_events') }}
+        GROUP BY entity_id
+  
+  window_function_deduplication:
+    description: "Use ROW_NUMBER() to get latest records"
+    detection_regex: "ROW_NUMBER\\(\\).*OVER.*PARTITION BY"
+    typical_structure: |
+      WITH ranked AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) AS rn
+        FROM table
+      )
+      SELECT * FROM ranked WHERE rn = 1
+    
+    dbt_conversion:
+      strategy: "intermediate_view_plus_mart"
+      intermediate_template: |
+        -- models/intermediate/int_latest_records.sql
+        {{
+            config(
+                materialized='view'
+            )
+        }}
+        
+        SELECT *
+        FROM (
+            SELECT
+                *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY entity_id 
+                    ORDER BY updated_at DESC
+                ) AS rn
+            FROM {{ ref('stg_source_table') }}
+        ) ranked
+        WHERE rn = 1
+      
+      mart_template: |
+        -- models/marts/fct_entity_summary.sql
+        {{
+            config(
+                materialized='incremental',
+                unique_key='entity_id'
+            )
+        }}
+        
+        SELECT
+            entity_id,
+            latest_status,
+            latest_timestamp,
+            -- aggregations
+        FROM {{ ref('int_latest_records') }}
+        {% if is_incremental() %}
+            WHERE updated_at >= (SELECT MAX(updated_at) FROM {{ this }})
+        {% endif %}
+
+# Common PDT Patterns and Solutions
+common_patterns:
+  user_facts:
+    description: "User-level aggregate facts"
+    typical_sql: |
+      SELECT 
+        user_id,
+        MIN(created_at) as first_activity,
+        MAX(created_at) as last_activity,
+        COUNT(*) as total_actions
+      FROM events
+      GROUP BY user_id
+    
+    dbt_approach: "Incremental model with merge on user_id"
+    optimization: "Cluster by user_id"
+    
+  daily_rollups:
+    description: "Daily aggregated metrics"
+    typical_sql: |
+      SELECT 
+        DATE_TRUNC('day', created_at) as date,
+        COUNT(*) as daily_count,
+        SUM(value) as daily_value
+      FROM transactions
+      GROUP BY 1
+    
+    dbt_approach: "Incremental model with date-based filter"
+    optimization: "Cluster by date, use insert_overwrite"
+  
+  cohort_analysis:
+    description: "Cohort-based analysis"
+    typical_sql: |
+      WITH first_event AS (
+        SELECT user_id, MIN(DATE_TRUNC('month', created_at)) as cohort_month
+        FROM events GROUP BY 1
+      )
+      -- Complex cohort logic
+    
+    dbt_approach: "Separate into intermediate models"
+    optimization: "Materialize cohort base table"
+  
+  sessionization:
+    description: "Session creation from events"
+    typical_sql: |
+      SELECT 
+        user_id,
+        session_id,
+        MIN(event_time) as session_start,
+        MAX(event_time) as session_end,
+        COUNT(*) as event_count
+      FROM (
+        -- Window functions for session detection
+      )
+    
+    dbt_approach: "Incremental with window functions"
+    optimization: "Process only new events"
+
+# Validation Queries
+validation_templates:
+  row_count_check:
+    query: |
+      WITH counts AS (
+        SELECT 
+          (SELECT COUNT(*) FROM {dbt_model}) as dbt_count,
+          (SELECT COUNT(*) FROM {looker_pdt}) as pdt_count
+      )
+      SELECT 
+        dbt_count,
+        pdt_count,
+        dbt_count - pdt_count as difference,
+        CASE 
+          WHEN pdt_count = 0 THEN NULL
+          ELSE (dbt_count - pdt_count) * 100.0 / pdt_count 
+        END as percent_difference
+      FROM counts
+  
+  metric_comparison:
+    query: |
+      WITH dbt_metrics AS (
+        SELECT {metric_calculations}
+        FROM {dbt_model}
+      ),
+      pdt_metrics AS (
+        SELECT {metric_calculations}
+        FROM {looker_pdt}
+      )
+      SELECT 
+        {metric_comparisons}
+      FROM dbt_metrics, pdt_metrics
+  
+  sample_comparison:
+    query: |
+      SELECT 
+        'DBT' as source,
+        *
+      FROM {dbt_model}
+      LIMIT 100
+      UNION ALL
+      SELECT 
+        'PDT' as source,
+        *
+      FROM {looker_pdt}
+      LIMIT 100
+      ORDER BY {primary_key}, source
+
+# Error Handling Patterns
+error_patterns:
+  common_issues:
+    missing_columns:
+      detection: "Column .* not found"
+      solution: "Check column name case sensitivity and aliasing"
+    
+    type_mismatch:
+      detection: "Cannot cast .* to .*"
+      solution: "Add explicit casting in DBT model"
+    
+    permission_denied:
+      detection: "Permission denied"
+      solution: "Ensure DBT has access to all referenced schemas"
+    
+    syntax_error:
+      detection: "Syntax error"
+      solution: "Check for Looker-specific syntax that needs conversion"
+
+# Performance Tuning
+performance_optimization:
+  rules:
+    - name: "Use incremental for large tables"
+      condition: "rows > 10000000"
+      action: "Convert to incremental materialization"
+    
+    - name: "Add clustering for filtered columns"
+      condition: "frequent WHERE clause on column"
+      action: "Add column to cluster_by config"
+    
+    - name: "Split complex CTEs"
+      condition: "more than 3 CTEs"
+      action: "Create intermediate models"
+    
+    - name: "Optimize joins"
+      condition: "joining large tables"
+      action: "Filter before joining"

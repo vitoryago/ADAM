@@ -1,0 +1,479 @@
+# Snowflake SQL Patterns and Templates
+# Structured patterns for high-performance SQL generation
+
+metadata:
+  version: "1.0.0"
+  target_warehouse: "snowflake"
+  sql_style: "UPPERCASE_KEYWORDS"
+  last_updated: "2024-12-10"
+
+# Core SQL patterns
+query_patterns:
+  basic_select:
+    description: "Standard SELECT with proper formatting"
+    template: |
+      SELECT 
+          {columns}
+      FROM {schema}.{table} AS {alias}
+      WHERE {conditions}
+      ORDER BY {order_columns}
+      LIMIT {limit}
+    rules:
+      - "Always use table aliases"
+      - "One column per line"
+      - "Explicit column list (never SELECT *)"
+    
+  join_query:
+    description: "Multi-table join with optimization"
+    template: |
+      SELECT 
+          {select_columns}
+      FROM {primary_table} AS {primary_alias}
+      INNER JOIN {join_table} AS {join_alias}
+          ON {join_alias}.{join_key} = {primary_alias}.{primary_key}
+      WHERE {filter_conditions}
+      GROUP BY {group_columns}
+      ORDER BY {order_columns}
+    optimization_tips:
+      - "Join on indexed/clustered columns"
+      - "Filter before joining when possible"
+      - "Avoid functions in join conditions"
+
+  aggregation:
+    description: "Efficient aggregation pattern"
+    template: |
+      SELECT 
+          {group_columns},
+          COUNT(*) AS record_count,
+          SUM({measure_column}) AS total_{measure_name},
+          AVG({measure_column}) AS avg_{measure_name},
+          MAX({measure_column}) AS max_{measure_name},
+          MIN({measure_column}) AS min_{measure_name}
+      FROM {table} AS {alias}
+      WHERE {filter_conditions}
+      GROUP BY {group_columns}
+      HAVING {having_conditions}
+      ORDER BY {order_columns}
+
+  window_function:
+    description: "Window function for analytics"
+    template: |
+      WITH ranked_data AS (
+          SELECT 
+              {columns},
+              ROW_NUMBER() OVER (
+                  PARTITION BY {partition_columns}
+                  ORDER BY {order_columns}
+              ) AS rn,
+              RANK() OVER (
+                  PARTITION BY {partition_columns}
+                  ORDER BY {order_columns}
+              ) AS rnk,
+              DENSE_RANK() OVER (
+                  PARTITION BY {partition_columns}
+                  ORDER BY {order_columns}
+              ) AS dense_rnk
+          FROM {table}
+          WHERE {conditions}
+      )
+      SELECT * FROM ranked_data
+      WHERE rn = 1
+
+  cte_pattern:
+    description: "Common Table Expression structure"
+    template: |
+      WITH {cte_name} AS (
+          -- {cte_description}
+          SELECT 
+              {columns}
+          FROM {table}
+          WHERE {conditions}
+      ){additional_ctes}
+      SELECT 
+          {final_columns}
+      FROM {cte_name}
+      {final_conditions}
+
+# Performance optimization patterns
+optimization_patterns:
+  partition_pruning:
+    description: "Enable micro-partition pruning"
+    good_patterns:
+      - "WHERE date_column = '2024-01-01'"
+      - "WHERE date_column >= '2024-01-01' AND date_column < '2024-02-01'"
+      - "WHERE date_column BETWEEN '2024-01-01' AND '2024-01-31'"
+    bad_patterns:
+      - "WHERE DATE(date_column) = '2024-01-01'"
+      - "WHERE YEAR(date_column) = 2024"
+      - "WHERE TO_CHAR(date_column, 'YYYY-MM') = '2024-01'"
+    
+  clustering_alignment:
+    description: "Align filters with clustering keys"
+    template: |
+      -- If table is clustered by (date_column, user_id)
+      WHERE date_column >= '{start_date}'
+          AND date_column < '{end_date}'
+          AND user_id = {user_id}
+    check_clustering: |
+      SELECT SYSTEM$CLUSTERING_INFORMATION('{schema}.{table}')
+
+  efficient_joins:
+    description: "Optimal join patterns"
+    good_patterns:
+      direct_key_join: |
+        FROM orders AS o
+        INNER JOIN customers AS c
+            ON c.customer_id = o.customer_id
+      multi_condition: |
+        FROM orders AS o
+        INNER JOIN products AS p
+            ON p.product_id = o.product_id
+            AND p.is_active = TRUE
+    bad_patterns:
+      function_join: |
+        -- Avoid functions in join conditions
+        ON UPPER(o.code) = UPPER(c.code)
+      or_condition: |
+        -- Avoid OR in joins
+        ON o.customer_id = c.id OR o.email = c.email
+
+  deduplication:
+    description: "Efficient deduplication patterns"
+    row_number_pattern: |
+      WITH deduped AS (
+          SELECT 
+              *,
+              ROW_NUMBER() OVER (
+                  PARTITION BY {unique_columns}
+                  ORDER BY {order_column} DESC
+              ) AS rn
+          FROM {table}
+      )
+      SELECT * FROM deduped WHERE rn = 1
+    distinct_pattern: |
+      -- Use only for simple cases
+      SELECT DISTINCT {columns}
+      FROM {table}
+
+# SQL formatting rules
+formatting_rules:
+  keywords:
+    rule: "ALL SQL keywords must be UPPERCASE"
+    examples:
+      - "SELECT, FROM, WHERE, JOIN, GROUP BY, ORDER BY"
+      - "INNER JOIN, LEFT JOIN, FULL OUTER JOIN"
+      - "WITH, AS, CASE, WHEN, THEN, ELSE, END"
+      - "INSERT, UPDATE, DELETE, MERGE"
+      - "CREATE, ALTER, DROP"
+  
+  indentation:
+    spaces_per_level: 4
+    rules:
+      - "Main clauses at column 0"
+      - "Column lists indented one level"
+      - "JOIN conditions indented under JOIN"
+      - "WHERE conditions indented one level"
+      - "CTE content indented within parentheses"
+  
+  line_breaks:
+    rules:
+      - "One clause per line"
+      - "One column per line in SELECT"
+      - "Comma at end of line (except last)"
+      - "Logical operators (AND/OR) at start of line"
+  
+  aliases:
+    table_aliases:
+      - "Use meaningful abbreviations"
+      - "Single letter for simple queries (c for customers)"
+      - "Multi-letter for complex (txn for transactions)"
+    column_aliases:
+      - "Use AS keyword"
+      - "Include units (amount_usd)"
+      - "Descriptive names (not a1, col1)"
+
+# Common transformations
+transformations:
+  date_operations:
+    current_month: |
+      WHERE date_column >= DATE_TRUNC('month', CURRENT_DATE())
+          AND date_column < DATEADD('month', 1, DATE_TRUNC('month', CURRENT_DATE()))
+    last_n_days: |
+      WHERE date_column >= DATEADD('day', -{n}, CURRENT_DATE())
+    previous_month: |
+      WHERE date_column >= DATEADD('month', -1, DATE_TRUNC('month', CURRENT_DATE()))
+          AND date_column < DATE_TRUNC('month', CURRENT_DATE())
+    year_to_date: |
+      WHERE date_column >= DATE_TRUNC('year', CURRENT_DATE())
+          AND date_column < CURRENT_DATE()
+  
+  safe_operations:
+    safe_divide: |
+      {numerator} / NULLIF({denominator}, 0)
+    safe_divide_with_default: |
+      COALESCE({numerator} / NULLIF({denominator}, 0), 0)
+    safe_json_extract: |
+      TRY_PARSE_JSON({json_column}):{field}::{data_type}
+    safe_cast: |
+      TRY_CAST({column} AS {target_type})
+  
+  string_operations:
+    trim_and_lower: |
+      LOWER(TRIM({column}))
+    remove_special_chars: |
+      REGEXP_REPLACE({column}, '[^a-zA-Z0-9 ]', '')
+    extract_numeric: |
+      REGEXP_REPLACE({column}, '[^0-9]', '')
+    standardize_phone: |
+      REGEXP_REPLACE({column}, '[^0-9]', '')
+
+# Warehouse and session settings
+warehouse_settings:
+  size_recommendations:
+    small_queries:
+      warehouse_size: "SMALL"
+      query_characteristics:
+        - "< 1GB data scanned"
+        - "Simple filters and joins"
+        - "< 1M rows processed"
+    
+    medium_queries:
+      warehouse_size: "MEDIUM"
+      query_characteristics:
+        - "1-10GB data scanned"
+        - "Multiple joins"
+        - "1-10M rows processed"
+    
+    large_queries:
+      warehouse_size: "LARGE"
+      query_characteristics:
+        - "10-100GB data scanned"
+        - "Complex aggregations"
+        - "10-100M rows processed"
+    
+    xl_queries:
+      warehouse_size: "X-LARGE"
+      query_characteristics:
+        - "> 100GB data scanned"
+        - "Heavy transformations"
+        - "> 100M rows processed"
+  
+  session_parameters: |
+    -- Performance settings
+    ALTER SESSION SET USE_CACHED_RESULT = TRUE;
+    ALTER SESSION SET QUERY_TAG = '{query_purpose}';
+    ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = 3600;
+    
+    -- For heavy queries
+    ALTER SESSION SET WAREHOUSE = '{warehouse_name}';
+
+# Anti-patterns to detect and fix
+anti_patterns:
+  select_star:
+    detect: "SELECT \\*"
+    fix: "Explicitly list needed columns"
+    reason: "Scans unnecessary columns, increases cost"
+  
+  missing_where:
+    detect: "FROM .+ (GROUP BY|ORDER BY|$)"
+    fix: "Add WHERE clause with filters"
+    reason: "Scans entire table without filtering"
+  
+  function_on_filter:
+    detect: "WHERE [A-Z_]+\\([a-z_]+\\)"
+    fix: "Apply function to constant, not column"
+    reason: "Prevents partition pruning"
+  
+  cross_join:
+    detect: "FROM .+,.+"
+    fix: "Use explicit JOIN with ON clause"
+    reason: "Creates cartesian product"
+  
+  or_in_join:
+    detect: "JOIN .+ ON .+ OR"
+    fix: "Split into UNION or redesign join"
+    reason: "Prevents join optimization"
+  
+  order_without_limit:
+    detect: "ORDER BY (?!.*LIMIT)"
+    fix: "Add LIMIT or remove unnecessary ORDER BY"
+    reason: "Sorts entire dataset unnecessarily"
+
+# Query templates by use case
+use_case_templates:
+  daily_aggregation:
+    description: "Daily metrics aggregation"
+    template: |
+      WITH daily_metrics AS (
+          SELECT 
+              DATE_TRUNC('day', {timestamp_column}) AS metric_date,
+              {dimension_columns},
+              COUNT(*) AS record_count,
+              SUM({measure_column}) AS total_{measure_name},
+              AVG({measure_column}) AS avg_{measure_name}
+          FROM {schema}.{table}
+          WHERE {timestamp_column} >= DATEADD('day', -{days_back}, CURRENT_DATE())
+              AND {additional_filters}
+          GROUP BY 
+              DATE_TRUNC('day', {timestamp_column}),
+              {dimension_columns}
+      )
+      SELECT 
+          metric_date,
+          {dimension_columns},
+          record_count,
+          total_{measure_name},
+          avg_{measure_name},
+          SUM(total_{measure_name}) OVER (
+              PARTITION BY {dimension_columns}
+              ORDER BY metric_date
+              ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+          ) AS running_total
+      FROM daily_metrics
+      ORDER BY 
+          metric_date DESC,
+          {dimension_columns}
+
+  incremental_merge:
+    description: "Incremental data merge pattern"
+    template: |
+      MERGE INTO {target_schema}.{target_table} AS tgt
+      USING (
+          SELECT 
+              {columns}
+          FROM {source_schema}.{source_table}
+          WHERE {incremental_filter}
+      ) AS src
+      ON {merge_keys}
+      WHEN MATCHED {match_condition} THEN
+          UPDATE SET 
+              {update_columns},
+              updated_at = CURRENT_TIMESTAMP()
+      WHEN NOT MATCHED THEN
+          INSERT ({insert_columns})
+          VALUES ({insert_values})
+
+  data_quality_check:
+    description: "Data quality validation query"
+    template: |
+      WITH quality_checks AS (
+          SELECT 
+              COUNT(*) AS total_records,
+              COUNT(DISTINCT {primary_key}) AS unique_records,
+              COUNT({primary_key}) AS non_null_keys,
+              COUNT(CASE WHEN {required_field} IS NULL THEN 1 END) AS null_required_field,
+              MIN({date_column}) AS earliest_date,
+              MAX({date_column}) AS latest_date,
+              COUNT(CASE WHEN {numeric_column} < 0 THEN 1 END) AS negative_values
+          FROM {schema}.{table}
+          WHERE {filter_conditions}
+      )
+      SELECT 
+          total_records,
+          unique_records,
+          total_records - unique_records AS duplicate_count,
+          total_records - non_null_keys AS null_key_count,
+          null_required_field,
+          earliest_date,
+          latest_date,
+          negative_values,
+          CASE 
+              WHEN total_records = unique_records 
+                  AND null_key_count = 0 
+                  AND null_required_field = 0
+                  AND negative_values = 0
+              THEN 'PASSED'
+              ELSE 'FAILED'
+          END AS quality_status
+      FROM quality_checks
+
+# Monitoring queries
+monitoring_queries:
+  slow_queries:
+    description: "Find slow running queries"
+    query: |
+      SELECT 
+          query_id,
+          query_text,
+          user_name,
+          warehouse_name,
+          start_time,
+          end_time,
+          total_elapsed_time / 1000 AS duration_seconds,
+          bytes_scanned / POWER(1024, 3) AS gb_scanned,
+          rows_produced,
+          compilation_time,
+          execution_time
+      FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY())
+      WHERE start_time >= DATEADD('hour', -24, CURRENT_TIMESTAMP())
+          AND total_elapsed_time > 30000  -- Over 30 seconds
+      ORDER BY total_elapsed_time DESC
+      LIMIT 50
+
+  table_scan_analysis:
+    description: "Analyze table scan patterns"
+    query: |
+      SELECT 
+          table_name,
+          COUNT(*) AS query_count,
+          SUM(partitions_scanned) AS total_partitions_scanned,
+          SUM(partitions_total) AS total_partitions,
+          AVG(partitions_scanned::FLOAT / NULLIF(partitions_total, 0)) AS avg_scan_ratio,
+          SUM(bytes_scanned) / POWER(1024, 3) AS total_gb_scanned
+      FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY())
+      WHERE start_time >= DATEADD('day', -7, CURRENT_TIMESTAMP())
+          AND table_name IS NOT NULL
+      GROUP BY table_name
+      HAVING query_count > 10
+      ORDER BY total_gb_scanned DESC
+
+# Integration patterns
+integration:
+  with_dbt:
+    description: "SQL patterns for DBT models"
+    notes:
+      - "Use same performance principles"
+      - "Replace schema.table with {{ ref() }} or {{ source() }}"
+      - "Use DBT incremental patterns for large datasets"
+    example: |
+      SELECT 
+          {columns}
+      FROM {{ ref('stg_orders') }} AS o
+      INNER JOIN {{ ref('dim_customers') }} AS c
+          ON c.customer_id = o.customer_id
+      WHERE o.order_date >= '{{ var("start_date") }}'
+      
+  with_python:
+    description: "SQL for Python/Pandas integration"
+    notes:
+      - "Use LIMIT for development/testing"
+      - "Return typed columns for DataFrame compatibility"
+      - "Consider chunking for large results"
+    example: |
+      SELECT 
+          user_id::INTEGER AS user_id,
+          amount::FLOAT AS amount,
+          created_at::TIMESTAMP AS created_at
+      FROM transactions
+      WHERE created_at >= %(start_date)s
+      LIMIT %(limit)s
+
+# Learning patterns for optimization
+optimization_feedback:
+  metrics_to_track:
+    - query_duration
+    - bytes_scanned
+    - partitions_scanned_ratio
+    - warehouse_size_used
+    - cache_hit_rate
+    - spilling_to_disk
+  
+  optimization_triggers:
+    slow_query: "duration > 60 seconds"
+    inefficient_scan: "scan_ratio > 0.5"
+    memory_pressure: "bytes_spilled > 0"
+    
+  suggested_actions:
+    high_scan_ratio: "Add filters or improve clustering"
+    memory_spilling: "Increase warehouse size or optimize query"
+    no_cache_hits: "Ensure queries are identical for caching"
