@@ -30,9 +30,9 @@ class IntelligentRoutingService:
         
         # Map model tiers to actual model names in ADAM's config
         self.model_mapping = {
-            ModelTier.REASONING: "grok-4-reasoning",
-            ModelTier.STANDARD: "grok-4", 
-            ModelTier.FAST: "grok-3-mini-fast"
+            ModelTier.REASONING: "grok-4-reasoning",  # grok-4-reasoning for complex reasoning and code
+            ModelTier.STANDARD: "grok-4",  # grok-4 for standard/complex queries
+            ModelTier.FAST: "gpt-4o-mini"   # gpt-4o-mini for fast/basic queries (LOW latency)
         }
         
         # Track routing metrics

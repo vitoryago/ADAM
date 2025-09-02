@@ -27,6 +27,13 @@ except ImportError:
     OPENAI_AVAILABLE = False
     print("Warning: openai not installed. Run: pip install openai")
 
+try:
+    from anthropic import AsyncAnthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    print("Warning: anthropic not installed. Run: pip install anthropic")
+
 from .config import LLMConfig, ModelProvider, ModelConfig
 from .query_analyzer import QueryAnalyzer, QueryComplexity
 
@@ -55,17 +62,24 @@ class UnifiedLLMClient:
         
     def _initialize_clients(self):
         """Initialize API clients for available providers"""
-        # Initialize xAI client
+        # Initialize xAI client with timeout for streaming
         if XAI_AVAILABLE and self.config.get_api_key(ModelProvider.GROK):
             self.clients[ModelProvider.GROK] = XAIClient(
                 api_host="api.x.ai",
-                api_key=self.config.get_api_key(ModelProvider.GROK)
+                api_key=self.config.get_api_key(ModelProvider.GROK),
+                timeout=3600  # 1 hour timeout for streaming and reasoning models
             )
         
         # Initialize OpenAI client
         if OPENAI_AVAILABLE and self.config.get_api_key(ModelProvider.OPENAI):
             self.clients[ModelProvider.OPENAI] = AsyncOpenAI(
                 api_key=self.config.get_api_key(ModelProvider.OPENAI)
+            )
+        
+        # Initialize Anthropic client for Claude models
+        if ANTHROPIC_AVAILABLE and self.config.get_api_key(ModelProvider.ANTHROPIC):
+            self.clients[ModelProvider.ANTHROPIC] = AsyncAnthropic(
+                api_key=self.config.get_api_key(ModelProvider.ANTHROPIC)
             )
     
     async def complete(
@@ -178,6 +192,11 @@ class UnifiedLLMClient:
                 prompt, model_config, system_prompt, temperature,
                 max_tokens, reasoning_effort, stream, image_data, routing_decision
             )
+        elif model_config.provider == ModelProvider.ANTHROPIC:
+            return await self._complete_anthropic(
+                prompt, model_config, system_prompt, temperature,
+                max_tokens, stream
+            )
         else:
             raise ValueError(f"Unsupported provider: {model_config.provider}")
     
@@ -259,18 +278,72 @@ class UnifiedLLMClient:
             # Return async generator for streaming
             async def stream_generator():
                 try:
-                    # Grok uses sample_stream() method
-                    if hasattr(chat, 'sample_stream'):
-                        response = chat.sample_stream()
-                        for chunk in response:
-                            if hasattr(chunk, 'delta'):
-                                yield chunk.delta
-                    else:
-                        # Fallback to non-streaming if method not available
-                        response = chat.sample()
-                        yield response.content
+                    # Use threading to handle sync streaming API asynchronously
+                    import threading
+                    import queue
+                    import asyncio
+                    
+                    logger.info(f"Starting streaming for {model_config.name}")
+                    
+                    # Queue for communication between threads
+                    chunk_queue = queue.Queue()
+                    error_event = threading.Event()
+                    error_msg = None
+                    
+                    def stream_worker():
+                        """Worker thread that handles sync streaming"""
+                        nonlocal error_msg
+                        try:
+                            for response, chunk in chat.stream():
+                                if chunk.content:
+                                    chunk_queue.put(chunk.content)
+                            chunk_queue.put(None)  # Signal completion
+                        except Exception as e:
+                            error_msg = str(e)
+                            error_event.set()
+                            chunk_queue.put(None)  # Signal to stop
+                    
+                    # Start streaming in background thread
+                    thread = threading.Thread(target=stream_worker, daemon=True)
+                    thread.start()
+                    
+                    # Consume chunks asynchronously
+                    chunk_count = 0
+                    accumulated_content = ""
+                    
+                    while True:
+                        # Check for errors
+                        if error_event.is_set():
+                            logger.error(f"Grok streaming error: {error_msg}")
+                            # Fallback to non-streaming
+                            response = chat.sample()
+                            yield response.content
+                            break
+                        
+                        try:
+                            # Non-blocking check for chunks
+                            chunk = chunk_queue.get_nowait()
+                            
+                            if chunk is None:
+                                # Streaming complete
+                                break
+                            else:
+                                # Got a chunk
+                                chunk_count += 1
+                                accumulated_content += chunk
+                                logger.debug(f"Streaming chunk {chunk_count}: {len(chunk)} chars")
+                                yield chunk
+                                
+                        except queue.Empty:
+                            # No chunk available yet, yield control
+                            await asyncio.sleep(0.001)
+                    
+                    # Ensure thread completes
+                    thread.join(timeout=1)
+                    logger.info(f"Streaming complete: {chunk_count} chunks, {len(accumulated_content)} total chars")
+                    
                 except Exception as e:
-                    logger.error(f"Grok streaming error: {e}")
+                    logger.error(f"Grok streaming error: {e}", exc_info=True)
                     # Fallback to non-streaming
                     response = chat.sample()
                     yield response.content
@@ -430,6 +503,59 @@ class UnifiedLLMClient:
                     raw_response=raw_response_data
                 )
     
+    async def _complete_anthropic(
+        self,
+        prompt: str,
+        model_config: ModelConfig,
+        system_prompt: Optional[str],
+        temperature: float,
+        max_tokens: Optional[int],
+        stream: bool
+    ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
+        """Handle Anthropic Claude model completion"""
+        client = self.clients[ModelProvider.ANTHROPIC]
+        
+        messages = [{"role": "user", "content": prompt}]
+        
+        kwargs = {
+            "model": model_config.api_name,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens or 1000,
+            "stream": stream
+        }
+        
+        if system_prompt:
+            kwargs["system"] = system_prompt
+        
+        if stream:
+            # Return async generator for streaming
+            async def stream_generator():
+                stream_response = await client.messages.create(**kwargs)
+                async for chunk in stream_response:
+                    if chunk.type == "content_block_delta" and chunk.delta.text:
+                        yield chunk.delta.text
+            return stream_generator()
+        else:
+            # Get complete response
+            response = await client.messages.create(**kwargs)
+            
+            # Calculate cost
+            input_tokens = response.usage.input_tokens if hasattr(response, 'usage') else 0
+            output_tokens = response.usage.output_tokens if hasattr(response, 'usage') else 0
+            cost = 0.0
+            if model_config.cost_per_1k_input_tokens and model_config.cost_per_1k_output_tokens:
+                cost = (input_tokens * model_config.cost_per_1k_input_tokens / 1000 +
+                        output_tokens * model_config.cost_per_1k_output_tokens / 1000)
+            
+            return LLMResponse(
+                content=response.content[0].text if response.content else "",
+                model=model_config.name,
+                total_tokens=input_tokens + output_tokens,
+                completion_tokens=output_tokens,
+                cost=cost
+            )
+    
     def _auto_select_model(self, prompt: str, reasoning_effort: Optional[str]) -> Optional[str]:
         """Auto-select best model based on prompt and requirements using intelligent analysis"""
         available_models = self.config.get_available_models()
@@ -447,7 +573,7 @@ class UnifiedLLMClient:
                 complexity = QueryComplexity.LOW
         
         # Get recommended model
-        recommended_model = self.query_analyzer.recommend_model(complexity, available_models)
+        recommended_model = self.query_analyzer.recommend_model(complexity, available_models, prompt)
         
         # Log the decision for transparency
         logger.debug(f"Query complexity: {complexity.value}")

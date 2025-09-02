@@ -61,7 +61,8 @@ class QueryAnalyzer:
             ],
             'data_tasks': [
                 'query optimization', 'performance', 'bigquery', 'sql',
-                'database', 'data processing', 'etl', 'pipeline'
+                'database', 'data processing', 'etl', 'pipeline',
+                'pdt', 'dbt', 'looker', 'lookml'  # Add data tooling keywords
             ]
         }
         
@@ -76,12 +77,14 @@ class QueryAnalyzer:
                 'define', 'what does', 'list', 'name', 'yes or no',
                 'true or false', 'quick answer', 'brief', 'short',
                 'ok adam', 'got it', 'i see', 'thanks', 'explain this image',
-                'what\'s in this image', 'can you explain', 'help me understand'
+                'what\'s in this image', 'can you explain', 'help me understand',
+                'can you help me', 'will you help', 'i need your help'  # Common helper phrases
             ],
             'basic_tasks': [
                 'count', 'simple', 'basic', 'straightforward', 'easy',
                 'quick check', 'status', 'current', 'latest',
-                'difference between', 'what is the', 'what are the'
+                'difference between', 'what is the', 'what are the',
+                'which table', 'tell me which', 'should i request'  # Basic identification tasks
             ]
         }
         
@@ -164,16 +167,21 @@ class QueryAnalyzer:
             analysis['reasoning'].append("Technical terminology detected")
         
         # Determine complexity with VERY conservative logic
+        # Prefer LOW complexity when in doubt to use faster models
         # HIGH complexity should be VERY rare - only for explicit code generation
-        if complex_score >= 6:  # Much higher threshold
+        if complex_score >= 8:  # Even higher threshold - need strong evidence
             complexity = QueryComplexity.HIGH
-            analysis['confidence'] = min(complex_score / 8, 1.0)
-        elif complex_score >= 3 or medium_score >= 4:  # Higher thresholds
+            analysis['confidence'] = min(complex_score / 10, 1.0)
+        elif complex_score >= 4 and medium_score < low_score:  # Need clear complex signals
             complexity = QueryComplexity.MEDIUM
-            analysis['confidence'] = min((medium_score + complex_score) / 6, 1.0)
+            analysis['confidence'] = min((medium_score + complex_score) / 8, 1.0)
+        elif medium_score >= 5 and low_score < 3:  # Clear medium signals without low indicators
+            complexity = QueryComplexity.MEDIUM  
+            analysis['confidence'] = min(medium_score / 7, 1.0)
         else:
+            # Default to LOW for speed - handles most conversational queries
             complexity = QueryComplexity.LOW
-            analysis['confidence'] = min((low_score + 2) / 4, 1.0)
+            analysis['confidence'] = min((low_score + 3) / 5, 1.0)
         
         analysis['complexity'] = complexity.value
         analysis['scores'] = {
@@ -206,26 +214,41 @@ class QueryAnalyzer:
                 return True
         return False
     
-    def recommend_model(self, complexity: QueryComplexity, available_models: List[str]) -> str:
+    def recommend_model(self, complexity: QueryComplexity, available_models: List[str], query: str = "") -> str:
         """
         Recommend the best model based on complexity and availability
         
         Args:
             complexity: Query complexity level
             available_models: List of available model names
+            query: Optional query text for more specific routing
             
         Returns:
             Recommended model name
         """
-        # Model preferences by complexity - prioritize grok-3-mini-fast for speed
-        model_preferences = {
-            QueryComplexity.HIGH: ['grok-4-reasoning', 'o4-mini-high', 'grok-4'],  # Only for true complexity
-            QueryComplexity.MEDIUM: ['grok-3-mini-fast', 'grok-3-mini-high', 'grok-4'],  # Fast first!
-            QueryComplexity.LOW: ['grok-3-mini-fast', 'grok-3-mini-high', 'gpt-3.5-turbo']  # Always fast for simple
-        }
+        # Check if this is specifically a code generation task
+        query_lower = query.lower() if query else ""
+        is_code_task = any(
+            keyword in query_lower 
+            for keyword in self.complex_indicators.get('code_generation', [])
+        ) or self._contains_code(query)
+        
+        # Model preferences by complexity - OpenAI for speed, Grok for quality
+        if complexity == QueryComplexity.HIGH:
+            if is_code_task:
+                # Use grok-4-reasoning for code generation tasks
+                model_preferences = ['grok-4-reasoning', 'grok-4', 'o4-mini-high']
+            else:
+                # Use grok-4 for complex reasoning tasks
+                model_preferences = ['grok-4', 'grok-4-reasoning', 'o4-mini-high']
+        elif complexity == QueryComplexity.MEDIUM:
+            model_preferences = ['grok-4', 'gpt-4', 'gpt-4o-mini']  # Grok-4 for reliable medium queries
+        else:  # LOW complexity
+            # PREFER OPENAI for instant responses on basic queries
+            model_preferences = ['gpt-4.1-mini-2025-04-14', 'gpt-4o-mini', 'gpt-3.5-turbo', 'grok-3-mini']
         
         # Find first available model from preferences
-        for preferred_model in model_preferences[complexity]:
+        for preferred_model in model_preferences:
             if preferred_model in available_models:
                 return preferred_model
         
@@ -263,7 +286,7 @@ def analyze_and_route(query: str, available_models: List[str]) -> Tuple[str, Dic
     """
     analyzer = QueryAnalyzer()
     complexity, analysis = analyzer.analyze_query(query)
-    recommended_model = analyzer.recommend_model(complexity, available_models)
+    recommended_model = analyzer.recommend_model(complexity, available_models, query)
     reasoning_effort = analyzer.get_reasoning_effort(complexity)
     
     analysis['recommended_model'] = recommended_model
@@ -289,7 +312,7 @@ if __name__ == "__main__":
     for query in test_queries:
         print(f"\nQuery: {query[:50]}...")
         complexity, analysis = analyzer.analyze_query(query)
-        model = analyzer.recommend_model(complexity, available_models)
+        model = analyzer.recommend_model(complexity, available_models, query)
         print(f"Complexity: {complexity.value}")
         print(f"Recommended model: {model}")
         print(f"Confidence: {analysis['confidence']:.2f}")

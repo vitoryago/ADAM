@@ -14,6 +14,7 @@ load_dotenv(override=True)
 class ModelProvider(Enum):
     GROK = "grok"
     OPENAI = "openai"
+    ANTHROPIC = "anthropic"
 
 class ModelCapability(Enum):
     BASIC_QA = "basic_qa"
@@ -48,6 +49,7 @@ class LLMConfig:
         self.api_keys = {
             ModelProvider.GROK: os.getenv("XAI_API_KEY"),
             ModelProvider.OPENAI: os.getenv("OPENAI_API_KEY"),
+            ModelProvider.ANTHROPIC: os.getenv("ANTHROPIC_API_KEY"),
         }
         
         # Model configurations
@@ -82,7 +84,7 @@ class LLMConfig:
                 ],
                 supports_reasoning=False,  # grok-4 doesn't have reasoning_effort param
                 reasoning_param=None,  # Use as high-power model without param
-                max_tokens=8192,
+                max_tokens=128000,  # Use more of the 256K available context
                 supports_streaming=True,
                 supports_vision=True,  # grok-4 supports image input
                 cost_per_1k_tokens=0.009,  # Average of input/output for backward compatibility
@@ -101,11 +103,30 @@ class LLMConfig:
                 ],
                 supports_reasoning=True,
                 reasoning_param=None,  # grok-4 standard mode
-                max_tokens=4096,
+                max_tokens=128000,  # Use more of the 256K available context
                 supports_streaming=True,
                 supports_vision=True  # grok-4 supports image input
             ),
             
+            # Fast, low-latency model for basic queries
+            "grok-3-mini": ModelConfig(
+                name="grok-3-mini",
+                provider=ModelProvider.GROK,
+                api_name="grok-3-mini",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",
+                max_tokens=4096,
+                supports_streaming=True,
+                cost_per_1k_tokens=0.004,
+                cost_per_1k_input_tokens=0.001,
+                cost_per_1k_output_tokens=0.006
+            ),
+            
+            # Same model but forces high reasoning (slower)
             "grok-3-mini-high": ModelConfig(
                 name="grok-3-mini-high",
                 provider=ModelProvider.GROK,
@@ -120,42 +141,6 @@ class LLMConfig:
                 max_tokens=4096,
                 supports_streaming=True,
                 cost_per_1k_tokens=0.004,  # Average of input/output
-                cost_per_1k_input_tokens=0.001,
-                cost_per_1k_output_tokens=0.006
-            ),
-            
-            "grok-3-mini-fast": ModelConfig(
-                name="grok-3-mini-fast",
-                provider=ModelProvider.GROK,
-                api_name="grok-3-mini-fast",
-                capabilities=[
-                    ModelCapability.FAST_RESPONSE,
-                    ModelCapability.BASIC_QA,
-                    ModelCapability.REASONING
-                ],
-                supports_reasoning=True,
-                reasoning_param="reasoning_effort",
-                max_tokens=4096,
-                supports_streaming=True,
-                cost_per_1k_tokens=0.0023,  # Average of input/output
-                cost_per_1k_input_tokens=0.0006,  # $0.60/1M
-                cost_per_1k_output_tokens=0.004    # $4.00/1M
-            ),
-            
-            "grok-3-mini-fast-high": ModelConfig(
-                name="grok-3-mini-fast-high",
-                provider=ModelProvider.GROK,
-                api_name="grok-3-mini-fast-high",
-                capabilities=[
-                    ModelCapability.FAST_RESPONSE,
-                    ModelCapability.BASIC_QA,
-                    ModelCapability.REASONING
-                ],
-                supports_reasoning=True,
-                reasoning_param="reasoning_effort",
-                max_tokens=4096,
-                supports_streaming=True,
-                cost_per_1k_tokens=0.0035,  # Estimated higher cost for live search
                 cost_per_1k_input_tokens=0.001,
                 cost_per_1k_output_tokens=0.006
             ),
@@ -226,15 +211,74 @@ class LLMConfig:
                 max_tokens=4096,
                 supports_streaming=True,
                 cost_per_1k_tokens=0.001
+            ),
+            
+            # GPT-4o-mini - OpenAI's fastest model
+            "gpt-4o-mini": ModelConfig(
+                name="gpt-4o-mini",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-4o-mini",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=128000,  # Use full 128K context window
+                supports_streaming=True,
+                supports_vision=True,
+                cost_per_1k_tokens=0.00015,  # Super cheap
+                cost_per_1k_input_tokens=0.00015,  # $0.15 per 1M tokens
+                cost_per_1k_output_tokens=0.0006   # $0.60 per 1M tokens
+            ),
+            
+            # GPT-4.1-mini - Latest OpenAI mini model
+            "gpt-4.1-mini-2025-04-14": ModelConfig(
+                name="gpt-4.1-mini-2025-04-14",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-4.1-mini-2025-04-14",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=128000,  # Use full 128K context window
+                supports_streaming=True,
+                supports_vision=True,
+                cost_per_1k_tokens=0.00015,  # Assuming similar pricing
+                cost_per_1k_input_tokens=0.00015,
+                cost_per_1k_output_tokens=0.0006
+            ),
+            
+            # Claude 3.5 Haiku - ULTRA FAST routing model
+            "claude-3.5-haiku": ModelConfig(
+                name="claude-3.5-haiku",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-3-5-haiku-20241022",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=1000,  # Keep small for routing
+                supports_streaming=True,
+                cost_per_1k_tokens=0.001,  # Very cheap
+                cost_per_1k_input_tokens=0.0001,  # $0.10 per 1M tokens
+                cost_per_1k_output_tokens=0.0005  # $0.50 per 1M tokens
             )
         }
         
-        # Default model selection rules
+        # Default model selection rules - balance speed and intelligence
         self.default_models = {
-            "complex": "grok-4-reasoning",    # For code generation, deep analysis
-            "medium": "grok-4",               # For standard queries
-            "fast": "grok-3-mini-high",       # For memory recaps, simple queries
-            "reasoning": "grok-4-reasoning"   # Explicit reasoning tasks
+            "complex": "grok-4-reasoning",           # For complex queries requiring deep thinking
+            "medium": "grok-4",                     # For standard queries (Grok-4 is more reliable)
+            "fast": "gpt-4.1-mini-2025-04-14",     # For basic queries (latest mini model)
+            "reasoning": "grok-4-reasoning",        # For deep reasoning
+            "code": "grok-4-reasoning"              # Code generation
         }
     
     def get_api_key(self, provider: ModelProvider) -> Optional[str]:
@@ -280,10 +324,10 @@ class LLMConfig:
 SETUP_INSTRUCTIONS = """
 To use ADAM's LLM capabilities, you need to set up your API keys:
 
-1. For Grok models (grok-4, grok-3-mini):
+1. For Grok models (grok-4, grok-4-reasoning):
    export XAI_API_KEY="your-xai-api-key-here"
    
-2. For OpenAI models (o4-mini):
+2. For OpenAI models (o4-mini, gpt-4, gpt-3.5-turbo):
    export OPENAI_API_KEY="your-openai-api-key-here"
 
 You can add these to your shell profile (~/.bashrc, ~/.zshrc) or create a .env file:

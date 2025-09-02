@@ -52,7 +52,7 @@ class PricingManager:
         # Fallback prices if API calls fail (per 1K tokens)
         # These match the actual pricing as of 2024
         self._default_prices = {
-            "grok-3-mini-fast-high": {"input": 0.15, "output": 0.60},       # ~$0.20/1K avg
+            "grok-3-mini-high": {"input": 0.15, "output": 0.60},       # ~$0.20/1K avg
             "grok-4-reasoning": {"input": 5.0, "output": 15.0},             # ~$10/1K avg
             "o3": {"input": 15.0, "output": 60.0},                          # ~$37.50/1K avg (kept for compatibility)
             "claude-opus-4": {"input": 15.0, "output": 75.0}                # ~$45/1K avg (kept for compatibility)
@@ -342,7 +342,7 @@ class CostOptimizer:
         
         # High memory confidence allows using cheaper model
         if memory_confidence > 0.9:
-            return "grok-3-mini-fast-high"
+            return "grok-3-mini-high"
         
         # Complex tasks (including coding) use Grok-4-reasoning
         if complexity == "complex" or (is_coding and complexity in ["moderate", "complex"]):
@@ -351,10 +351,10 @@ class CostOptimizer:
                 return "grok-4-reasoning"
             else:
                 logger.warning(f"Grok-4 cost ${grok4_cost:.3f} exceeds budget, falling back to Grok-3")
-                return "grok-3-mini-fast-high"
+                return "grok-3-mini-high"
         
         # Simple and moderate tasks use Grok-3
-        return "grok-3-mini-fast-high"
+        return "grok-3-mini-high"
     
     def should_alert_cost(self, query_cost: float, daily_total: float) -> Tuple[bool, Optional[str]]:
         """

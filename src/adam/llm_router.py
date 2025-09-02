@@ -32,7 +32,7 @@ class ModelTier(Enum):
     """Available model tiers with associated models"""
     REASONING = "grok-4-reasoning"  # Most expensive, highest capability
     STANDARD = "grok-4"             # Balanced performance
-    FAST = "grok-3-mini-fast"       # Cheapest, fastest
+    FAST = "gpt-4o-mini"       # Cheapest, fastest (LOW latency)
     
     # Additional options for router
     ROUTER = "claude-3-5-haiku-20241022"  # Fast, cheap router
@@ -134,6 +134,38 @@ Query: {query}"""
                 response = await self._route_with_anthropic(prompt)
             else:
                 response = await self._route_with_openai(prompt)
+            
+            # Clean the response before parsing
+            response = response.strip()
+            
+            # Remove code blocks if present
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0].strip()
+            
+            # Find JSON object in response
+            if not response.startswith('{'):
+                json_start = response.find('{')
+                if json_start != -1:
+                    response = response[json_start:]
+                else:
+                    raise ValueError(f"No JSON object found in response: {response}")
+            
+            # Find matching closing brace
+            if response.startswith('{'):
+                brace_count = 0
+                end_pos = 0
+                for i, char in enumerate(response):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_pos = i + 1
+                            break
+                if end_pos > 0:
+                    response = response[:end_pos]
                 
             # Parse the JSON response
             decision_data = json.loads(response)
@@ -173,9 +205,41 @@ Query: {query}"""
             model=self.router_model,
             max_tokens=200,
             temperature=0.1,  # Low temperature for consistent routing
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            system="You are a query router. Always respond with valid JSON only, no additional text."
         )
-        return response.content[0].text
+        content = response.content[0].text.strip()
+        
+        # Extract JSON more robustly
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        # Clean up common issues
+        content = content.strip()
+        if not content.startswith('{'):
+            # Find the first { and start from there
+            json_start = content.find('{')
+            if json_start != -1:
+                content = content[json_start:]
+        
+        # Find matching closing brace
+        if content.startswith('{'):
+            brace_count = 0
+            end_pos = 0
+            for i, char in enumerate(content):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end_pos = i + 1
+                        break
+            if end_pos > 0:
+                content = content[:end_pos]
+        
+        return content
     
     async def _route_with_openai(self, prompt: str) -> str:
         """Route using GPT-4-mini"""

@@ -384,3 +384,105 @@ class ProjectMemoryService:
                 continue
         
         return imported
+    
+    async def add_file_knowledge(self, project_id: str, file_info: Dict[str, Any]) -> bool:
+        """Add file knowledge to memory"""
+        if not CHROMADB_AVAILABLE or not self.collection:
+            return False
+        
+        try:
+            # Generate unique ID for this chunk
+            chunk_id = hashlib.sha256(
+                f"{file_info['file_path']}:{file_info['chunk_name']}:{datetime.now().isoformat()}".encode()
+            ).hexdigest()[:16]
+            
+            metadata = {
+                "memory_type": "file_knowledge",
+                "project_id": project_id,
+                "file_path": file_info['file_path'],
+                "chunk_name": file_info['chunk_name'],
+                "file_type": file_info['file_type'],
+                "timestamp": file_info['timestamp'],
+                "importance": 0.7  # Medium importance for file knowledge
+            }
+            
+            # Create searchable content
+            content = f"File: {file_info['file_path']}\n"
+            content += f"Component: {file_info['chunk_name']}\n"
+            content += f"Type: {file_info['file_type']}\n\n"
+            content += file_info['content']
+            
+            # Add to collection
+            self.collection.add(
+                ids=[chunk_id],
+                documents=[content],
+                metadatas=[metadata]
+            )
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error adding file knowledge: {e}")
+            return False
+    
+    async def remove_file_knowledge(self, project_id: str, file_path: str) -> bool:
+        """Remove file knowledge from memory"""
+        if not CHROMADB_AVAILABLE or not self.collection:
+            return False
+        
+        try:
+            # Query for all chunks from this file
+            results = self.collection.get(
+                where={
+                    "$and": [
+                        {"project_id": project_id},
+                        {"file_path": file_path}
+                    ]
+                }
+            )
+            
+            if results and results['ids']:
+                # Delete all chunks from this file
+                self.collection.delete(ids=results['ids'])
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"Error removing file knowledge: {e}")
+            return False
+    
+    async def search_file_knowledge(self, query: str, project_id: str, limit: int = 5) -> List[Dict]:
+        """Search file knowledge for a project"""
+        if not CHROMADB_AVAILABLE or not self.collection:
+            return []
+        
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                where={
+                    "$and": [
+                        {"project_id": project_id},
+                        {"memory_type": "file_knowledge"}
+                    ]
+                },
+                n_results=limit
+            )
+            
+            if not results or not results['ids']:
+                return []
+            
+            memories = []
+            for i in range(len(results['ids'][0])):
+                memories.append({
+                    "id": results['ids'][0][i],
+                    "content": results['documents'][0][i],
+                    "metadata": results['metadatas'][0][i],
+                    "distance": results['distances'][0][i] if 'distances' in results else 0
+                })
+            
+            return memories
+            
+        except Exception as e:
+            print(f"Error searching file knowledge: {e}")
+            return []

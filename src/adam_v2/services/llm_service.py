@@ -5,11 +5,13 @@ Integrates with ADAM's existing LLM client while adding streaming support
 
 import os
 import sys
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from dataclasses import dataclass
 import logging
 import asyncio
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,37 @@ except ImportError:
     DBT_KNOWLEDGE_AVAILABLE = False
     DBTKnowledgeService = None
     logger.debug("DBT Knowledge Service not available")
+
+# Try to import SQL knowledge service
+try:
+    from services.sql_knowledge_service import SQLKnowledgeService
+    SQL_KNOWLEDGE_AVAILABLE = True
+    logger.info("SQL Knowledge Service available")
+except ImportError:
+    SQL_KNOWLEDGE_AVAILABLE = False
+    SQLKnowledgeService = None
+    logger.debug("SQL Knowledge Service not available")
+
+# Try to import Fast Routing service
+try:
+    from services.fast_routing_service import FastRoutingService
+    FAST_ROUTING_AVAILABLE = True
+    logger.info("Fast Routing Service available")
+except ImportError:
+    FAST_ROUTING_AVAILABLE = False
+    FastRoutingService = None
+    logger.debug("Fast Routing Service not available")
+
+# Try to import Response Style service
+try:
+    from services.response_style_service import ResponseStyleService, ResponseStyle
+    RESPONSE_STYLE_AVAILABLE = True
+    logger.info("Response Style Service available")
+except ImportError:
+    RESPONSE_STYLE_AVAILABLE = False
+    ResponseStyleService = None
+    ResponseStyle = None
+    logger.debug("Response Style Service not available")
 
 # Add parent directory to path to import ADAM modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -82,10 +115,14 @@ class LLMService:
         self.project_settings = project_settings or {}
         self.project_id = project_id
         # Use project model, then env default, then hardcoded default
-        env_default = os.getenv("DEFAULT_MODEL", "grok-3-mini-fast")
+        env_default = os.getenv("DEFAULT_MODEL", "gpt-4.1-mini-2025-04-14")  # Latest OpenAI mini for instant responses
         self.default_model = self.project_settings.get("model", env_default)
         self.temperature = self.project_settings.get("temperature", 0.7)
-        self.max_tokens = self.project_settings.get("max_tokens", 2000)
+        self.max_tokens = self.project_settings.get("max_tokens", 8000)  # Increased for much longer responses with larger context windows
+        
+        # Initialize response style service with normal as default
+        self.style_service = ResponseStyleService() if RESPONSE_STYLE_AVAILABLE else None
+        self.response_style = self.project_settings.get("response_style", "normal")
         
         # Initialize ADAM's LLM client if available
         if ADAM_LLM_AVAILABLE:
@@ -112,6 +149,26 @@ class LLMService:
                 self.dbt_knowledge = None
                 logger.warning(f"Failed to initialize DBT Knowledge Service: {e}")
         
+        # Initialize SQL knowledge service if available
+        self.sql_knowledge = None
+        if SQL_KNOWLEDGE_AVAILABLE:
+            try:
+                self.sql_knowledge = SQLKnowledgeService()
+                logger.info("SQL Knowledge Service initialized")
+            except Exception as e:
+                self.sql_knowledge = None
+                logger.warning(f"Failed to initialize SQL Knowledge Service: {e}")
+        
+        # Initialize fast routing service if available
+        self.fast_router = None
+        if FAST_ROUTING_AVAILABLE:
+            try:
+                self.fast_router = FastRoutingService()
+                logger.info("Fast Routing Service initialized with Claude Haiku")
+            except Exception as e:
+                self.fast_router = None
+                logger.warning(f"Failed to initialize Fast Routing Service: {e}")
+        
         # Initialize memory service if available
         self.memory_service = None
         if MEMORY_AVAILABLE and project_id:
@@ -136,7 +193,8 @@ class LLMService:
         image_data: Optional[str] = None,
         use_search: bool = False,
         search_mode: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        response_style: Optional[str] = None
     ) -> LLMResponse:
         """Generate a response using ADAM's LLM client"""
         
@@ -152,7 +210,7 @@ class LLMService:
         # Build conversation history
         messages = []
         if history:
-            for msg in history[-10:]:  # Last 10 messages
+            for msg in history[-30:]:  # Last 30 messages - increased for better context
                 messages.append({
                     "role": msg.role,
                     "content": msg.content
@@ -163,14 +221,64 @@ class LLMService:
         if memory_context:
             full_prompt = f"{memory_context}\n\nUser: {message}"
         
-        # Add DBT context if detected
-        if self.dbt_knowledge and self.dbt_knowledge.detect_dbt_context(message):
+        # Add DBT context if detected (using intelligent detection)
+        if self.dbt_knowledge:
             try:
-                dbt_enhanced_prompt = self.dbt_knowledge.enhance_query_with_dbt_context(full_prompt)
-                full_prompt = dbt_enhanced_prompt
-                logger.info("Enhanced prompt with DBT knowledge")
+                # Try intelligent detection first (async)
+                if asyncio.iscoroutinefunction(self.dbt_knowledge.intelligent_dbt_detection):
+                    needs_dbt, confidence = await self.dbt_knowledge.intelligent_dbt_detection(message)
+                else:
+                    # Fallback to keyword detection if not async
+                    needs_dbt = self.dbt_knowledge.detect_dbt_context(message)
+                    confidence = 0.5
+                
+                if needs_dbt and confidence > 0.3:  # Only enhance if confident
+                    dbt_enhanced_prompt = self.dbt_knowledge.enhance_query_with_dbt_context(full_prompt)
+                    full_prompt = dbt_enhanced_prompt
+                    logger.info(f"Enhanced prompt with DBT knowledge (confidence: {confidence:.2f})")
             except Exception as e:
-                logger.warning(f"Failed to enhance with DBT context: {e}")
+                # Silent fallback to keyword detection
+                if self.dbt_knowledge.detect_dbt_context(message):
+                    try:
+                        dbt_enhanced_prompt = self.dbt_knowledge.enhance_query_with_dbt_context(full_prompt)
+                        full_prompt = dbt_enhanced_prompt
+                        logger.info("Enhanced prompt with DBT knowledge (keyword fallback)")
+                    except:
+                        pass
+        
+        # Add SQL context if detected (using intelligent detection)
+        if self.sql_knowledge:
+            try:
+                # Try intelligent detection first
+                if asyncio.iscoroutinefunction(self.sql_knowledge.intelligent_sql_detection):
+                    needs_sql, confidence = await self.sql_knowledge.intelligent_sql_detection(message)
+                else:
+                    # Fallback to keyword detection
+                    needs_sql = self.sql_knowledge.detect_sql_context(message)
+                    confidence = 0.5
+                
+                if needs_sql and confidence > 0.3:  # Only enhance if confident
+                    sql_enhanced_prompt = self.sql_knowledge.enhance_query_with_sql_context(full_prompt)
+                    full_prompt = sql_enhanced_prompt
+                    logger.info(f"Enhanced prompt with SQL knowledge (confidence: {confidence:.2f})")
+                    
+                    # If SQL detected, also format any SQL in the query to uppercase
+                    if 'select' in full_prompt.lower() or 'from' in full_prompt.lower():
+                        # Extract and format SQL blocks
+                        sql_pattern = r'```sql(.*?)```'
+                        matches = re.findall(sql_pattern, full_prompt, re.DOTALL | re.IGNORECASE)
+                        for sql_block in matches:
+                            formatted_sql = self.sql_knowledge.format_sql_uppercase(sql_block)
+                            full_prompt = full_prompt.replace(sql_block, formatted_sql)
+            except Exception as e:
+                # Silent fallback
+                if self.sql_knowledge.detect_sql_context(message):
+                    try:
+                        sql_enhanced_prompt = self.sql_knowledge.enhance_query_with_sql_context(full_prompt)
+                        full_prompt = sql_enhanced_prompt
+                        logger.info("Enhanced prompt with SQL knowledge (keyword fallback)")
+                    except:
+                        pass
         
         # Try to use intelligent router if available
         routing_config = None
@@ -201,21 +309,56 @@ class LLMService:
                 model = self._select_model_by_complexity(complexity)
         
         # Use the specified model or default
-        final_model = model or self.default_model or "grok-3-mini-fast"
+        final_model = model or self.default_model or "gpt-4o-mini"
         
         try:
             # Check if model supports vision
             model_config = MODEL_CONFIGS.get(final_model)
             
-            # Use provided system prompt or build default
-            if system_prompt:
-                final_system_prompt = system_prompt
+            # Apply response style if available
+            style_temperature = self.temperature
+            style_max_tokens = self.max_tokens
+            
+            if self.style_service and RESPONSE_STYLE_AVAILABLE:
+                # Use provided style or default
+                style_to_use = response_style or self.response_style
+                try:
+                    # Convert string to ResponseStyle enum
+                    style_enum = ResponseStyle(style_to_use)
+                    self.style_service.set_style(style_enum)
+                    
+                    # Get style configuration
+                    style_prompt, style_temp = self.style_service.get_style_prompt(style_enum)
+                    style_params = self.style_service.adjust_model_parameters(style_enum, self.max_tokens)
+                    
+                    # Apply style settings
+                    style_temperature = style_params['temperature']
+                    style_max_tokens = style_params['max_tokens']
+                    
+                    # Enhance the user prompt for style
+                    full_prompt = self.style_service.enhance_prompt_for_style(full_prompt, style_enum)
+                    
+                    # Use style-specific system prompt if no custom prompt provided
+                    if not system_prompt:
+                        final_system_prompt = style_prompt
+                    else:
+                        final_system_prompt = system_prompt
+                        
+                    logger.info(f"Applied response style: {style_to_use} (temp: {style_temperature}, tokens: {style_max_tokens})")
+                except Exception as e:
+                    logger.warning(f"Failed to apply response style: {e}")
+                    # Fall back to defaults
+                    final_system_prompt = system_prompt or "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
             else:
-                final_system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
+                # Use provided system prompt or build default
+                if system_prompt:
+                    final_system_prompt = system_prompt
+                else:
+                    final_system_prompt = "You are ADAM (Advanced Data Analytics Model), an AI assistant specializing in software development, data analysis, and problem-solving."
                 
-                # Add specialized prompt from router if available
-                if routing_config and routing_config.get('system_prompt_addon'):
-                    final_system_prompt += "\n\n" + routing_config['system_prompt_addon']
+            # Add specialized prompt from router if available
+            if routing_config and routing_config.get('system_prompt_addon'):
+                final_system_prompt += "\n\n" + routing_config['system_prompt_addon']
                 
             if messages and len(messages) > 1:
                 # Create a conversation context from history
@@ -226,17 +369,17 @@ class LLMService:
                 if history_lines:
                     final_system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
             
-            # Build kwargs for complete call
+            # Build kwargs for complete call with style parameters
             complete_kwargs = {
                 "prompt": full_prompt,
                 "model": final_model,
                 "system_prompt": final_system_prompt,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens
+                "temperature": style_temperature,
+                "max_tokens": style_max_tokens
             }
             
             # Add search parameters if enabled
-            if use_search and final_model in ["grok-3-mini-high", "grok-3-mini-fast-high", "grok-4", "grok-4-reasoning"]:
+            if use_search and final_model in ["grok-3-mini", "grok-3-mini-high", "grok-4", "grok-4-reasoning"]:
                 # Simple boolean flag - the API will handle the search internally
                 complete_kwargs["search_parameters"] = True
                 logger.info(f"Live search enabled for model: {final_model}")
@@ -273,9 +416,12 @@ class LLMService:
             
             # Check if response includes citations from search
             metadata = {
-                "complexity": complexity.value if 'complexity' in locals() else None,
                 "has_image": bool(image_data)
             }
+            
+            # Only add complexity if it exists and is not None
+            if 'complexity' in locals() and complexity is not None:
+                metadata["complexity"] = complexity.value
             
             # Add citations if present
             if hasattr(response, 'raw_response') and response.raw_response and 'citations' in response.raw_response:
@@ -297,17 +443,22 @@ class LLMService:
                     
                     # Use advanced evaluation if available
                     if hasattr(self.memory_service, 'store_memory_with_evaluation'):
+                        # Build metadata without None values
+                        clean_metadata = {
+                            "model": response.model,
+                            "cost": response.cost,
+                            "tokens": response.total_tokens,
+                            "has_image": bool(image_data)
+                        }
+                        # Only add complexity if it exists
+                        if 'complexity' in locals() and complexity is not None:
+                            clean_metadata["complexity"] = complexity.value
+                        
                         memory_id = await self.memory_service.store_memory_with_evaluation(
                             query=message,
                             response=response.content,
                             memory_type=memory_type,
-                            metadata={
-                                "model": response.model,
-                                "cost": response.cost,
-                                "tokens": response.total_tokens,
-                                "has_image": bool(image_data),
-                                "complexity": complexity.value if 'complexity' in locals() else None
-                            },
+                            metadata=clean_metadata,
                             conversation_id=None,  # Will be set by message router
                             cost=response.cost,
                             model=response.model
@@ -346,9 +497,13 @@ class LLMService:
         image_data: Optional[str] = None,
         use_search: bool = False,
         search_mode: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        response_style: Optional[str] = None
     ) -> AsyncGenerator[StreamChunk, None]:
         """Stream a response using ADAM's LLM client"""
+        import time
+        start_time = time.time()
+        logger.info(f"Starting stream_response for message: '{message[:50]}...'")
         
         if not self.llm_client:
             # Mock streaming response
@@ -369,10 +524,33 @@ class LLMService:
             )
             return
         
-        # Build conversation history
+        # Build conversation history with smart truncation
         messages = []
         if history:
-            for msg in history[-10:]:
+            # Smart context management for long conversations
+            total_history = len(history)
+            
+            # Keep last 10 messages in full detail (more efficient)
+            recent_messages = history[-10:]
+            
+            # If there are older messages, create a summary (11-30)
+            if total_history > 10:
+                older_messages = history[-30:-10] if total_history > 30 else history[:-10]
+                if older_messages:
+                    # Add a condensed summary of older context
+                    summary = "Previous conversation context:\n"
+                    for i, msg in enumerate(older_messages):
+                        # Truncate long messages in summary to save tokens
+                        content_preview = msg.content[:150] + "..." if len(msg.content) > 150 else msg.content
+                        summary += f"{msg.role.upper()}: {content_preview}\n"
+                    
+                    messages.append({
+                        "role": "system",
+                        "content": summary
+                    })
+            
+            # Add recent 10 messages in full for immediate context
+            for msg in recent_messages:
                 messages.append({
                     "role": msg.role,
                     "content": msg.content
@@ -383,21 +561,46 @@ class LLMService:
         if memory_context:
             full_prompt = f"{memory_context}\n\nUser: {message}"
         
-        # Add DBT context if detected
-        if self.dbt_knowledge and self.dbt_knowledge.detect_dbt_context(message):
+        # Use fast routing if available and no model specified
+        routing_decision = None
+        if not model and self.fast_router:
             try:
-                dbt_enhanced_prompt = self.dbt_knowledge.enhance_query_with_dbt_context(full_prompt)
-                full_prompt = dbt_enhanced_prompt
-                logger.info("Enhanced streaming prompt with DBT knowledge")
+                routing_start = time.time()
+                routing_decision = await self.fast_router.route_query(message)
+                routing_time = time.time() - routing_start
+                
+                model = routing_decision["model"]
+                logger.info(f"Fast routing took {routing_time:.2f}s, selected: {model}")
+                
+                # Add DBT context if routing says it's needed
+                if routing_decision.get("needs_dbt") and self.dbt_knowledge:
+                    try:
+                        dbt_enhanced_prompt = self.dbt_knowledge.enhance_query_with_dbt_context(full_prompt)
+                        full_prompt = dbt_enhanced_prompt
+                        logger.info("Enhanced with DBT knowledge (Haiku routing decision)")
+                    except:
+                        pass
+                
+                # Add SQL context if routing says it's needed
+                if routing_decision.get("needs_sql") and self.sql_knowledge:
+                    try:
+                        sql_enhanced_prompt = self.sql_knowledge.enhance_query_with_sql_context(full_prompt)
+                        full_prompt = sql_enhanced_prompt
+                        logger.info("Enhanced with SQL knowledge (Haiku routing decision)")
+                    except:
+                        pass
+                        
             except Exception as e:
-                logger.warning(f"Failed to enhance with DBT context in stream: {e}")
-        
-        # Analyze query complexity if no model specified
-        if not model:
+                logger.warning(f"Fast routing failed: {e}, falling back to analyzer")
+                # Fallback to old method
+                complexity, _ = self.query_analyzer.analyze_query(message)
+                model = self._select_model_by_complexity(complexity)
+        elif not model:
+            # Fallback if fast router not available
             complexity, _ = self.query_analyzer.analyze_query(message)
             model = self._select_model_by_complexity(complexity)
         
-        final_model = model or self.default_model or "grok-3-mini-fast"
+        final_model = model or self.default_model or "gpt-4o-mini"
         
         try:
             # Check if model supports vision
@@ -420,18 +623,49 @@ class LLMService:
                 if history_lines:
                     final_system_prompt += "\n\nPrevious conversation:\n" + "\n".join(history_lines)
             
-            # Build kwargs for complete call
+            # Apply response style if available
+            style_temperature = self.temperature
+            style_max_tokens = self.max_tokens
+            
+            if self.style_service and RESPONSE_STYLE_AVAILABLE:
+                # Use provided style or default
+                style_to_use = response_style or self.response_style
+                try:
+                    # Convert string to ResponseStyle enum
+                    style_enum = ResponseStyle(style_to_use)
+                    self.style_service.set_style(style_enum)
+                    
+                    # Get style configuration
+                    style_prompt, style_temp = self.style_service.get_style_prompt(style_enum)
+                    style_params = self.style_service.adjust_model_parameters(style_enum, self.max_tokens)
+                    
+                    # Apply style settings
+                    style_temperature = style_params['temperature']
+                    style_max_tokens = style_params['max_tokens']
+                    
+                    # Enhance the user prompt for style
+                    full_prompt = self.style_service.enhance_prompt_for_style(full_prompt, style_enum)
+                    
+                    # Use style-specific system prompt if no custom prompt provided
+                    if not final_system_prompt:
+                        final_system_prompt = style_prompt
+                        
+                    logger.info(f"Applied response style (streaming): {style_to_use} (temp: {style_temperature}, tokens: {style_max_tokens})")
+                except Exception as e:
+                    logger.warning(f"Failed to apply response style in streaming: {e}")
+            
+            # Build kwargs for complete call with style parameters
             complete_kwargs = {
                 "prompt": full_prompt,
                 "model": final_model,
                 "system_prompt": final_system_prompt,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "stream": True  # Enable streaming
+                "temperature": style_temperature,
+                "max_tokens": style_max_tokens,
+                "stream": False  # Disabled streaming for simpler processing
             }
             
             # Add search parameters if enabled
-            if use_search and final_model in ["grok-3-mini-high", "grok-3-mini-fast-high", "grok-4", "grok-4-reasoning"]:
+            if use_search and final_model in ["grok-3-mini", "grok-3-mini-high", "grok-4", "grok-4-reasoning"]:
                 # Simple boolean flag - the API will handle the search internally
                 complete_kwargs["search_parameters"] = True
                 logger.info(f"Live search enabled for streaming with model: {final_model}")
@@ -462,55 +696,22 @@ class LLMService:
             token_count = 0
             chunk_count = 0
             
-            logger.info(f"Starting streaming for model {final_model}")
+            logger.info(f"Getting response from model {final_model} (streaming disabled)")
             
-            # Check if we got an async generator or a regular response
-            if hasattr(stream_response, '__aiter__'):
-                # It's an async generator, use real streaming
-                async for chunk in stream_response:
-                    if chunk:  # Only process non-empty chunks
-                        chunk_count += 1
-                        accumulated_content += chunk
-                        # Estimate tokens (rough approximation)
-                        token_count = len(accumulated_content.split()) * 1.3
-                        
-                        logger.debug(f"Streaming chunk {chunk_count}: {len(chunk)} chars")
-                        
-                        yield StreamChunk(
-                            content=chunk,
-                            model_used=final_model,
-                            tokens_used=0,  # Will be set in final chunk
-                            cost=0.0
-                        )
-            else:
-                # Fallback: Got a regular response, simulate streaming
-                logger.warning("Streaming not supported, falling back to chunking")
-                content = stream_response.content if hasattr(stream_response, 'content') else str(stream_response)
-                
-                # Use word-based chunking for more natural streaming
-                words = content.split(' ')
-                words_per_chunk = 3  # Send 3 words at a time
-                
-                for i in range(0, len(words), words_per_chunk):
-                    chunk_count += 1
-                    chunk_words = words[i:i + words_per_chunk]
-                    chunk = ' '.join(chunk_words)
-                    if i + words_per_chunk < len(words):
-                        chunk += ' '  # Add space if not last chunk
-                    
-                    accumulated_content += chunk
-                    token_count = len(accumulated_content.split()) * 1.3
-                    
-                    yield StreamChunk(
-                        content=chunk,
-                        model_used=final_model,
-                        tokens_used=0,
-                        cost=0.0
-                    )
-                    
-                    await asyncio.sleep(0.015)  # 15ms delay for natural feel
+            # Since streaming is disabled, we get the full response at once
+            content = stream_response.content if hasattr(stream_response, 'content') else str(stream_response)
+            accumulated_content = content
+            token_count = len(accumulated_content.split()) * 1.3
             
-            logger.info(f"Streaming complete: {chunk_count} chunks, {len(accumulated_content)} total chars")
+            # Return the entire response in one chunk (no streaming)
+            yield StreamChunk(
+                content=content,
+                model_used=final_model,
+                tokens_used=int(token_count),
+                cost=0.0  # Will be calculated below
+            )
+            
+            logger.info(f"Response complete: {len(accumulated_content)} total chars")
             
             # Calculate cost based on accumulated content
             model_config = MODEL_CONFIGS.get(final_model)
@@ -545,14 +746,14 @@ class LLMService:
     def _select_model_by_complexity(self, complexity: 'QueryComplexity') -> str:
         """Select model based on query complexity"""
         if not QueryComplexity:
-            return "grok-3-mini-fast"
+            return "gpt-4o-mini"
             
         if complexity == QueryComplexity.HIGH:
             return "grok-4-reasoning"
         elif complexity == QueryComplexity.MEDIUM:
             return "grok-4"
         else:
-            return "grok-3-mini-fast"
+            return "gpt-4o-mini"
     
     def estimate_cost(
         self,
@@ -567,7 +768,7 @@ class LLMService:
         # Rough token estimation
         estimated_tokens = len(message.split()) * 1.5  # 1.5 tokens per word average
         
-        model_name = model or self.default_model or "grok-3-mini-high"
+        model_name = model or self.default_model or "gpt-4o-mini"
         model_config = MODEL_CONFIGS.get(model_name)
         
         if not model_config:

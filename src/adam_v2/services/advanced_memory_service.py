@@ -199,11 +199,23 @@ class AdvancedMemoryService(ProjectMemoryService):
             logger.debug(f"Rejected trivial memory: {query[:50]}...")
             return None
         
-        # Prepare enhanced metadata
+        # Prepare enhanced metadata - flatten nested dicts for ChromaDB
         enhanced_metadata = metadata or {}
+        
+        # Flatten the evaluation metadata (ChromaDB doesn't support nested dicts)
+        if isinstance(eval_metadata, dict):
+            # Add evaluated_at as a string
+            if "evaluated_at" in eval_metadata:
+                enhanced_metadata["evaluated_at"] = eval_metadata["evaluated_at"]
+            
+            # Flatten factors dict
+            if "factors" in eval_metadata and isinstance(eval_metadata["factors"], dict):
+                for key, value in eval_metadata["factors"].items():
+                    # Prefix with "factor_" to avoid conflicts
+                    enhanced_metadata[f"factor_{key}"] = str(value) if not isinstance(value, (str, int, float, bool)) else value
+        
         enhanced_metadata.update({
             "worthiness": worthiness.value,
-            "evaluation": eval_metadata,
             "model": model,
             "query_length": len(query.split()),
             "response_length": len(response.split()),
