@@ -39,6 +39,14 @@ except ImportError:
     LINEAGE_AVAILABLE = False
     logger.info("Lineage and onboarding routers not available")
 
+# Import new tools router
+try:
+    from routers import tools
+    TOOLS_AVAILABLE = True
+except ImportError:
+    TOOLS_AVAILABLE = False
+    logger.info("Tools router not available")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -88,6 +96,10 @@ app.include_router(voice_streaming.router, tags=["voice-streaming"])
 if LINEAGE_AVAILABLE:
     app.include_router(lineage.router, prefix="/api", tags=["lineage"])
     app.include_router(onboarding.router, prefix="/api", tags=["onboarding"])
+
+# Include tools router
+if TOOLS_AVAILABLE:
+    app.include_router(tools.router, prefix="/api", tags=["tools"])
 
 
 @app.get("/api/health")
