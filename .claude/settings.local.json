@@ -68,7 +68,8 @@
       "Bash(npx @vscode/vsce package:*)",
       "Bash(code:*)",
       "Bash(git reset:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(sed:*)"
     ],
     "deny": []
   }
