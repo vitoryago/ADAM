@@ -76,6 +76,24 @@ htmlcov/
 # Frontend
 frontend/AdamChat/node_modules/
 frontend/AdamChat/dist/
+frontend/AdamChat/build/
 frontend/AdamChat/.env.local
 frontend/AdamChat/*.log
 frontend/AdamChat/package-lock.json
+*.map
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+
+# Data files
+data/
+adam_v2.db
+*.parquet
+*.csv
+
+# Temporary files
+test_*.py
+temp/
+tmp/
