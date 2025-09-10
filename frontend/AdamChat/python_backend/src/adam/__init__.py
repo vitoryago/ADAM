@@ -1,1 +1,0 @@
-# ADAM package initialization
