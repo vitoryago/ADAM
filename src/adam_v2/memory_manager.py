@@ -14,7 +14,7 @@ try:
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from adam.memory import ADAMMemoryAdvanced
+    from adam.memory.core import ADAMMemoryAdvanced
     from adam.advanced_rag import AdvancedRAGSystem
     ADAM_AVAILABLE = True
 except ImportError:
