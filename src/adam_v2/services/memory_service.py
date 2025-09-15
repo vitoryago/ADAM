@@ -25,8 +25,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Try to import ADAM's memory components
 try:
-    from adam.memory_config import MemoryConfig
-    from adam.memory import MemoryType
+    from adam.memory.config import MemoryConfig
+    from adam.memory.core import MemoryType
     ADAM_MEMORY_AVAILABLE = True
 except ImportError:
     ADAM_MEMORY_AVAILABLE = False

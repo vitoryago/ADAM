@@ -78,7 +78,7 @@ except ImportError as e:
     logger.error(f"Failed to import ADAM LLM client: {e}")
 
 try:
-    from adam.memory import MemoryType
+    from adam.memory.core import MemoryType
     MEMORY_AVAILABLE = True
 except ImportError:
     MEMORY_AVAILABLE = False

@@ -24,7 +24,7 @@ from .memory_service import ProjectMemoryService, MemorySearchResult, MemoryType
 # Try to import ADAM v1 components
 try:
     from adam.llm.query_analyzer import QueryAnalyzer, QueryComplexity
-    from adam.memory import ADAMMemoryAdvanced
+    from adam.memory.core import ADAMMemoryAdvanced
     ADAM_V1_AVAILABLE = True
 except ImportError:
     ADAM_V1_AVAILABLE = False
