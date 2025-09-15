@@ -69,7 +69,8 @@
       "Bash(code:*)",
       "Bash(git reset:*)",
       "WebSearch",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(xargs:*)"
     ],
     "deny": []
   }

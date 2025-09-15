@@ -65,10 +65,10 @@ from rich.table import Table
 from rich.panel import Panel
 
 # Import our existing systems
-from .memory import ADAMMemoryAdvanced as MemorySystem, Memory
-from .memory_network import MemoryNetworkSystem, MemoryNode
-from .conversation_aware_memory import ConversationAwareMemorySystem
-from .temporal_memory_scoring import TemporalMemoryScorer, TemporalScoringConfig
+from .memory.core import ADAMMemoryAdvanced as MemorySystem, Memory
+from .memory.network import MemoryNetworkSystem, MemoryNode
+from .memory.conversation import ConversationAwareMemorySystem
+from .memory.scoring import TemporalMemoryScorer, TemporalScoringConfig
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

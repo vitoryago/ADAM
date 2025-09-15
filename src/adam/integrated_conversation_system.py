@@ -35,9 +35,9 @@ from .langgraph_conversation import (
     QueryComplexityAnalyzer,
     MemoryConfidenceScorer
 )
-from .memory_network import MemoryNetworkSystem
+from .memory.network import MemoryNetworkSystem
 from .conversation_system import ConversationSystem
-from .conversation_aware_memory import ConversationAwareMemorySystem
+from .memory.conversation import ConversationAwareMemorySystem
 
 import logging
 

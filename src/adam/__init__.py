@@ -4,8 +4,8 @@ Core components for the intelligent assistant system
 """
 
 from .conversation_system import ConversationSystem, ConversationSession, ConversationExchange
-from .conversation_aware_memory import ConversationAwareMemorySystem
-from .memory_network import MemoryNetworkSystem, MemoryNode, ConversationThread
+from .memory.conversation import ConversationAwareMemorySystem
+from .memory.network import MemoryNetworkSystem, MemoryNode, ConversationThread
 from .langgraph_conversation import (
     LangGraphConversationSystem,
     ConversationState,
@@ -17,7 +17,7 @@ from .integrated_conversation_system import IntegratedADAMSystem
 # New coworker components
 from .project_manager import ProjectManager, Project
 from .screen_capture import ScreenCaptureService, ScreenContextAnalyzer
-from .project_aware_memory import ProjectAwareMemory
+from .memory.project import ProjectAwareMemory
 
 __version__ = "3.1.0"  # Version bump for coworker features
 
