@@ -70,7 +70,9 @@
       "Bash(git reset:*)",
       "WebSearch",
       "Bash(sed:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(timeout:*)"
     ],
     "deny": []
   }

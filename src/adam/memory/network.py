@@ -50,12 +50,12 @@ import numpy as np
 
 # Import error handling
 try:
-    from .errors import (
+    from ..errors import (
         NetworkError, LoadError, SaveError, CorruptedMemoryError,
         retry_with_backoff, ErrorHandler, ErrorContext
     )
 except ImportError:
-    from errors import (
+    from adam.errors import (
         NetworkError, LoadError, SaveError, CorruptedMemoryError,
         retry_with_backoff, ErrorHandler, ErrorContext
     )
@@ -63,6 +63,32 @@ except ImportError:
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+from enum import Enum
+
+class ConnectionType(Enum):
+    """Types of connections between memory nodes"""
+    REFERENCE = "reference"  # Direct reference or citation
+    RELATED = "related"      # Topically related
+    SEQUENCE = "sequence"    # Part of a sequence/thread
+    SOLUTION = "solution"    # Solution to a problem
+    FOLLOW_UP = "follow_up"  # Follow-up question/discussion
+
+@dataclass
+class MemoryConnection:
+    """Represents a connection between two memory nodes"""
+    source_id: str
+    target_id: str
+    connection_type: ConnectionType
+    weight: float = 1.0
+    metadata: Dict[str, Any] = None
+    created_at: datetime = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
+        if self.created_at is None:
+            self.created_at = datetime.now()
 
 @dataclass
 class MemoryNode:

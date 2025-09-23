@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 
-# Add src to Python path for imports
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+# Add ADAM src to Python path for imports
+adam_root = Path(__file__).parent.parent.parent.parent  # Go up to ADAM root
+sys.path.insert(0, str(adam_root / 'src'))
 
 # Load environment variables
 load_dotenv()
@@ -39,21 +40,29 @@ class ADAMService:
             
         try:
             # Import ADAM modules
-            from adam.integrated_conversation_system import IntegratedConversationSystem
+            from adam.integrated_conversation_system import IntegratedADAMSystem
             from adam.project_manager import ProjectManager
             from adam.cost_monitor import CostMonitor
             from adam.config import ADAMConfig
-            
+            from adam.memory import ADAMMemoryAdvanced
+
             # Initialize configuration
             config = ADAMConfig()
-            
+
+            # Initialize base memory system
+            base_memory = ADAMMemoryAdvanced(
+                persist_directory=str(config.memory_storage_path)
+            )
+
             # Initialize components
-            self.conversation_system = IntegratedConversationSystem(config)
-            self.project_manager = ProjectManager(config)
-            self.cost_monitor = CostMonitor(config)
+            self.conversation_system = IntegratedADAMSystem(
+                base_memory_system=base_memory,
+                conversation_dir=str(config.conversation_storage_path)
+            )
+            self.project_manager = ProjectManager(base_path="./data/adam_projects")
+            self.cost_monitor = CostMonitor(storage_path="./cost_tracking")
             
-            # Initialize conversation system
-            await self.conversation_system.initialize()
+            # Components are already initialized
             
             self.initialized = True
             logger.info("ADAM service initialized successfully")
