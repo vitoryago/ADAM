@@ -233,19 +233,20 @@ class QueryAnalyzer:
             for keyword in self.complex_indicators.get('code_generation', [])
         ) or self._contains_code(query)
         
-        # Model preferences by complexity - OpenAI for speed, Grok for quality
+        # Model preferences by complexity - Fast Grok models for everything
         if complexity == QueryComplexity.HIGH:
             if is_code_task:
-                # Use grok-4-reasoning for code generation tasks
-                model_preferences = ['grok-4-reasoning', 'grok-4', 'o4-mini-high']
+                # Use grok-4-fast-reasoning for code generation tasks
+                model_preferences = ['grok-4-fast-reasoning', 'grok-4-reasoning', 'grok-4', 'o4-mini-high']
             else:
-                # Use grok-4 for complex reasoning tasks
-                model_preferences = ['grok-4', 'grok-4-reasoning', 'o4-mini-high']
+                # Use grok-4-fast-reasoning for complex reasoning tasks
+                model_preferences = ['grok-4-fast-reasoning', 'grok-4-reasoning', 'grok-4', 'o4-mini-high']
         elif complexity == QueryComplexity.MEDIUM:
-            model_preferences = ['grok-4', 'gpt-4', 'gpt-4o-mini']  # Grok-4 for reliable medium queries
+            # Use fast non-reasoning for medium queries
+            model_preferences = ['grok-4-fast-non-reasoning', 'grok-4', 'gpt-4', 'gpt-4o-mini']
         else:  # LOW complexity
-            # PREFER OPENAI for instant responses on basic queries
-            model_preferences = ['gpt-4.1-mini-2025-04-14', 'gpt-4o-mini', 'gpt-3.5-turbo', 'grok-3-mini']
+            # Use fast non-reasoning for basic queries
+            model_preferences = ['grok-4-fast-non-reasoning', 'gpt-4.1-mini-2025-04-14', 'gpt-4o-mini', 'gpt-3.5-turbo', 'grok-3-mini']
         
         # Find first available model from preferences
         for preferred_model in model_preferences:

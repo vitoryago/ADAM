@@ -73,39 +73,39 @@ class LLMConfig:
                 supports_vision=True,  # Can route to vision models
                 cost_per_1k_tokens=0.002  # Average cost estimate
             ),
-            "grok-4-reasoning": ModelConfig(
-                name="grok-4-reasoning",
+            "grok-4-fast-reasoning": ModelConfig(
+                name="grok-4-fast-reasoning",
                 provider=ModelProvider.GROK,
-                api_name="grok-4",
+                api_name="grok-4-fast-reasoning",
                 capabilities=[
                     ModelCapability.REASONING,
                     ModelCapability.COMPLEX_ANALYSIS,
                     ModelCapability.CODE_GENERATION
                 ],
-                supports_reasoning=False,  # grok-4 doesn't have reasoning_effort param
+                supports_reasoning=False,  # grok-4-fast doesn't have reasoning_effort param
                 reasoning_param=None,  # Use as high-power model without param
                 max_tokens=128000,  # Use more of the 256K available context
                 supports_streaming=True,
-                supports_vision=True,  # grok-4 supports image input
+                supports_vision=True,  # grok-4-fast supports image input
                 cost_per_1k_tokens=0.009,  # Average of input/output for backward compatibility
                 cost_per_1k_input_tokens=0.003,  # $3.00/1M input tokens
                 cost_per_1k_output_tokens=0.015   # $15.00/1M output tokens
             ),
             
-            "grok-4": ModelConfig(
-                name="grok-4",
+            "grok-4-fast-non-reasoning": ModelConfig(
+                name="grok-4-fast-non-reasoning",
                 provider=ModelProvider.GROK,
-                api_name="grok-4",
+                api_name="grok-4-fast-non-reasoning",
                 capabilities=[
-                    ModelCapability.REASONING,
-                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA,
                     ModelCapability.CODE_GENERATION
                 ],
-                supports_reasoning=True,
-                reasoning_param=None,  # grok-4 standard mode
+                supports_reasoning=False,
+                reasoning_param=None,  # grok-4-fast standard mode
                 max_tokens=128000,  # Use more of the 256K available context
                 supports_streaming=True,
-                supports_vision=True  # grok-4 supports image input
+                supports_vision=True  # grok-4-fast supports image input
             ),
             
             # Fast, low-latency model for basic queries
@@ -271,14 +271,19 @@ class LLMConfig:
                 cost_per_1k_output_tokens=0.0005  # $0.50 per 1M tokens
             )
         }
-        
+
+        # Add backward compatibility aliases for old model names
+        # These point to the new fast models
+        self.models["grok-4-reasoning"] = self.models["grok-4-fast-reasoning"]
+        self.models["grok-4"] = self.models["grok-4-fast-non-reasoning"]
+
         # Default model selection rules - balance speed and intelligence
         self.default_models = {
-            "complex": "grok-4-reasoning",           # For complex queries requiring deep thinking
-            "medium": "grok-4",                     # For standard queries (Grok-4 is more reliable)
-            "fast": "gpt-4.1-mini-2025-04-14",     # For basic queries (latest mini model)
-            "reasoning": "grok-4-reasoning",        # For deep reasoning
-            "code": "grok-4-reasoning"              # Code generation
+            "complex": "grok-4-fast-reasoning",           # For complex queries requiring deep thinking
+            "medium": "grok-4-fast-non-reasoning",       # For standard queries (fast version)
+            "fast": "grok-4-fast-non-reasoning",         # For basic queries (fast non-reasoning)
+            "reasoning": "grok-4-fast-reasoning",        # For deep reasoning
+            "code": "grok-4-fast-reasoning"              # Code generation
         }
     
     def get_api_key(self, provider: ModelProvider) -> Optional[str]:
@@ -324,7 +329,7 @@ class LLMConfig:
 SETUP_INSTRUCTIONS = """
 To use ADAM's LLM capabilities, you need to set up your API keys:
 
-1. For Grok models (grok-4, grok-4-reasoning):
+1. For Grok models (grok-4-fast-reasoning, grok-4-fast-non-reasoning):
    export XAI_API_KEY="your-xai-api-key-here"
    
 2. For OpenAI models (o4-mini, gpt-4, gpt-3.5-turbo):

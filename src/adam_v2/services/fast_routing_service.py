@@ -65,8 +65,8 @@ Route strictly based on these rules:
 - "fast": ONLY greetings (hi/hello/thanks), yes/no questions, simple acknowledgments
 
 IMPORTANT routing priorities:
-1. If mentions DBT, PDT, SQL, model, table, query, data → ALWAYS "standard" (use grok-4)
-2. If asks to create/write/implement code or debug → "reasoning" (use grok-4-reasoning) 
+1. If mentions DBT, PDT, SQL, model, table, query, data → ALWAYS "standard" (use grok-4-fast-non-reasoning)
+2. If asks to create/write/implement code or debug → "reasoning" (use grok-4-fast-reasoning)
 3. If technical question or requires analysis → "standard"
 4. ONLY use "fast" for trivial greetings or one-word answers
 
@@ -86,15 +86,15 @@ Respond with ONLY valid JSON:
             # Parse response
             result = json.loads(response.content.strip())
             
-            # Map to our models - balance speed and intelligence
+            # Map to our models - using fast Grok models
             model_mapping = {
-                "fast": "gpt-4o-mini",               # OpenAI mini for simple responses
-                "standard": "grok-4",                # Grok-4 for medium complexity (better than o4-mini)
-                "reasoning": "grok-4-reasoning"      # Keep Grok for code/complex reasoning
+                "fast": "grok-4-fast-non-reasoning",      # Fast non-reasoning for simple responses
+                "standard": "grok-4-fast-non-reasoning",  # Fast non-reasoning for medium complexity
+                "reasoning": "grok-4-fast-reasoning"       # Fast reasoning for code/complex tasks
             }
             
             decision = {
-                "model": model_mapping.get(result["model_tier"], "grok-4"),  # Default to grok-4 if tier unknown
+                "model": model_mapping.get(result["model_tier"], "grok-4-fast-non-reasoning"),  # Default to fast non-reasoning if tier unknown
                 "needs_dbt": result.get("needs_dbt", False),
                 "needs_sql": result.get("needs_sql", False),
                 "confidence": result.get("confidence", 0.8),
