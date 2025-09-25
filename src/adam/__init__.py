@@ -13,6 +13,7 @@ from .langgraph_conversation import (
     MemoryConfidenceScorer
 )
 from .integrated_conversation_system import IntegratedADAMSystem
+from .system import ADAMSystem, ADAMMemoryAdvanced
 
 # New coworker components
 from .project_manager import ProjectManager, Project
@@ -22,8 +23,13 @@ from .memory.project import ProjectAwareMemory
 __version__ = "3.1.0"  # Version bump for coworker features
 
 __all__ = [
+    # Main system
+    'ADAMSystem',
+    'ADAMMemoryAdvanced',
+
+    # Core conversation system
     'ConversationSystem',
-    'ConversationSession', 
+    'ConversationSession',
     'ConversationExchange',
     'ConversationAwareMemorySystem',
     'MemoryNetworkSystem',
@@ -34,6 +40,7 @@ __all__ = [
     'QueryComplexityAnalyzer',
     'MemoryConfidenceScorer',
     'IntegratedADAMSystem',
+
     # New coworker components
     'ProjectManager',
     'Project',
