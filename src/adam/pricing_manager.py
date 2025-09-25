@@ -53,9 +53,12 @@ class PricingManager:
         # These match the actual pricing as of 2024
         self._default_prices = {
             "grok-3-mini-high": {"input": 0.15, "output": 0.60},       # ~$0.20/1K avg
-            "grok-4-reasoning": {"input": 5.0, "output": 15.0},             # ~$10/1K avg
-            "o3": {"input": 15.0, "output": 60.0},                          # ~$37.50/1K avg (kept for compatibility)
-            "claude-opus-4": {"input": 15.0, "output": 75.0}                # ~$45/1K avg (kept for compatibility)
+            "grok-4-fast-reasoning": {"input": 5.0, "output": 15.0},       # ~$10/1K avg
+            "grok-4-fast-non-reasoning": {"input": 3.0, "output": 10.0},  # ~$6.50/1K avg
+            "grok-4-reasoning": {"input": 5.0, "output": 15.0},           # ~$10/1K avg (kept for compatibility)
+            "grok-4": {"input": 3.0, "output": 10.0},                     # ~$6.50/1K avg (kept for compatibility)
+            "o3": {"input": 15.0, "output": 60.0},                        # ~$37.50/1K avg (kept for compatibility)
+            "claude-opus-4": {"input": 15.0, "output": 75.0}              # ~$45/1K avg (kept for compatibility)
         }
         
         # API endpoints for pricing

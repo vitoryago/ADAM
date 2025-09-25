@@ -102,7 +102,9 @@ class IntegratedADAMSystem:
         self.total_cost = 0.0
         # Costs per token (divide per-million prices by 1M)
         self.cost_per_model = {
-            "grok-3-mini-reasoning-high": 0.0000004,  # $0.4/M tokens
+            "grok-4-fast-reasoning": 0.00001,         # $10/M tokens
+            "grok-4-fast-non-reasoning": 0.0000065,   # $6.5/M tokens
+            "grok-3-mini-reasoning-high": 0.0000004,  # $0.4/M tokens (kept for compatibility)
             "o3": 0.000005,                           # $5/M tokens
             "claude-opus-4": 0.000045                 # $45/M tokens
         }
@@ -119,7 +121,9 @@ class IntegratedADAMSystem:
         Temperature is set to 0.7 for balanced creativity/accuracy.
         """
         self.llms = {
-            "grok-3-mini-reasoning-high": None,  # TODO: Initialize X.AI client when available
+            "grok-4-fast-reasoning": None,        # TODO: Initialize X.AI client for fast reasoning
+            "grok-4-fast-non-reasoning": None,    # TODO: Initialize X.AI client for fast non-reasoning
+            "grok-3-mini-reasoning-high": None,   # TODO: Initialize X.AI client when available
             "o3": ChatOpenAI(model="o3", temperature=0.7),  # O3 reasoning model
             "claude-opus-4": ChatAnthropic(model="claude-3-opus-20240229", temperature=0.7)
         }
@@ -211,7 +215,7 @@ class IntegratedADAMSystem:
             memory_age_days=None,             # Age of memory in days
             should_verify=False,              # Whether to check freshness
             should_use_memory=False,          # Final decision on memory usage
-            selected_model="grok-3-mini-reasoning-high",  # Default model
+            selected_model="grok-4-fast-non-reasoning",  # Default to fast non-reasoning
             response=None,                    # Generated response
             total_cost=0.0,                   # Accumulated cost
             retry_count=0,                    # Error retry counter
@@ -346,27 +350,27 @@ class IntegratedADAMSystem:
         we can use a cheaper model even for complex queries since we're
         augmenting with proven past knowledge.
         """
-        # Base routing on complexity
+        # Base routing on complexity using fast models
         if state["complexity"] == "simple":
-            state["selected_model"] = "grok-3-mini-reasoning-high"
+            state["selected_model"] = "grok-4-fast-non-reasoning"
         elif state["complexity"] == "moderate":
-            state["selected_model"] = "grok-3-mini-reasoning-high"
+            state["selected_model"] = "grok-4-fast-non-reasoning"
         else:  # complex
             # Detect coding tasks for Claude specialization
             query_lower = state["query"].lower()
             coding_keywords = ["implement", "code", "write", "create function", "build"]
             
             if any(word in query_lower for word in coding_keywords):
-                state["selected_model"] = "claude-opus-4"  # Best for code
+                state["selected_model"] = "grok-4-fast-reasoning"  # Fast reasoning for code
             else:
-                state["selected_model"] = "o3"  # Best for complex reasoning
+                state["selected_model"] = "grok-4-fast-reasoning"  # Fast reasoning for complex
         
         # Cost optimization: High-confidence memory allows model downgrade
         # This saves money without sacrificing quality
-        if (state.get("should_use_memory", False) and 
-            state["memory_confidence"] > 0.9 and 
+        if (state.get("should_use_memory", False) and
+            state["memory_confidence"] > 0.9 and
             state["complexity"] == "complex"):
-            state["selected_model"] = "grok-3-mini-reasoning-high"
+            state["selected_model"] = "grok-4-fast-non-reasoning"
             logger.info("Using simpler model due to high memory confidence")
         
         logger.info(f"Selected model: {state['selected_model']}")
@@ -404,7 +408,7 @@ class IntegratedADAMSystem:
             llm = self.llms[state["selected_model"]]
             
             # Generate response based on model type
-            if state["selected_model"] == "grok-3-mini-reasoning-high":
+            if state["selected_model"] in ["grok-4-fast-reasoning", "grok-4-fast-non-reasoning", "grok-3-mini-reasoning-high"]:
                 # TODO: Implement X.AI Grok integration
                 # Grok excels at step-by-step reasoning
                 response = f"[Grok-3 would provide reasoning here for: {state['query'][:50]}...]"

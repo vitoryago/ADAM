@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 class ModelTier(Enum):
     """Available model tiers with associated models"""
-    REASONING = "grok-4-reasoning"  # Most expensive, highest capability
-    STANDARD = "grok-4"             # Balanced performance
-    FAST = "gpt-4o-mini"       # Cheapest, fastest (LOW latency)
+    REASONING = "grok-4-fast-reasoning"      # Fast reasoning for complex tasks and code
+    STANDARD = "grok-4-fast-non-reasoning"   # Fast non-reasoning for intermediate tasks
+    FAST = "grok-4-fast-non-reasoning"       # Fast non-reasoning for basic queries
     
     # Additional options for router
     ROUTER = "claude-3-5-haiku-20241022"  # Fast, cheap router
