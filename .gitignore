@@ -34,6 +34,9 @@ secrets/
 credentials/
 api_keys.json
 config/secrets.yaml
+.env.unified
+.env.production
+.env.development
 
 # Memory and Conversation Data
 adam_memory/
