@@ -8,9 +8,10 @@ venv/
 env/
 ENV/
 
-# IDEs
+# IDEs and Claude Code
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 *~
