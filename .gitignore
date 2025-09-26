@@ -23,11 +23,15 @@ ENV/
 *.env
 **/**/attached_assets/*.env
 **/**/attached_assets/*api*
+**/**/attached_assets/*config*
 **/python_backend/.env
 **/.env
 **/config.json
 **/secrets.json
 **/api_keys.json
+# Specific files with potential API key exposure
+frontend/AdamChat/attached_assets/
+frontend/AdamChat/attached_assets/_*.env
 *.log
 logs/
 *.db
