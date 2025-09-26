@@ -82,14 +82,19 @@ def main():
                 context = "\n".join([m.get('content', '') for m in memory_results])
 
             # Get response from LLM
-            response = asyncio.run(llm_client.complete(user_input, context=context))
+            response = asyncio.run(llm_client.complete(user_input, system_prompt=context if context else None))
 
-            console.print(response)
+            # Display the response content
+            if hasattr(response, 'content'):
+                console.print(f"[cyan]{response.content}[/cyan]")
+            else:
+                console.print(response)
 
             # Store in memory if significant
             if len(user_input.split()) > 5:
+                response_text = response.content if hasattr(response, 'content') else str(response)
                 memory_system.add_memory(
-                    content=f"Q: {user_input}\nA: {response}",
+                    content=f"Q: {user_input}\nA: {response_text}",
                     metadata={
                         'type': 'conversation',
                         'source': 'cli_complete'

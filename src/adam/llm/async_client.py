@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Import model-specific SDKs
 try:
-    from xai_sdk import AsyncClient as XAIAsyncClient
+    from xai_sdk import Client as XAIClient
     XAI_AVAILABLE = True
 except ImportError:
     XAI_AVAILABLE = False
@@ -108,13 +108,14 @@ class AsyncLLMClient:
     async def _initialize_async_clients(self):
         """Initialize async API clients for available providers"""
 
-        # Initialize xAI async client
-        if XAI_AVAILABLE and self.config.get_api_key("grok"):
+        from adam.llm.config import ModelProvider
+
+        # Initialize xAI client (synchronous, will wrap in async)
+        if XAI_AVAILABLE and self.config.get_api_key(ModelProvider.GROK):
             try:
-                self.clients[AsyncLLMProvider.XAI] = XAIAsyncClient(
+                self.clients[AsyncLLMProvider.XAI] = XAIClient(
                     api_host="api.x.ai",
-                    api_key=self.config.get_api_key("grok"),
-                    timeout=3600
+                    api_key=self.config.get_api_key(ModelProvider.GROK)
                 )
                 self._client_locks[AsyncLLMProvider.XAI] = asyncio.Semaphore(5)  # Limit concurrent requests
                 logger.info("Initialized xAI async client")
@@ -122,10 +123,10 @@ class AsyncLLMClient:
                 logger.error(f"Failed to initialize xAI client: {e}")
 
         # Initialize OpenAI async client
-        if OPENAI_AVAILABLE and self.config.get_api_key("openai"):
+        if OPENAI_AVAILABLE and self.config.get_api_key(ModelProvider.OPENAI):
             try:
                 self.clients[AsyncLLMProvider.OPENAI] = AsyncOpenAI(
-                    api_key=self.config.get_api_key("openai"),
+                    api_key=self.config.get_api_key(ModelProvider.OPENAI),
                     timeout=300.0
                 )
                 self._client_locks[AsyncLLMProvider.OPENAI] = asyncio.Semaphore(10)
@@ -134,10 +135,10 @@ class AsyncLLMClient:
                 logger.error(f"Failed to initialize OpenAI client: {e}")
 
         # Initialize Anthropic async client
-        if ANTHROPIC_AVAILABLE and self.config.get_api_key("anthropic"):
+        if ANTHROPIC_AVAILABLE and self.config.get_api_key(ModelProvider.ANTHROPIC):
             try:
                 self.clients[AsyncLLMProvider.ANTHROPIC] = AsyncAnthropic(
-                    api_key=self.config.get_api_key("anthropic"),
+                    api_key=self.config.get_api_key(ModelProvider.ANTHROPIC),
                     timeout=300.0
                 )
                 self._client_locks[AsyncLLMProvider.ANTHROPIC] = asyncio.Semaphore(5)
@@ -256,29 +257,42 @@ class AsyncLLMClient:
         **kwargs
     ) -> AsyncLLMResponse:
         """Complete request using xAI"""
+        from xai_sdk.chat import user, system
+
         client = self.clients[AsyncLLMProvider.XAI]
 
         messages = []
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+            messages.append(system(system_prompt))
+        messages.append(user(prompt))
 
         try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens or 4096,
-                **kwargs
+            # XAI SDK uses synchronous API, wrap in asyncio
+            import asyncio
+
+            # Create the chat instance and sample it
+            def _create_and_sample():
+                chat = client.chat.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens or 4096,
+                    **kwargs
+                )
+                return chat.sample()
+
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                _create_and_sample
             )
 
             return AsyncLLMResponse(
-                content=response.choices[0].message.content,
+                content=response.content,
                 model=model,
                 provider="xai",
                 total_tokens=response.usage.total_tokens if hasattr(response, 'usage') else 0,
                 completion_tokens=response.usage.completion_tokens if hasattr(response, 'usage') else 0,
-                raw_response=response.model_dump() if hasattr(response, 'model_dump') else None
+                raw_response=None  # XAI Response doesn't have model_dump
             )
 
         except Exception as e:
