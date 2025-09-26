@@ -72,7 +72,10 @@
       "Bash(sed:*)",
       "Bash(xargs:*)",
       "Bash(pip uninstall:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__read_text_file",
+      "Bash(adam-chat:*)"
     ],
     "deny": []
   }
