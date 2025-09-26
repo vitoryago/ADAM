@@ -15,9 +15,19 @@ ENV/
 *.swo
 *~
 
-# Project specific
+# Project specific - API Keys and Sensitive Data
 .env
 .env.local
+.env.production
+.env.development
+*.env
+**/**/attached_assets/*.env
+**/**/attached_assets/*api*
+**/python_backend/.env
+**/.env
+**/config.json
+**/secrets.json
+**/api_keys.json
 *.log
 logs/
 *.db
