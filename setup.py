@@ -13,8 +13,8 @@ long_description = (this_directory / "README.md").read_text()
 setup(
     name="adam-assistant",
     version="2.0.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="ADAM Development Team",
+    author_email="adam@example.com",
     description="Analytics Data Assistant with Memory - An intelligent AI assistant with conversation tracking and memory networks",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -47,6 +47,9 @@ setup(
         "rich>=13.0.0",
         "pyttsx3>=2.90",
         "python-dotenv>=1.0.0",
+        "xai-sdk>=0.1.0",
+        "fastapi>=0.104.0",
+        "uvicorn>=0.24.0",
     ],
     extras_require={
         "dev": [
@@ -67,7 +70,9 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "adam=adam_v2_memory:main",
+            "adam-chat=adam.cli.chat:main",
+            "adam-complete=adam.cli.complete:main",
+            "adam-server=adam.cli.server:main",
         ],
     },
 )
