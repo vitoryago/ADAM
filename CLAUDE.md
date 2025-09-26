@@ -91,9 +91,9 @@ Create `.env` file in project root with:
 
 ```bash
 # Required API Keys
-OPENAI_API_KEY=your_key        # For GPT models and Whisper
-GROK_API_KEY=your_key          # For Grok models
-ELEVENLABS_API_KEY=your_key    # For text-to-speech
+OPENAI_API_KEY=your_openai_api_key_here        # For GPT models and Whisper
+XAI_API_KEY=your_xai_api_key_here              # For Grok models
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here    # For text-to-speech
 
 # Optional: Model Preferences
 USE_GROK=true                  # Enable Grok models

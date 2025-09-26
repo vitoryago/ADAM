@@ -330,16 +330,16 @@ SETUP_INSTRUCTIONS = """
 To use ADAM's LLM capabilities, you need to set up your API keys:
 
 1. For Grok models (grok-4-fast-reasoning, grok-4-fast-non-reasoning):
-   export XAI_API_KEY="your-xai-api-key-here"
+   export XAI_API_KEY="your_xai_api_key_here"
    
 2. For OpenAI models (o4-mini, gpt-4, gpt-3.5-turbo):
-   export OPENAI_API_KEY="your-openai-api-key-here"
+   export OPENAI_API_KEY="your_openai_api_key_here"
 
 You can add these to your shell profile (~/.bashrc, ~/.zshrc) or create a .env file:
 
 # .env file in ADAM root directory
-XAI_API_KEY=your-xai-api-key-here
-OPENAI_API_KEY=your-openai-api-key-here
+XAI_API_KEY=your_xai_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
 
 Then load with python-dotenv:
 from dotenv import load_dotenv

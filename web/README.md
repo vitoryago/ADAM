@@ -48,8 +48,8 @@ pip install -r requirements_web.txt
 ## Environment Setup
 Create a `.env` file with:
 ```
-XAI_API_KEY=your-grok-api-key
-OPENAI_API_KEY=your-openai-api-key
+XAI_API_KEY=your_xai_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
 ## Quick Start

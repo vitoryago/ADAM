@@ -118,9 +118,9 @@ python_backend/
 
 ```bash
 # API Keys - Get these from respective providers
-OPENAI_API_KEY=sk-...                    # For O1 models
-ANTHROPIC_API_KEY=sk-ant-...             # For Claude models  
-XAI_API_KEY=xai-...                      # For Grok models
+OPENAI_API_KEY=your_openai_api_key_here                    # For O1 models
+ANTHROPIC_API_KEY=your_anthropic_api_key_here             # For Claude models  
+XAI_API_KEY=your_xai_api_key_here                      # For Grok models
 
 # Model Selection
 DEFAULT_SIMPLE_MODEL=grok-3-mini-reasoning-high

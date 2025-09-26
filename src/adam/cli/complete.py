@@ -109,7 +109,7 @@ def main():
             console.print(f"\n[red]Error: {e}[/red]")
             console.print("\n[yellow]Troubleshooting:[/yellow]")
             console.print("1. Create a .env file in your project root with:")
-            console.print("   [dim]GROK_API_KEY=your_grok_api_key_here[/dim]")
+            console.print("   [dim]XAI_API_KEY=your_xai_api_key_here[/dim]")
             console.print("   [dim]OPENAI_API_KEY=your_openai_api_key_here[/dim]")
             console.print("2. Install missing dependencies: [dim]pip install -e . --force-reinstall[/dim]")
             console.print("3. Check that your API keys are valid and have credits")

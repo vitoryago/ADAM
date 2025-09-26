@@ -57,7 +57,7 @@ def main():
                 print(f"Sorry, I couldn't process that request: {e}")
                 print("\nTroubleshooting:")
                 print("1. Create a .env file in your project root with:")
-                print("   GROK_API_KEY=your_grok_api_key_here")
+                print("   XAI_API_KEY=your_xai_api_key_here")
                 print("   OPENAI_API_KEY=your_openai_api_key_here")
                 print("2. Install missing dependencies: pip install -e . --force-reinstall")
                 print("3. Check that your API keys are valid and have credits")

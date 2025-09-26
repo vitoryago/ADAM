@@ -370,8 +370,8 @@ if __name__ == "__main__":
     if not (has_grok or has_openai):
         print("Error: No API keys found!")
         print("\nPlease set at least one of these in your .env file:")
-        print("  XAI_API_KEY=your-grok-api-key")
-        print("  OPENAI_API_KEY=your-openai-api-key")
+        print("  XAI_API_KEY=your_xai_api_key_here")
+        print("  OPENAI_API_KEY=your_openai_api_key_here")
         sys.exit(1)
     
     # Run the chat interface
