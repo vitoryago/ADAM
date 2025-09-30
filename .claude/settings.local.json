@@ -77,7 +77,10 @@
       "mcp__filesystem__read_text_file",
       "Bash(adam-chat:*)",
       "Bash(adam-complete:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Read(//Users/vitoryago/de-dbt-gatekeeper/**)",
+      "Bash(dbt compile:*)",
+      "Bash(dbt parse:*)"
     ],
     "deny": []
   }

@@ -1,0 +1,197 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+    "dbt_version": "1.8.0",
+    "generated_at": "2025-09-30T12:00:00.000000Z",
+    "project_name": "demo_analytics"
+  },
+  "nodes": {
+    "model.demo_analytics.stg_customers": {
+      "resource_type": "model",
+      "unique_id": "model.demo_analytics.stg_customers",
+      "name": "stg_customers",
+      "description": "Staging model for customer data with basic cleaning and standardization",
+      "database": "analytics_db",
+      "schema": "staging",
+      "alias": "stg_customers",
+      "raw_sql": "WITH source_data AS (\n    SELECT\n        customer_id,\n        first_name,\n        last_name,\n        email,\n        phone,\n        created_at,\n        updated_at,\n        account_status,\n        customer_segment\n    FROM {{ source('ecommerce', 'raw_customers') }}\n    WHERE updated_at >= DATEADD(day, -30, CURRENT_DATE)\n),\n\ncleaned AS (\n    SELECT\n        customer_id,\n        TRIM(UPPER(first_name)) AS first_name,\n        TRIM(UPPER(last_name)) AS last_name,\n        LOWER(TRIM(email)) AS email,\n        phone,\n        created_at,\n        updated_at,\n        CASE\n            WHEN account_status = 'active' THEN 'ACTIVE'\n            WHEN account_status = 'inactive' THEN 'INACTIVE'\n            WHEN account_status = 'suspended' THEN 'SUSPENDED'\n            ELSE 'UNKNOWN'\n        END AS account_status,\n        customer_segment,\n        CONCAT(first_name, ' ', last_name) AS full_name,\n        DATEDIFF(day, created_at, CURRENT_DATE) AS days_since_signup\n    FROM source_data\n)\n\nSELECT * FROM cleaned",
+      "compiled_sql": "WITH source_data AS (\n    SELECT\n        customer_id,\n        first_name,\n        last_name,\n        email,\n        phone,\n        created_at,\n        updated_at,\n        account_status,\n        customer_segment\n    FROM raw_data.ecommerce.raw_customers\n    WHERE updated_at >= DATEADD(day, -30, CURRENT_DATE)\n),\n\ncleaned AS (\n    SELECT\n        customer_id,\n        TRIM(UPPER(first_name)) AS first_name,\n        TRIM(UPPER(last_name)) AS last_name,\n        LOWER(TRIM(email)) AS email,\n        phone,\n        created_at,\n        updated_at,\n        CASE\n            WHEN account_status = 'active' THEN 'ACTIVE'\n            WHEN account_status = 'inactive' THEN 'INACTIVE'\n            WHEN account_status = 'suspended' THEN 'SUSPENDED'\n            ELSE 'UNKNOWN'\n        END AS account_status,\n        customer_segment,\n        CONCAT(first_name, ' ', last_name) AS full_name,\n        DATEDIFF(day, created_at, CURRENT_DATE) AS days_since_signup\n    FROM source_data\n)\n\nSELECT * FROM cleaned",
+      "depends_on": {
+        "nodes": ["source.demo_analytics.ecommerce.raw_customers"]
+      },
+      "config": {
+        "materialized": "view",
+        "tags": ["staging", "customers"]
+      },
+      "tags": ["staging", "customers"],
+      "columns": {
+        "customer_id": {
+          "name": "customer_id",
+          "description": "Unique identifier for customer",
+          "data_type": "integer"
+        },
+        "full_name": {
+          "name": "full_name",
+          "description": "Customer full name",
+          "data_type": "varchar"
+        },
+        "email": {
+          "name": "email",
+          "description": "Customer email address",
+          "data_type": "varchar"
+        }
+      }
+    },
+    "model.demo_analytics.stg_orders": {
+      "resource_type": "model",
+      "unique_id": "model.demo_analytics.stg_orders",
+      "name": "stg_orders",
+      "description": "Staging model for order transactions",
+      "database": "analytics_db",
+      "schema": "staging",
+      "alias": "stg_orders",
+      "raw_sql": "WITH source_data AS (\n    SELECT *\n    FROM {{ source('ecommerce', 'raw_orders') }}\n    WHERE order_date >= DATEADD(day, -90, CURRENT_DATE)\n),\n\ncleaned AS (\n    SELECT\n        order_id,\n        customer_id,\n        order_date,\n        order_status,\n        total_amount,\n        discount_amount,\n        tax_amount,\n        shipping_amount,\n        payment_method,\n        shipping_address_id,\n        billing_address_id,\n        created_at,\n        updated_at\n    FROM source_data\n    WHERE order_status NOT IN ('cancelled', 'fraud')\n)\n\nSELECT * FROM cleaned",
+      "compiled_sql": "WITH source_data AS (\n    SELECT *\n    FROM raw_data.ecommerce.raw_orders\n    WHERE order_date >= DATEADD(day, -90, CURRENT_DATE)\n),\n\ncleaned AS (\n    SELECT\n        order_id,\n        customer_id,\n        order_date,\n        order_status,\n        total_amount,\n        discount_amount,\n        tax_amount,\n        shipping_amount,\n        payment_method,\n        shipping_address_id,\n        billing_address_id,\n        created_at,\n        updated_at\n    FROM source_data\n    WHERE order_status NOT IN ('cancelled', 'fraud')\n)\n\nSELECT * FROM cleaned",
+      "depends_on": {
+        "nodes": ["source.demo_analytics.ecommerce.raw_orders"]
+      },
+      "config": {
+        "materialized": "view",
+        "tags": ["staging", "orders"]
+      },
+      "tags": ["staging", "orders"],
+      "columns": {
+        "order_id": {
+          "name": "order_id",
+          "description": "Unique identifier for order",
+          "data_type": "integer"
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "description": "Foreign key to customers",
+          "data_type": "integer"
+        }
+      }
+    },
+    "model.demo_analytics.stg_order_items": {
+      "resource_type": "model",
+      "unique_id": "model.demo_analytics.stg_order_items",
+      "name": "stg_order_items",
+      "description": "Staging model for order line items",
+      "database": "analytics_db",
+      "schema": "staging",
+      "alias": "stg_order_items",
+      "raw_sql": "SELECT\n    order_item_id,\n    order_id,\n    product_id,\n    quantity,\n    unit_price,\n    discount_amount,\n    total_price,\n    created_at\nFROM {{ source('ecommerce', 'raw_order_items') }}",
+      "compiled_sql": "SELECT\n    order_item_id,\n    order_id,\n    product_id,\n    quantity,\n    unit_price,\n    discount_amount,\n    total_price,\n    created_at\nFROM raw_data.ecommerce.raw_order_items",
+      "depends_on": {
+        "nodes": ["source.demo_analytics.ecommerce.raw_order_items"]
+      },
+      "config": {
+        "materialized": "view",
+        "tags": ["staging", "orders"]
+      },
+      "tags": ["staging", "orders"],
+      "columns": {}
+    },
+    "model.demo_analytics.fct_customer_orders": {
+      "resource_type": "model",
+      "unique_id": "model.demo_analytics.fct_customer_orders",
+      "name": "fct_customer_orders",
+      "description": "Fact table combining customer and order information with aggregated metrics for analytics",
+      "database": "analytics_db",
+      "schema": "marts",
+      "alias": "fct_customer_orders",
+      "raw_sql": "WITH customers AS (\n    SELECT * FROM {{ ref('stg_customers') }}\n),\n\norders AS (\n    SELECT * FROM {{ ref('stg_orders') }}\n),\n\norder_items AS (\n    SELECT * FROM {{ ref('stg_order_items') }}\n),\n\ncustomer_aggregates AS (\n    SELECT\n        o.customer_id,\n        COUNT(DISTINCT o.order_id) AS total_orders,\n        SUM(o.total_amount) AS lifetime_value,\n        AVG(o.total_amount) AS avg_order_value,\n        MAX(o.order_date) AS last_order_date,\n        MIN(o.order_date) AS first_order_date,\n        DATEDIFF(day, MIN(o.order_date), MAX(o.order_date)) AS customer_lifetime_days\n    FROM orders o\n    GROUP BY o.customer_id\n),\n\norder_details AS (\n    SELECT\n        o.order_id,\n        o.customer_id,\n        c.full_name,\n        c.email,\n        c.customer_segment,\n        c.account_status,\n        o.order_date,\n        o.order_status,\n        o.total_amount,\n        o.discount_amount,\n        o.tax_amount,\n        o.shipping_amount,\n        o.payment_method,\n        ca.total_orders,\n        ca.lifetime_value,\n        ca.avg_order_value,\n        ca.last_order_date,\n        ca.first_order_date,\n        ca.customer_lifetime_days,\n        ROW_NUMBER() OVER (PARTITION BY o.customer_id ORDER BY o.order_date) AS customer_order_number,\n        CASE\n            WHEN ca.total_orders = 1 THEN 'First Time'\n            WHEN ca.total_orders BETWEEN 2 AND 5 THEN 'Regular'\n            WHEN ca.total_orders > 5 THEN 'VIP'\n            ELSE 'Unknown'\n        END AS customer_tier\n    FROM orders o\n    INNER JOIN customers c ON o.customer_id = c.customer_id\n    LEFT JOIN customer_aggregates ca ON o.customer_id = ca.customer_id\n)\n\nSELECT * FROM order_details",
+      "compiled_sql": "WITH customers AS (\n    SELECT * FROM analytics_db.staging.stg_customers\n),\n\norders AS (\n    SELECT * FROM analytics_db.staging.stg_orders\n),\n\norder_items AS (\n    SELECT * FROM analytics_db.staging.stg_order_items\n),\n\ncustomer_aggregates AS (\n    SELECT\n        o.customer_id,\n        COUNT(DISTINCT o.order_id) AS total_orders,\n        SUM(o.total_amount) AS lifetime_value,\n        AVG(o.total_amount) AS avg_order_value,\n        MAX(o.order_date) AS last_order_date,\n        MIN(o.order_date) AS first_order_date,\n        DATEDIFF(day, MIN(o.order_date), MAX(o.order_date)) AS customer_lifetime_days\n    FROM orders o\n    GROUP BY o.customer_id\n),\n\norder_details AS (\n    SELECT\n        o.order_id,\n        o.customer_id,\n        c.full_name,\n        c.email,\n        c.customer_segment,\n        c.account_status,\n        o.order_date,\n        o.order_status,\n        o.total_amount,\n        o.discount_amount,\n        o.tax_amount,\n        o.shipping_amount,\n        o.payment_method,\n        ca.total_orders,\n        ca.lifetime_value,\n        ca.avg_order_value,\n        ca.last_order_date,\n        ca.first_order_date,\n        ca.customer_lifetime_days,\n        ROW_NUMBER() OVER (PARTITION BY o.customer_id ORDER BY o.order_date) AS customer_order_number,\n        CASE\n            WHEN ca.total_orders = 1 THEN 'First Time'\n            WHEN ca.total_orders BETWEEN 2 AND 5 THEN 'Regular'\n            WHEN ca.total_orders > 5 THEN 'VIP'\n            ELSE 'Unknown'\n        END AS customer_tier\n    FROM orders o\n    INNER JOIN customers c ON o.customer_id = c.customer_id\n    LEFT JOIN customer_aggregates ca ON o.customer_id = ca.customer_id\n)\n\nSELECT * FROM order_details",
+      "depends_on": {
+        "nodes": [
+          "model.demo_analytics.stg_customers",
+          "model.demo_analytics.stg_orders",
+          "model.demo_analytics.stg_order_items"
+        ]
+      },
+      "config": {
+        "materialized": "table",
+        "tags": ["mart", "daily"],
+        "dist": "customer_id",
+        "sort": "order_date"
+      },
+      "tags": ["mart", "daily"],
+      "columns": {
+        "order_id": {
+          "name": "order_id",
+          "description": "Unique identifier for each order",
+          "data_type": "integer"
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "description": "Foreign key to customer dimension",
+          "data_type": "integer"
+        },
+        "lifetime_value": {
+          "name": "lifetime_value",
+          "description": "Total amount spent by customer across all orders",
+          "data_type": "decimal"
+        },
+        "customer_tier": {
+          "name": "customer_tier",
+          "description": "Categorization based on order frequency",
+          "data_type": "varchar"
+        }
+      }
+    }
+  },
+  "sources": {
+    "source.demo_analytics.ecommerce.raw_customers": {
+      "resource_type": "source",
+      "unique_id": "source.demo_analytics.ecommerce.raw_customers",
+      "name": "raw_customers",
+      "source_name": "ecommerce",
+      "description": "Raw customer data from production database",
+      "database": "raw_data",
+      "schema": "ecommerce",
+      "tables": []
+    },
+    "source.demo_analytics.ecommerce.raw_orders": {
+      "resource_type": "source",
+      "unique_id": "source.demo_analytics.ecommerce.raw_orders",
+      "name": "raw_orders",
+      "source_name": "ecommerce",
+      "description": "Raw order transactions",
+      "database": "raw_data",
+      "schema": "ecommerce",
+      "tables": []
+    },
+    "source.demo_analytics.ecommerce.raw_order_items": {
+      "resource_type": "source",
+      "unique_id": "source.demo_analytics.ecommerce.raw_order_items",
+      "name": "raw_order_items",
+      "source_name": "ecommerce",
+      "description": "Raw order line items",
+      "database": "raw_data",
+      "schema": "ecommerce",
+      "tables": []
+    }
+  },
+  "tests": {
+    "test.demo_analytics.unique_stg_customers_customer_id": {
+      "resource_type": "test",
+      "unique_id": "test.demo_analytics.unique_stg_customers_customer_id",
+      "name": "unique_stg_customers_customer_id",
+      "test_metadata": {
+        "name": "unique"
+      },
+      "raw_sql": "SELECT customer_id, COUNT(*) FROM {{ ref('stg_customers') }} GROUP BY customer_id HAVING COUNT(*) > 1",
+      "compiled_sql": "SELECT customer_id, COUNT(*) FROM analytics_db.staging.stg_customers GROUP BY customer_id HAVING COUNT(*) > 1",
+      "depends_on": {
+        "nodes": ["model.demo_analytics.stg_customers"]
+      },
+      "column_name": "customer_id",
+      "config": {
+        "severity": "error"
+      }
+    }
+  },
+  "macros": {},
+  "exposures": {}
+}

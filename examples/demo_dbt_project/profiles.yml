@@ -1,0 +1,12 @@
+demo_profile:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: localhost
+      port: 5432
+      user: demo_user
+      pass: demo_pass
+      dbname: demo_db
+      schema: analytics
+      threads: 4
