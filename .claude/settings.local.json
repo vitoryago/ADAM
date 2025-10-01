@@ -80,7 +80,10 @@
       "Bash(awk:*)",
       "Read(//Users/vitoryago/de-dbt-gatekeeper/**)",
       "Bash(dbt compile:*)",
-      "Bash(dbt parse:*)"
+      "Bash(dbt parse:*)",
+      "Read(//Users/vitoryago/.dbt/**)",
+      "Read(//tmp/**)",
+      "Bash(lsof:*)"
     ],
     "deny": []
   }
