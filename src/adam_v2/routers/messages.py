@@ -83,7 +83,7 @@ async def send_message(
             try:
                 from services.advanced_memory_service import AdvancedMemoryService
                 memory_service = AdvancedMemoryService(project.id, project.name)
-                
+
                 # Use advanced search if available
                 # Don't filter by conversation_id to get memories across all conversations
                 memories = await memory_service.advanced_search(
@@ -101,13 +101,31 @@ async def send_message(
                     conversation_id=None,  # Search across all conversations in the project
                     limit=20  # Further increased to retrieve more relevant memories for better context
                 )
-            
+
             if memories:
                 memory_context = "\n\n=== Relevant Memories ===\n"
                 for mem in memories[:10]:  # Use up to 10 memories in context (was 3)  # Top 3 memories
                     memory_context += f"- {mem.content[:200]}...\n"
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}")
+
+    # Check for DBT questions and add context
+    dbt_context = ""
+    workspace_path = None
+    if message_data.workspace_context and message_data.workspace_context.get('workspaceFolder'):
+        workspace_path = message_data.workspace_context['workspaceFolder']
+
+    if workspace_path:
+        try:
+            from services.dbt_integration_service import get_dbt_integration_service
+            dbt_service = get_dbt_integration_service()
+
+            # Check if this is a DBT question
+            if dbt_service.is_dbt_question(message_data.content, workspace_path):
+                dbt_context = dbt_service.get_dbt_context(message_data.content, workspace_path)
+                logger.info(f"Added DBT context for question: {message_data.content[:50]}")
+        except Exception as e:
+            logger.warning(f"Error adding DBT context: {e}")
     
     # Check if VSCode sent workspace context with file content
     enhanced_content = message_data.content
@@ -216,12 +234,15 @@ Respond with ONLY valid JSON:
             logger.error(f"Error in onboarding processing: {e}")
             # Fall through to regular message handling
     
+    # Combine memory and DBT context
+    combined_context = memory_context + dbt_context
+
     # Generate AI response
     try:
         response = await llm_service.generate_response(
             message=enhanced_content,
             history=history,
-            memory_context=memory_context,
+            memory_context=combined_context,
             model=message_data.model,
             image_data=message_data.image_data if message_data.has_image else None,
             use_search=message_data.use_search,
