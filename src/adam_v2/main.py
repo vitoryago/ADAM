@@ -43,9 +43,17 @@ except ImportError:
 try:
     from routers import tools
     TOOLS_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError, AssertionError) as e:
     TOOLS_AVAILABLE = False
-    logger.info("Tools router not available")
+    logger.info(f"Tools router not available: {e}")
+
+# Import DBT router
+try:
+    from routes import dbt, dbt_assistant
+    DBT_AVAILABLE = True
+except ImportError:
+    DBT_AVAILABLE = False
+    logger.info("DBT router not available")
 
 
 @asynccontextmanager
@@ -100,6 +108,12 @@ if LINEAGE_AVAILABLE:
 # Include tools router
 if TOOLS_AVAILABLE:
     app.include_router(tools.router, prefix="/api", tags=["tools"])
+
+# Include DBT routers
+if DBT_AVAILABLE:
+    app.include_router(dbt.router, tags=["dbt"])
+    app.include_router(dbt_assistant.router, tags=["dbt-assistant"])
+    logger.info("DBT analyzer and assistant endpoints registered")
 
 
 @app.get("/api/health")
