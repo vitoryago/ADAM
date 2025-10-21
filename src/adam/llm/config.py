@@ -269,6 +269,26 @@ class LLMConfig:
                 cost_per_1k_tokens=0.001,  # Very cheap
                 cost_per_1k_input_tokens=0.0001,  # $0.10 per 1M tokens
                 cost_per_1k_output_tokens=0.0005  # $0.50 per 1M tokens
+            ),
+
+            # Claude Sonnet 4.5 - BEST for code generation
+            "claude-sonnet-4-5": ModelConfig(
+                name="claude-sonnet-4-5",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-sonnet-4-5-20250929",
+                capabilities=[
+                    ModelCapability.CODE_GENERATION,
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=8192,
+                supports_streaming=True,
+                supports_vision=True,
+                cost_per_1k_tokens=0.003,  # $3 per 1M input tokens, $15 per 1M output tokens average
+                cost_per_1k_input_tokens=0.003,
+                cost_per_1k_output_tokens=0.015
             )
         }
 
@@ -283,7 +303,7 @@ class LLMConfig:
             "medium": "grok-4-fast-non-reasoning",       # For standard queries (fast version)
             "fast": "grok-4-fast-non-reasoning",         # For basic queries (fast non-reasoning)
             "reasoning": "grok-4-fast-reasoning",        # For deep reasoning
-            "code": "grok-4-fast-reasoning"              # Code generation
+            "code": "claude-sonnet-4-5"                  # Code generation - use Claude Sonnet 4.5
         }
     
     def get_api_key(self, provider: ModelProvider) -> Optional[str]:

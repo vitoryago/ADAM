@@ -18,7 +18,10 @@ The project consists of four main components that interact:
 ### Key Architectural Patterns
 
 - **Memory System**: Dual-storage using SQLite for metadata and ChromaDB for vector embeddings with BM25 + semantic search
-- **Model Routing**: Automatic selection between grok-4-reasoning (complex), grok-4 (standard), and grok-3-mini-high (simple) based on query complexity
+- **Model Routing**: Intelligent automatic selection based on query complexity:
+  - **grok-4-fast-non-reasoning**: Low and medium complexity queries (default, fastest)
+  - **grok-4-fast-reasoning**: High complexity reasoning tasks
+  - **claude-sonnet-4-5-20250929**: Code generation and modification tasks (best for coding)
 - **Project Isolation**: Each project has its own memory space and conversation history
 - **Cost Optimization**: Smart routing reduces API costs by 63-89% through query analysis and caching
 
@@ -93,6 +96,7 @@ Create `.env` file in project root with:
 # Required API Keys
 OPENAI_API_KEY=your_openai_api_key_here        # For GPT models and Whisper
 XAI_API_KEY=your_xai_api_key_here              # For Grok models
+ANTHROPIC_API_KEY=your_anthropic_api_key_here  # For Claude models (code generation)
 ELEVENLABS_API_KEY=your_elevenlabs_api_key_here    # For text-to-speech
 
 # Optional: Model Preferences

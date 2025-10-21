@@ -233,11 +233,11 @@ class QueryAnalyzer:
             for keyword in self.complex_indicators.get('code_generation', [])
         ) or self._contains_code(query)
         
-        # Model preferences by complexity - Fast Grok models for everything
+        # Model preferences by complexity
         if complexity == QueryComplexity.HIGH:
             if is_code_task:
-                # Use grok-4-fast-reasoning for code generation tasks
-                model_preferences = ['grok-4-fast-reasoning', 'grok-4-reasoning', 'grok-4', 'o4-mini-high']
+                # Use Claude Sonnet 4.5 for code generation tasks
+                model_preferences = ['claude-sonnet-4-5', 'grok-4-fast-reasoning', 'grok-4-reasoning', 'grok-4', 'o4-mini-high']
             else:
                 # Use grok-4-fast-reasoning for complex reasoning tasks
                 model_preferences = ['grok-4-fast-reasoning', 'grok-4-reasoning', 'grok-4', 'o4-mini-high']
