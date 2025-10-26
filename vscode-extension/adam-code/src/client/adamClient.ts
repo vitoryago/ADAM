@@ -278,14 +278,147 @@ export class ADAMClient {
 
     async analyzeDataPattern(data: string): Promise<any> {
         const prompt = `Analyze this data for patterns, anomalies, and insights:\n\`\`\`\n${data}\n\`\`\``;
-        
+
         const response = await this.sendMessage(prompt);
-        
+
         return {
             summary: this.extractSection(response.content, 'Summary'),
             patterns: this.extractSection(response.content, 'Patterns'),
             recommendations: this.extractSection(response.content, 'Recommendations')
         };
+    }
+
+    // DBT Column Documentation Methods
+
+    async documentDBTColumns(modelName: string): Promise<any> {
+        try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                throw new Error('No workspace folder open');
+            }
+
+            const response = await this.api.post('/api/dbt/columns/document-model', {
+                project_path: workspaceFolder.uri.fsPath,
+                model_name: modelName,
+                use_ai: true,
+                preserve_existing: true
+            });
+
+            const data = response.data;
+
+            // Format documentation for display
+            const documentation = Object.values(data.columns)
+                .map((col: any) => `- **${col.name}**: ${col.description}${col.is_foreign_key ? ` (FK → ${col.references})` : ''}`)
+                .join('\n');
+
+            return {
+                documentation,
+                columns_documented: data.total_columns,
+                yaml_content: await this.generateYAMLForModel(modelName, data.columns)
+            };
+        } catch (error) {
+            console.error('DBT column documentation error:', error);
+            throw error;
+        }
+    }
+
+    async analyzeDBTColumns(): Promise<any> {
+        try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                throw new Error('No workspace folder open');
+            }
+
+            const response = await this.api.post('/api/dbt/columns/analyze', {
+                project_path: workspaceFolder.uri.fsPath,
+                use_ai: true
+            });
+
+            return response.data;
+        } catch (error) {
+            console.error('DBT column analysis error:', error);
+            throw error;
+        }
+    }
+
+    async findCommonDBTColumns(): Promise<any[]> {
+        try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                throw new Error('No workspace folder open');
+            }
+
+            const response = await this.api.post('/api/dbt/columns/common-columns', {
+                project_path: workspaceFolder.uri.fsPath,
+                min_occurrences: 2
+            });
+
+            return response.data;
+        } catch (error) {
+            console.error('Common columns search error:', error);
+            return [];
+        }
+    }
+
+    async generateDBTSchema(folderPath: string): Promise<string> {
+        try {
+            const response = await this.api.post('/api/dbt/columns/generate-schema', {
+                project_path: folderPath,
+                use_ai: true,
+                include_tests: true
+            });
+
+            return response.data;
+        } catch (error) {
+            console.error('Schema generation error:', error);
+            throw error;
+        }
+    }
+
+    async standardizeColumnDescription(columnName: string, suggestedDescription: string): Promise<void> {
+        // This would update all occurrences of the column with the standardized description
+        // For now, we'll just log it
+        console.log(`Standardizing ${columnName} with description: ${suggestedDescription}`);
+        // In a real implementation, this would call an API to update all schema.yml files
+    }
+
+    async saveDBTDocumentation(modelName: string, yamlContent: string): Promise<void> {
+        // This would save the documentation to the appropriate schema.yml file
+        // For now, we'll create or update a schema.yml in the model's directory
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            throw new Error('No workspace folder open');
+        }
+
+        // Find the model file
+        const modelFiles = await vscode.workspace.findFiles(`**/${modelName}.sql`);
+        if (modelFiles.length === 0) {
+            throw new Error(`Model ${modelName} not found`);
+        }
+
+        const modelPath = modelFiles[0];
+        const schemaPath = vscode.Uri.joinPath(modelPath, '..', 'schema.yml');
+
+        // Write the YAML content
+        await vscode.workspace.fs.writeFile(schemaPath, Buffer.from(yamlContent));
+    }
+
+    private async generateYAMLForModel(modelName: string, columns: any): Promise<string> {
+        const yaml = `version: 2
+
+models:
+  - name: ${modelName}
+    description: "Model description here"
+    columns:
+${Object.values(columns).map((col: any) => `      - name: ${col.name}
+        description: "${col.description}"
+        tests:
+          - not_null
+${col.is_foreign_key ? `          - relationships:
+              to: ref('${col.references?.split('.')[0] || 'parent_table'}')
+              field: ${col.references?.split('.')[1] || 'id'}` : ''}`).join('\n')}`;
+
+        return yaml;
     }
 
     // Memory operations

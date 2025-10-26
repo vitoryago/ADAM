@@ -321,7 +321,7 @@ function registerCommands(context: vscode.ExtensionContext) {
             }
 
             const selection = editor.document.getText(editor.selection) || editor.document.getText();
-            
+
             vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
                 title: "ADAM is analyzing data patterns...",
@@ -329,12 +329,191 @@ function registerCommands(context: vscode.ExtensionContext) {
             }, async (progress) => {
                 try {
                     const analysis = await adamClient.analyzeDataPattern(selection);
-                    
+
                     chatProvider.addMessage({
                         role: 'assistant',
                         content: `## Data Analysis Results\n\n${analysis.summary}\n\n### Patterns Found:\n${analysis.patterns}\n\n### Recommendations:\n${analysis.recommendations}`
                     });
                     chatProvider.show();
+                } catch (error) {
+                    vscode.window.showErrorMessage(`ADAM Error: ${error}`);
+                }
+            });
+        })
+    );
+
+    // DBT Documentation Commands
+
+    // Document current model columns
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.dbtDocumentModel', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor || !editor.document.fileName.endsWith('.sql')) {
+                vscode.window.showInformationMessage('Please open a DBT model file (.sql)');
+                return;
+            }
+
+            const modelName = editor.document.fileName.split('/').pop()?.replace('.sql', '');
+            if (!modelName) return;
+
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `ADAM is documenting columns for ${modelName}...`,
+                cancellable: false
+            }, async (progress) => {
+                try {
+                    const result = await adamClient.documentDBTColumns(modelName);
+
+                    // Show documentation in chat
+                    chatProvider.addMessage({
+                        role: 'assistant',
+                        content: `## Column Documentation for ${modelName}\n\n${result.documentation}\n\n### Next Steps:\n- Review the generated descriptions\n- Save to schema.yml when satisfied\n- Run \`dbt docs generate\` to update documentation`
+                    });
+                    chatProvider.show();
+
+                    // Ask if user wants to save to schema.yml
+                    const save = await vscode.window.showInformationMessage(
+                        `Generated documentation for ${result.columns_documented} columns. Save to schema.yml?`,
+                        'Yes', 'No'
+                    );
+
+                    if (save === 'Yes') {
+                        await adamClient.saveDBTDocumentation(modelName, result.yaml_content);
+                        vscode.window.showInformationMessage('Documentation saved to schema.yml');
+                    }
+                } catch (error) {
+                    vscode.window.showErrorMessage(`ADAM Error: ${error}`);
+                }
+            });
+        })
+    );
+
+    // Analyze column patterns across project
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.dbtAnalyzeColumns', async () => {
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: "ADAM is analyzing column patterns across your DBT project...",
+                cancellable: false
+            }, async (progress) => {
+                try {
+                    const analysis = await adamClient.analyzeDBTColumns();
+
+                    // Show analysis in chat
+                    chatProvider.addMessage({
+                        role: 'assistant',
+                        content: `## DBT Column Analysis Report\n\n### Summary\n- Total Columns: ${analysis.summary.total_columns}\n- Documented: ${analysis.summary.documented_columns} (${analysis.summary.documentation_coverage})\n- Common Columns: ${analysis.summary.common_columns}\n\n### Top Common Columns\n${analysis.common_columns.map((c: any) => `- **${c.name}**: Appears in ${c.occurrence_count} models${c.has_documentation ? ' ✓' : ' ⚠️ Undocumented'}`).join('\n')}\n\n### Detected Patterns\n${Object.entries(analysis.patterns_detected).map(([pattern, cols]: [string, any]) => `- **${pattern}**: ${cols.length} columns`).join('\n')}\n\n### Recommendations\n- Focus on documenting the ${analysis.summary.undocumented_common_columns} undocumented common columns first\n- Use consistent descriptions for columns that appear in multiple models\n- Add relationship tests for detected foreign keys`
+                    });
+                    chatProvider.show();
+                } catch (error) {
+                    vscode.window.showErrorMessage(`ADAM Error: ${error}`);
+                }
+            });
+        })
+    );
+
+    // Find and standardize common columns
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.dbtStandardizeColumns', async () => {
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: "ADAM is finding columns that need standardization...",
+                cancellable: false
+            }, async (progress) => {
+                try {
+                    const commonColumns = await adamClient.findCommonDBTColumns();
+
+                    if (commonColumns.length === 0) {
+                        vscode.window.showInformationMessage('No common columns found that need standardization');
+                        return;
+                    }
+
+                    // Show quick pick to select column to standardize
+                    const selected = await vscode.window.showQuickPick(
+                        commonColumns.map((c: any) => ({
+                            label: c.column_name,
+                            description: `Appears in ${c.occurrence_count} models`,
+                            detail: c.needs_standardization ? '⚠️ Has inconsistent descriptions' : '✓ Consistent',
+                            column: c
+                        })),
+                        {
+                            placeHolder: 'Select a column to standardize documentation'
+                        }
+                    );
+
+                    if (selected) {
+                        const standardDesc = await adamClient.standardizeColumnDescription(
+                            selected.column.column_name,
+                            selected.column.suggested_standard_description
+                        );
+
+                        vscode.window.showInformationMessage(
+                            `Standardized documentation for '${selected.column.column_name}' across ${selected.column.occurrence_count} models`
+                        );
+                    }
+                } catch (error) {
+                    vscode.window.showErrorMessage(`ADAM Error: ${error}`);
+                }
+            });
+        })
+    );
+
+    // Generate schema.yml for current directory
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.dbtGenerateSchema', async () => {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                vscode.window.showErrorMessage('No workspace folder open');
+                return;
+            }
+
+            // Get the current folder path
+            const activeFile = vscode.window.activeTextEditor?.document.uri;
+            const folderPath = activeFile ? vscode.Uri.joinPath(activeFile, '..').fsPath : workspaceFolder.uri.fsPath;
+
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: "ADAM is generating schema.yml with intelligent column descriptions...",
+                cancellable: false
+            }, async (progress) => {
+                try {
+                    const yamlContent = await adamClient.generateDBTSchema(folderPath);
+
+                    // Create schema.yml file
+                    const schemaPath = vscode.Uri.joinPath(vscode.Uri.file(folderPath), 'schema.yml');
+                    const edit = new vscode.WorkspaceEdit();
+
+                    // Check if file exists
+                    try {
+                        await vscode.workspace.fs.stat(schemaPath);
+                        // File exists, ask to overwrite
+                        const overwrite = await vscode.window.showWarningMessage(
+                            'schema.yml already exists. Overwrite?',
+                            'Yes', 'No', 'Merge'
+                        );
+
+                        if (overwrite === 'No') {
+                            return;
+                        } else if (overwrite === 'Merge') {
+                            // TODO: Implement merge logic
+                            vscode.window.showInformationMessage('Merge feature coming soon!');
+                            return;
+                        }
+                    } catch {
+                        // File doesn't exist, create it
+                    }
+
+                    edit.createFile(schemaPath, {
+                        contents: Buffer.from(yamlContent),
+                        overwrite: true
+                    });
+                    await vscode.workspace.applyEdit(edit);
+
+                    // Open the file
+                    const doc = await vscode.workspace.openTextDocument(schemaPath);
+                    await vscode.window.showTextDocument(doc);
+
+                    vscode.window.showInformationMessage('Generated schema.yml with intelligent column descriptions');
                 } catch (error) {
                     vscode.window.showErrorMessage(`ADAM Error: ${error}`);
                 }

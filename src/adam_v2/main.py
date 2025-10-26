@@ -49,7 +49,7 @@ except (ImportError, AttributeError, AssertionError) as e:
 
 # Import DBT router
 try:
-    from routes import dbt, dbt_assistant
+    from routes import dbt, dbt_assistant, dbt_columns
     DBT_AVAILABLE = True
 except ImportError:
     DBT_AVAILABLE = False
@@ -113,7 +113,8 @@ if TOOLS_AVAILABLE:
 if DBT_AVAILABLE:
     app.include_router(dbt.router, tags=["dbt"])
     app.include_router(dbt_assistant.router, tags=["dbt-assistant"])
-    logger.info("DBT analyzer and assistant endpoints registered")
+    app.include_router(dbt_columns.router, prefix="/api/dbt/columns", tags=["dbt-columns"])
+    logger.info("DBT analyzer, assistant, and column documentation endpoints registered")
 
 
 @app.get("/api/health")

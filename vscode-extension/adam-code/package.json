@@ -53,6 +53,26 @@
         "command": "adam.voiceChat",
         "title": "ADAM: Start Voice Chat",
         "icon": "$(mic)"
+      },
+      {
+        "command": "adam.dbtDocumentModel",
+        "title": "ADAM: Document DBT Model Columns",
+        "icon": "$(book)"
+      },
+      {
+        "command": "adam.dbtAnalyzeColumns",
+        "title": "ADAM: Analyze DBT Column Patterns",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "adam.dbtStandardizeColumns",
+        "title": "ADAM: Standardize Column Documentation",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "adam.dbtGenerateSchema",
+        "title": "ADAM: Generate schema.yml",
+        "icon": "$(file-code)"
       }
     ],
     "keybindings": [
