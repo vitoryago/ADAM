@@ -109,23 +109,67 @@ async def send_message(
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}")
 
-    # Check for DBT questions and add context
-    dbt_context = ""
+    # Check for DBT questions with intelligent Haiku-powered detection
+    dbt_handled = False
     workspace_path = None
-    if message_data.workspace_context and message_data.workspace_context.get('workspaceFolder'):
-        workspace_path = message_data.workspace_context['workspaceFolder']
+    active_file_path = None
+
+    if message_data.workspace_context:
+        if message_data.workspace_context.get('workspaceFolder'):
+            workspace_path = message_data.workspace_context['workspaceFolder']
+        if message_data.workspace_context.get('activeFile'):
+            active_file = message_data.workspace_context['activeFile']
+            if isinstance(active_file, dict):
+                active_file_path = active_file.get('file')
 
     if workspace_path:
         try:
-            from services.dbt_integration_service import get_dbt_integration_service
-            dbt_service = get_dbt_integration_service()
+            from services.dbt_chat_integration import DBTChatIntegration
+            dbt_chat = DBTChatIntegration()
 
-            # Check if this is a DBT question
-            if dbt_service.is_dbt_question(message_data.content, workspace_path):
-                dbt_context = dbt_service.get_dbt_context(message_data.content, workspace_path)
-                logger.info(f"Added DBT context for question: {message_data.content[:50]}")
+            # Use Haiku to intelligently detect if this is a DBT query
+            if await dbt_chat.is_dbt_query(message_data.content, workspace_path):
+                logger.info(f"Detected DBT query with Haiku: {message_data.content[:50]}")
+
+                # Handle the DBT query with full intelligence
+                dbt_response = await dbt_chat.handle_dbt_query(
+                    message=message_data.content,
+                    workspace_path=workspace_path,
+                    active_file=active_file_path
+                )
+
+                if dbt_response.get('success') and dbt_response.get('is_dbt'):
+                    # DBT query was handled successfully - return direct response
+                    assistant_message = Message(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content=dbt_chat.format_for_chat(dbt_response),
+                        model="claude-haiku-4-5-20251001",  # Used for routing
+                        metadata={
+                            'dbt_handled': True,
+                            'dbt_intent': dbt_response.get('intent'),
+                            'dbt_data': dbt_response.get('data'),
+                            'dbt_actions': dbt_response.get('actions', [])
+                        }
+                    )
+
+                    db.add(assistant_message)
+                    await db.commit()
+                    await db.refresh(assistant_message)
+
+                    dbt_handled = True
+
+                    logger.info(f"DBT query handled successfully - Intent: {dbt_response.get('intent')}")
+
+                    # Return both messages
+                    return [
+                        MessageResponse.model_validate(user_message),
+                        MessageResponse.model_validate(assistant_message)
+                    ]
+
         except Exception as e:
-            logger.warning(f"Error adding DBT context: {e}")
+            logger.warning(f"Error in Haiku-powered DBT detection: {e}", exc_info=True)
+            # Fall through to regular message handling
     
     # Check if VSCode sent workspace context with file content
     enhanced_content = message_data.content
@@ -234,8 +278,8 @@ Respond with ONLY valid JSON:
             logger.error(f"Error in onboarding processing: {e}")
             # Fall through to regular message handling
     
-    # Combine memory and DBT context
-    combined_context = memory_context + dbt_context
+    # Use memory context for AI response
+    combined_context = memory_context
 
     # Generate AI response
     try:

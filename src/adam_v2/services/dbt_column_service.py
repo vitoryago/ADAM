@@ -12,6 +12,8 @@ import yaml
 from ..dbt_analyzer.column_intelligence import ColumnIntelligenceEngine, ColumnInfo
 from ..dbt_analyzer.parser import DBTManifestParser
 from ..dbt_analyzer.direct_reader import DirectDBTReader
+from ..dbt_analyzer.sql_intelligence import SQLIntelligenceEngine
+from ..dbt_analyzer.pattern_learning import PatternLearningEngine
 from ...adam.llm.client import UnifiedLLMClient
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,8 @@ class DBTColumnDocumentationService:
 
     def __init__(self):
         self.llm_client = UnifiedLLMClient()
+        self.sql_intelligence = SQLIntelligenceEngine()
+        self.pattern_learning: Dict[str, PatternLearningEngine] = {}  # Per-project learning
         self.engines: Dict[str, ColumnIntelligenceEngine] = {}
         self.readers: Dict[str, DirectDBTReader] = {}
         self.parsers: Dict[str, DBTManifestParser] = {}
@@ -278,15 +282,35 @@ class DBTColumnDocumentationService:
                                       column_name: str,
                                       model_name: Optional[str],
                                       col_info: ColumnInfo,
-                                      project_path: str) -> str:
+                                      project_path: str,
+                                      sql_content: Optional[str] = None) -> str:
         """
         Generate an AI-enhanced column description using LLM
+        Now includes SQL transformation understanding!
         """
+        # Try to get SQL transformation understanding
+        sql_insight = ""
+        if sql_content and model_name:
+            try:
+                transformation = await self.sql_intelligence.analyze_column_sql(
+                    sql_content, column_name, model_name
+                )
+                if transformation and transformation.business_logic:
+                    sql_insight = f"\n\nSQL Analysis: {transformation.business_logic}"
+                    sql_insight += f"\nTransformation: {transformation.logic_description}"
+                    if transformation.source_columns:
+                        sql_insight += f"\nDerived from: {', '.join(transformation.source_columns)}"
+            except Exception as e:
+                logger.debug(f"SQL intelligence analysis skipped: {e}")
+
         # Build context for LLM
         context = f"Generate a concise, clear description for the database column '{column_name}'"
 
         if model_name:
             context += f" in the model '{model_name}'"
+
+        if sql_insight:
+            context += sql_insight
 
         if col_info.pattern:
             context += f". This appears to be a {col_info.pattern.pattern_type} column"
@@ -301,13 +325,13 @@ class DBTColumnDocumentationService:
             existing = list(col_info.existing_descriptions.values())[0]
             context += f". Existing description: '{existing}'. Please improve or standardize it"
 
-        context += ". Keep the description under 100 characters and make it business-friendly."
+        context += ". Keep the description under 150 characters and make it business-friendly."
 
         try:
             # Use the LLM to generate description
             response = await self.llm_client.complete(
                 prompt=context,
-                model="claude-sonnet-4-5",  # Use Claude for documentation
+                model="claude-sonnet-4-5-20250929",  # Use Claude Sonnet for code understanding
                 temperature=0.3,  # Lower temperature for consistency
                 max_tokens=100
             )
