@@ -8,12 +8,14 @@ import yaml
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from pathlib import Path
+from collections import defaultdict
 import re
 import logging
 
 from .parser import DBTModel, DBTManifestParser
 from .lineage import DBTLineageTracker
 from .optimizer import SQLOptimizer
+from .yaml_updater import YAMLUpdater
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class DBTDocGenerator:
         self.parser = parser
         self.lineage_tracker = lineage_tracker
         self.optimizer = optimizer
+        self.yaml_updater = YAMLUpdater()
         self.generated_docs = {}
 
     def generate_model_documentation(
@@ -493,3 +496,62 @@ dbt run --select {model.name} --full-refresh
             f.write(overview)
 
         logger.info(f"Documentation exported to {output_dir}")
+
+    def apply_suggestions_to_files(self, suggestions: Dict[str, Any], project_root: str) -> int:
+        """
+        Apply generated suggestions directly to schema.yml files
+        
+        Args:
+            suggestions: Dictionary of suggestions (from export_suggestions_to_yaml)
+            project_root: Path to project root
+            
+        Returns:
+            Number of files updated
+        """
+        project_path = Path(project_root)
+        updated_files = 0
+        
+        # Group suggestions by file path
+        # Note: We need to find where each model is defined
+        # This requires scanning the project structure
+        
+        # 1. Map models to their YAML files
+        model_to_file = {}
+        for yaml_file in project_path.rglob("*.yml"):
+            if "dbt_project.yml" in yaml_file.name:
+                continue
+                
+            try:
+                with open(yaml_file) as f:
+                    # We use simple load here just to map names, actual update uses YAMLUpdater
+                    data = yaml.safe_load(f)
+                    
+                if data and "models" in data:
+                    for model in data["models"]:
+                        model_to_file[model["name"]] = yaml_file
+            except Exception as e:
+                logger.warning(f"Error reading {yaml_file}: {e}")
+        
+        # 2. Group updates by file
+        file_updates = defaultdict(dict)
+        
+        for model_name, model_data in suggestions.items():
+            if model_name in model_to_file:
+                file_path = model_to_file[model_name]
+                
+                # Convert list of columns to dict for YAMLUpdater
+                col_updates = {}
+                for col in model_data.get("columns", []):
+                    if "description" in col:
+                        col_updates[col["name"]] = col["description"]
+                
+                if col_updates:
+                    file_updates[file_path][model_name] = col_updates
+        
+        # 3. Apply updates
+        for file_path, updates in file_updates.items():
+            if self.yaml_updater.batch_update_descriptions(file_path, updates):
+                updated_files += 1
+                logger.info(f"Updated {file_path}")
+                
+        return updated_files
