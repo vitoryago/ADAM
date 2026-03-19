@@ -1,5 +1,5 @@
 """
-Conversation management endpoints for ADAM v2.0
+Conversation management endpoints for ADAM 4.0
 """
 
 from fastapi import APIRouter, HTTPException, Depends, status
@@ -9,8 +9,8 @@ from typing import List
 import logging
 from datetime import datetime
 
-from database import get_db
-from models import (
+from adam.database import get_db
+from adam.api.models import (
     Conversation, ConversationCreate, ConversationUpdate, ConversationResponse,
     Project, Message, MessageRole
 )
@@ -31,42 +31,42 @@ async def create_conversation(
         select(Project).where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
+
     # Create conversation
     conversation = Conversation(
         project_id=project_id,
         title=conversation_data.title
     )
-    
+
     db.add(conversation)
     await db.commit()
     await db.refresh(conversation)
-    
+
     logger.info(f"Created conversation {conversation.id} in project {project_id}")
-    
+
     # Calculate counts
     msg_count_result = await db.execute(
         select(func.count(Message.id))
         .where(Message.conversation_id == conversation.id)
     )
     message_count = msg_count_result.scalar() or 0
-    
+
     cost_result = await db.execute(
         select(func.sum(Message.cost))
         .where(Message.conversation_id == conversation.id)
     )
     total_cost = float(cost_result.scalar() or 0)
-    
+
     response = ConversationResponse.model_validate(conversation)
     response.message_count = message_count
     response.total_cost = total_cost
-    
+
     return response
 
 
@@ -85,7 +85,7 @@ async def list_project_conversations(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
+
     # Get conversations, pinned first, then by last activity
     query = select(Conversation).where(
         Conversation.project_id == project_id
@@ -93,10 +93,10 @@ async def list_project_conversations(
         Conversation.is_pinned.desc(),
         Conversation.updated_at.desc()
     )
-    
+
     result = await db.execute(query)
     conversations = result.scalars().all()
-    
+
     # Calculate counts for each conversation
     conversation_responses = []
     for conv in conversations:
@@ -108,12 +108,12 @@ async def list_project_conversations(
             ).where(Message.conversation_id == conv.id)
         )
         stats = stats_result.one()
-        
+
         response = ConversationResponse.model_validate(conv)
         response.message_count = stats.count or 0
         response.total_cost = float(stats.total or 0)
         conversation_responses.append(response)
-    
+
     return conversation_responses
 
 
@@ -127,30 +127,30 @@ async def get_conversation(
         select(Conversation).where(Conversation.id == conversation_id)
     )
     conversation = result.scalar_one_or_none()
-    
+
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found"
         )
-    
+
     # Calculate counts
     msg_count_result = await db.execute(
         select(func.count(Message.id))
         .where(Message.conversation_id == conversation.id)
     )
     message_count = msg_count_result.scalar() or 0
-    
+
     cost_result = await db.execute(
         select(func.sum(Message.cost))
         .where(Message.conversation_id == conversation.id)
     )
     total_cost = float(cost_result.scalar() or 0)
-    
+
     response = ConversationResponse.model_validate(conversation)
     response.message_count = message_count
     response.total_cost = total_cost
-    
+
     return response
 
 
@@ -165,39 +165,39 @@ async def update_conversation(
         select(Conversation).where(Conversation.id == conversation_id)
     )
     conversation = result.scalar_one_or_none()
-    
+
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found"
         )
-    
+
     # Update fields
     if update.title is not None:
         conversation.title = update.title
     if update.is_pinned is not None:
         conversation.is_pinned = update.is_pinned
-    
+
     await db.commit()
     await db.refresh(conversation)
-    
+
     # Calculate counts
     msg_count_result = await db.execute(
         select(func.count(Message.id))
         .where(Message.conversation_id == conversation.id)
     )
     message_count = msg_count_result.scalar() or 0
-    
+
     cost_result = await db.execute(
         select(func.sum(Message.cost))
         .where(Message.conversation_id == conversation.id)
     )
     total_cost = float(cost_result.scalar() or 0)
-    
+
     response = ConversationResponse.model_validate(conversation)
     response.message_count = message_count
     response.total_cost = total_cost
-    
+
     return response
 
 
@@ -211,17 +211,17 @@ async def delete_conversation(
         select(Conversation).where(Conversation.id == conversation_id)
     )
     conversation = result.scalar_one_or_none()
-    
+
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found"
         )
-    
+
     # Delete conversation (cascades to messages)
     await db.delete(conversation)
     await db.commit()
-    
+
     logger.info(f"Deleted conversation {conversation_id}")
 
 
@@ -236,24 +236,24 @@ async def clear_all_conversations(
         select(Project).where(Project.id == project_id)
     )
     project = project_result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
+
     # Delete all conversations for the project (cascades to messages)
     await db.execute(
         delete(Conversation).where(Conversation.project_id == project_id)
     )
     await db.commit()
-    
+
     logger.info(f"Cleared all conversations for project {project_id}")
 
 
 @router.patch("/conversations/{conversation_id}", response_model=ConversationResponse)
-async def update_conversation(
+async def patch_conversation(
     conversation_id: str,
     update_data: dict,
     db: AsyncSession = Depends(get_db)
@@ -263,38 +263,38 @@ async def update_conversation(
         select(Conversation).where(Conversation.id == conversation_id)
     )
     conversation = result.scalar_one_or_none()
-    
+
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found"
         )
-    
+
     # Update allowed fields
     if "title" in update_data:
         conversation.title = update_data["title"]
-    
+
     conversation.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(conversation)
-    
+
     # Calculate counts for response
     msg_count_result = await db.execute(
         select(func.count(Message.id))
         .where(Message.conversation_id == conversation.id)
     )
     message_count = msg_count_result.scalar() or 0
-    
+
     cost_result = await db.execute(
         select(func.sum(Message.cost))
         .where(Message.conversation_id == conversation.id)
     )
     total_cost = float(cost_result.scalar() or 0)
-    
+
     response = ConversationResponse.model_validate(conversation)
     response.message_count = message_count
     response.total_cost = total_cost
-    
+
     return response
 
 
@@ -308,34 +308,34 @@ async def pin_conversation(
         select(Conversation).where(Conversation.id == conversation_id)
     )
     conversation = result.scalar_one_or_none()
-    
+
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found"
         )
-    
+
     conversation.is_pinned = True
     await db.commit()
     await db.refresh(conversation)
-    
+
     # Calculate counts
     msg_count_result = await db.execute(
         select(func.count(Message.id))
         .where(Message.conversation_id == conversation.id)
     )
     message_count = msg_count_result.scalar() or 0
-    
+
     cost_result = await db.execute(
         select(func.sum(Message.cost))
         .where(Message.conversation_id == conversation.id)
     )
     total_cost = float(cost_result.scalar() or 0)
-    
+
     response = ConversationResponse.model_validate(conversation)
     response.message_count = message_count
     response.total_cost = total_cost
-    
+
     return response
 
 
@@ -349,34 +349,34 @@ async def unpin_conversation(
         select(Conversation).where(Conversation.id == conversation_id)
     )
     conversation = result.scalar_one_or_none()
-    
+
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found"
         )
-    
+
     conversation.is_pinned = False
     await db.commit()
     await db.refresh(conversation)
-    
+
     # Calculate counts
     msg_count_result = await db.execute(
         select(func.count(Message.id))
         .where(Message.conversation_id == conversation.id)
     )
     message_count = msg_count_result.scalar() or 0
-    
+
     cost_result = await db.execute(
         select(func.sum(Message.cost))
         .where(Message.conversation_id == conversation.id)
     )
     total_cost = float(cost_result.scalar() or 0)
-    
+
     response = ConversationResponse.model_validate(conversation)
     response.message_count = message_count
     response.total_cost = total_cost
-    
+
     return response
 
 
@@ -391,13 +391,13 @@ async def get_conversation_stats(
         select(Conversation).where(Conversation.id == conversation_id)
     )
     conversation = conv_result.scalar_one_or_none()
-    
+
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found"
         )
-    
+
     # Get message count and costs
     msg_stats_result = await db.execute(
         select(
@@ -407,7 +407,7 @@ async def get_conversation_stats(
         ).where(Message.conversation_id == conversation_id)
     )
     stats = msg_stats_result.one()
-    
+
     return {
         "conversation_id": conversation_id,
         "title": conversation.title,

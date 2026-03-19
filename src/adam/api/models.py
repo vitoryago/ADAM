@@ -1,6 +1,9 @@
 """
-Database models for ADAM v2.0
-Defines the schema for projects, conversations, and messages
+Database models for ADAM 4.0
+Defines the schema for projects, conversations, and messages.
+
+Contains both SQLAlchemy ORM models and Pydantic API schemas.
+Consolidated from src/adam_v2/models.py.
 """
 
 from sqlalchemy import Column, String, Text, Boolean, Float, Integer, DateTime, JSON, ForeignKey
@@ -12,7 +15,7 @@ from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
-from database import Base
+from adam.database import Base
 
 
 class MessageRole(str, Enum):
@@ -25,7 +28,7 @@ class MessageRole(str, Enum):
 class Project(Base):
     """Project model - top level organization unit"""
     __tablename__ = "projects"
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
@@ -33,16 +36,16 @@ class Project(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     is_archived = Column(Boolean, nullable=False, server_default='0')
     settings = Column(JSON, nullable=False, server_default='{}')
-    
+
     def __init__(self, **kwargs):
         # Set defaults for Python-side usage
         kwargs.setdefault('is_archived', False)
         kwargs.setdefault('settings', {})
         super().__init__(**kwargs)
-    
+
     # Relationships
     conversations = relationship("Conversation", back_populates="project", cascade="all, delete-orphan")
-    
+
     # Note: conversation_count and memory_count are calculated separately
     # to avoid async context issues
 
@@ -50,23 +53,23 @@ class Project(Base):
 class Conversation(Base):
     """Conversation model - contains multiple messages"""
     __tablename__ = "conversations"
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id = Column(String, ForeignKey("projects.id"), nullable=False)
     title = Column(String(200), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     is_pinned = Column(Boolean, nullable=False, server_default='0')
-    
+
     def __init__(self, **kwargs):
         # Set defaults for Python-side usage
         kwargs.setdefault('is_pinned', False)
         super().__init__(**kwargs)
-    
+
     # Relationships
     project = relationship("Project", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
-    
+
     # Note: message_count and total_cost are calculated separately
     # to avoid async context issues
 
@@ -74,25 +77,25 @@ class Conversation(Base):
 class Message(Base):
     """Message model - individual message in a conversation"""
     __tablename__ = "messages"
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     conversation_id = Column(String, ForeignKey("conversations.id"), nullable=False)
     role = Column(String, nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     # Optional fields for assistant messages
     model = Column(String, nullable=True)
     tokens_used = Column(Integer, nullable=True)
     cost = Column(Float, nullable=True)
-    
+
     # For image attachments
     has_image = Column(Boolean, nullable=False, server_default='0')
     image_url = Column(String, nullable=True)
-    
+
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
-    
+
     def __init__(self, **kwargs):
         # Set defaults for Python-side usage
         kwargs.setdefault('has_image', False)
@@ -123,7 +126,7 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(ProjectBase):
     """Response model for project"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: str
     created_at: datetime
     updated_at: datetime
@@ -151,7 +154,7 @@ class ConversationUpdate(BaseModel):
 class ConversationResponse(ConversationBase):
     """Response model for conversation"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: str
     project_id: str
     created_at: datetime
@@ -173,15 +176,15 @@ class MessageCreate(BaseModel):
     use_memory: bool = True
     model: Optional[str] = None  # If None, use automatic routing
     response_style: Optional[str] = None  # Response style: concise, normal, explanatory, etc.
-    
+
     # For image attachments
     has_image: bool = False
     image_data: Optional[str] = None  # Base64 encoded image
-    
+
     # For live search
     use_search: bool = False
     search_mode: Optional[str] = None  # auto, web, x, news, rss
-    
+
     # For VSCode workspace context
     workspace_context: Optional[Dict[str, Any]] = None
 
@@ -189,7 +192,7 @@ class MessageCreate(BaseModel):
 class MessageResponse(MessageBase):
     """Response model for message"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: str
     conversation_id: str
     created_at: datetime

@@ -1,5 +1,5 @@
 """
-Project management endpoints for ADAM v2.0
+Project management endpoints for ADAM 4.0
 """
 
 from fastapi import APIRouter, HTTPException, Depends, status
@@ -8,15 +8,24 @@ from sqlalchemy import select, func
 from typing import List
 import logging
 
-from database import get_db
-from models import (
+from adam.database import get_db
+from adam.api.models import (
     Project, ProjectCreate, ProjectUpdate, ProjectResponse,
     Conversation
 )
-from services.memory_service import ProjectMemoryService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _get_memory_service(project_id: str, project_name: str):
+    """Lazy-load ProjectAwareMemory to avoid import-time failures."""
+    try:
+        from adam.memory.project import ProjectAwareMemory
+        return ProjectAwareMemory(project_id, project_name)
+    except Exception as e:
+        logger.warning(f"Memory service not available: {e}")
+        return None
 
 
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -31,31 +40,31 @@ async def create_project(
         description=project_data.description,
         settings=project_data.settings
     )
-    
+
     db.add(project)
     await db.commit()
     await db.refresh(project)
-    
+
     # Initialize memory collection for this project
     try:
-        memory_service = ProjectMemoryService(project.id, project.name)
-        # Collection is initialized automatically in __init__
-        logger.info(f"Created project {project.id} with memory collection")
+        memory_service = _get_memory_service(project.id, project.name)
+        if memory_service:
+            logger.info(f"Created project {project.id} with memory collection")
     except Exception as e:
         logger.error(f"Failed to create memory collection: {e}")
         # Don't fail the request, project can work without memory initially
-    
+
     # Calculate conversation count
     conv_count_result = await db.execute(
         select(func.count(Conversation.id))
         .where(Conversation.project_id == project.id)
     )
     conversation_count = conv_count_result.scalar() or 0
-    
+
     response = ProjectResponse.model_validate(project)
     response.conversation_count = conversation_count
-    response.memory_count = 0  # TODO: Get from ChromaDB
-    
+    response.memory_count = 0
+
     return response
 
 
@@ -66,15 +75,15 @@ async def list_projects(
 ):
     """List all projects"""
     query = select(Project)
-    
+
     if not include_archived:
         query = query.where(Project.is_archived == False)
-    
+
     query = query.order_by(Project.created_at.desc())
-    
+
     result = await db.execute(query)
     projects = result.scalars().all()
-    
+
     # Calculate counts for each project
     project_responses = []
     for project in projects:
@@ -84,20 +93,22 @@ async def list_projects(
             .where(Conversation.project_id == project.id)
         )
         conversation_count = conv_count_result.scalar() or 0
-        
+
         # Get memory count
+        memory_count = 0
         try:
-            memory_service = ProjectMemoryService(project.id, project.name)
-            stats = await memory_service.get_memory_stats()
-            memory_count = stats.get('total_memories', 0)
-        except:
+            memory_service = _get_memory_service(project.id, project.name)
+            if memory_service:
+                stats = await memory_service.get_memory_stats()
+                memory_count = stats.get('total_memories', 0)
+        except Exception:
             memory_count = 0
-        
+
         response = ProjectResponse.model_validate(project)
         response.conversation_count = conversation_count
         response.memory_count = memory_count
         project_responses.append(response)
-    
+
     return project_responses
 
 
@@ -111,32 +122,34 @@ async def get_project(
         select(Project).where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
+
     # Get memory count
+    memory_count = 0
     try:
-        memory_service = ProjectMemoryService(project.id, project.name)
-        stats = await memory_service.get_memory_stats()
-        memory_count = stats.get('total_memories', 0)
-    except:
-        project.memory_count = 0
-    
+        memory_service = _get_memory_service(project.id, project.name)
+        if memory_service:
+            stats = await memory_service.get_memory_stats()
+            memory_count = stats.get('total_memories', 0)
+    except Exception:
+        memory_count = 0
+
     # Calculate conversation count
     conv_count_result = await db.execute(
         select(func.count(Conversation.id))
         .where(Conversation.project_id == project.id)
     )
     conversation_count = conv_count_result.scalar() or 0
-    
+
     response = ProjectResponse.model_validate(project)
     response.conversation_count = conversation_count
-    response.memory_count = 0  # TODO: Get from ChromaDB
-    
+    response.memory_count = memory_count
+
     return response
 
 
@@ -151,13 +164,13 @@ async def update_project(
         select(Project).where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
+
     # Update fields
     if update.name is not None:
         project.name = update.name
@@ -167,21 +180,21 @@ async def update_project(
         project.settings = {**project.settings, **update.settings}
     if update.is_archived is not None:
         project.is_archived = update.is_archived
-    
+
     await db.commit()
     await db.refresh(project)
-    
+
     # Calculate conversation count
     conv_count_result = await db.execute(
         select(func.count(Conversation.id))
         .where(Conversation.project_id == project.id)
     )
     conversation_count = conv_count_result.scalar() or 0
-    
+
     response = ProjectResponse.model_validate(project)
     response.conversation_count = conversation_count
     response.memory_count = 0  # TODO: Get from ChromaDB
-    
+
     return response
 
 
@@ -195,22 +208,22 @@ async def delete_project(
         select(Project).where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
+
     # Delete memory collection
     try:
-        from services.memory_service import ProjectMemoryService
-        memory_service = ProjectMemoryService(project_id, project.name)
-        await memory_service.clear_memories()
-        logger.info(f"Deleted memory collection for project {project_id}")
+        memory_service = _get_memory_service(project_id, project.name)
+        if memory_service:
+            await memory_service.clear_memories()
+            logger.info(f"Deleted memory collection for project {project_id}")
     except Exception as e:
         logger.error(f"Failed to delete memory collection: {e}")
-    
+
     # Delete project (cascades to conversations and messages)
     await db.delete(project)
     await db.commit()
@@ -226,28 +239,28 @@ async def archive_project(
         select(Project).where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
+
     project.is_archived = True
     await db.commit()
     await db.refresh(project)
-    
+
     # Calculate conversation count
     conv_count_result = await db.execute(
         select(func.count(Conversation.id))
         .where(Conversation.project_id == project.id)
     )
     conversation_count = conv_count_result.scalar() or 0
-    
+
     response = ProjectResponse.model_validate(project)
     response.conversation_count = conversation_count
     response.memory_count = 0  # TODO: Get from ChromaDB
-    
+
     return response
 
 
@@ -262,28 +275,29 @@ async def get_project_stats(
         select(Project).where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
+
     # Get conversation count
     conv_count_result = await db.execute(
         select(func.count(Conversation.id))
         .where(Conversation.project_id == project_id)
     )
     conversation_count = conv_count_result.scalar() or 0
-    
+
     # Get memory stats
+    memory_stats = {"total_memories": 0, "error": "Memory collection not found"}
     try:
-        from services.memory_service import ProjectMemoryService
-        memory_service = ProjectMemoryService(project_id, project.name)
-        memory_stats = await memory_service.get_memory_stats()
-    except:
-        memory_stats = {"total_memories": 0, "error": "Memory collection not found"}
-    
+        memory_service = _get_memory_service(project_id, project.name)
+        if memory_service:
+            memory_stats = await memory_service.get_memory_stats()
+    except Exception:
+        pass
+
     return {
         "project_id": project_id,
         "name": project.name,
