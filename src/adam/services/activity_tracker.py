@@ -15,19 +15,18 @@ class ActivityTracker:
     Tracks ADAM's active days to calculate proper memory age.
     Only days with actual usage count towards memory decay.
     """
-    
+
     def __init__(self, persist_directory: str = "./adam_memory_advanced"):
         self.persist_directory = Path(persist_directory)
         self.activity_file = self.persist_directory / "activity_log.json"
         self.activity_data = self._load_activity_data()
-        
+
     def _load_activity_data(self) -> Dict:
         """Load activity data from disk"""
         if self.activity_file.exists():
             try:
                 with open(self.activity_file, 'r') as f:
                     data = json.load(f)
-                    # Convert string dates back to date objects for internal use
                     return {
                         "daily_activity": data.get("daily_activity", {}),
                         "active_days": data.get("active_days", []),
@@ -39,17 +38,17 @@ class ActivityTracker:
                 logger.error(f"Error loading activity data: {e}")
                 return self._default_activity_data()
         return self._default_activity_data()
-    
+
     def _default_activity_data(self) -> Dict:
         """Default activity data structure"""
         return {
-            "daily_activity": {},  # date_str -> interaction_count
-            "active_days": [],     # List of active dates in order
+            "daily_activity": {},
+            "active_days": [],
             "first_activity": None,
             "last_activity": None,
             "total_interactions": 0
         }
-    
+
     def _save_activity_data(self):
         """Save activity data to disk"""
         try:
@@ -57,31 +56,27 @@ class ActivityTracker:
                 json.dump(self.activity_data, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving activity data: {e}")
-    
+
     def record_interaction(self):
         """Record a new interaction for today"""
         today = date.today().isoformat()
-        
-        # Update daily activity count
+
         if today not in self.activity_data["daily_activity"]:
             self.activity_data["daily_activity"][today] = 0
-            # Add to active days list if new day
             self.activity_data["active_days"].append(today)
             logger.info(f"New active day recorded: {today}")
-        
+
         self.activity_data["daily_activity"][today] += 1
         self.activity_data["total_interactions"] += 1
-        
-        # Update first/last activity
+
         if not self.activity_data["first_activity"]:
             self.activity_data["first_activity"] = today
         self.activity_data["last_activity"] = today
-        
+
         self._save_activity_data()
-        
-        # Return the current active day index (0-based)
+
         return self.get_active_day_index(today)
-    
+
     def get_active_day_index(self, date_str: Optional[str] = None) -> int:
         """
         Get the active day index for a given date.
@@ -89,43 +84,40 @@ class ActivityTracker:
         """
         if not self.activity_data["active_days"]:
             return 0
-        
+
         if date_str is None:
             date_str = date.today().isoformat()
-        
+
         try:
-            # Find the index of this date in active days
             return self.activity_data["active_days"].index(date_str)
         except ValueError:
-            # Date not found, return the count of active days
             return len(self.activity_data["active_days"])
-    
+
     def calculate_active_age_days(self, from_date: datetime) -> int:
         """
         Calculate how many active days have passed since a given date.
         Only counts days where ADAM was actually used.
         """
         from_date_str = from_date.date().isoformat()
-        
+
         if not self.activity_data["active_days"]:
             return 0
-        
-        # Count active days after the given date
+
         active_days_count = 0
         for active_day in self.activity_data["active_days"]:
             if active_day > from_date_str:
                 active_days_count += 1
-        
+
         return active_days_count
-    
+
     def get_days_since_last_activity(self) -> int:
         """Get calendar days since last activity"""
         if not self.activity_data["last_activity"]:
             return 0
-        
+
         last_date = datetime.fromisoformat(self.activity_data["last_activity"]).date()
         return (date.today() - last_date).days
-    
+
     def get_activity_summary(self) -> Dict:
         """Get a summary of activity patterns"""
         if not self.activity_data["active_days"]:
@@ -134,17 +126,15 @@ class ActivityTracker:
                 "total_active_days": 0,
                 "total_interactions": 0
             }
-        
-        # Calculate average interactions per active day
+
         total_active_days = len(self.activity_data["active_days"])
         avg_interactions = self.activity_data["total_interactions"] / total_active_days
-        
-        # Find most active day
+
         most_active_day = max(
             self.activity_data["daily_activity"].items(),
             key=lambda x: x[1]
         ) if self.activity_data["daily_activity"] else (None, 0)
-        
+
         return {
             "first_activity": self.activity_data["first_activity"],
             "last_activity": self.activity_data["last_activity"],
@@ -156,16 +146,14 @@ class ActivityTracker:
             "days_since_last_activity": self.get_days_since_last_activity(),
             "current_active_day_index": self.get_active_day_index()
         }
-    
+
     def get_activity_pattern(self, last_n_days: int = 30) -> Dict[str, int]:
         """Get activity pattern for the last N active days"""
         if not self.activity_data["active_days"]:
             return {}
-        
-        # Get the last N active days
+
         recent_days = self.activity_data["active_days"][-last_n_days:]
-        
-        # Return activity counts for these days
+
         return {
             day: self.activity_data["daily_activity"].get(day, 0)
             for day in recent_days

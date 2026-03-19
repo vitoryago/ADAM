@@ -12,7 +12,7 @@ from pathlib import Path
 import logging
 
 # Import activity tracker and compressor
-from adam.activity_tracker import ActivityTracker
+from adam.services.activity_tracker import ActivityTracker
 from .compressor import MemoryCompressor, CompressionResult
 
 logger = logging.getLogger(__name__)
