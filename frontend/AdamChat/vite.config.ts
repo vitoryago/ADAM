@@ -37,6 +37,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        ws: true,  // Also proxy WebSocket upgrades for /api paths (voice streaming)
       },
       '/ws': {
         target: 'ws://localhost:8000',

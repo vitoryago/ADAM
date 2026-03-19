@@ -51,7 +51,11 @@ export function StreamingVoiceConversation({
   }, [conversationId]);
   
   const connectWebSocket = () => {
-    const wsUrl = `ws://localhost:8000/ws/voice-stream/${conversationId}`;
+    // Build WebSocket URL relative to current host so it goes through the Vite proxy in dev
+    // and works with any deployment host in production.
+    // The full backend path is /api/voice/stream/ws/voice-stream/{conversationId}
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/voice/stream/ws/voice-stream/${conversationId}`;
     const ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
