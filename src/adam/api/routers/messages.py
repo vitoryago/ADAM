@@ -29,6 +29,16 @@ except ImportError:
     ADAM_MEMORY_AVAILABLE = False
     logger.warning("Memory system not available")
 
+# Check worthiness evaluator availability
+try:
+    from adam.memory.core import MemoryWorthinessEvaluator, QueryComplexity, MemoryType
+    _worthiness_evaluator = MemoryWorthinessEvaluator()
+    WORTHINESS_EVALUATOR_AVAILABLE = True
+except ImportError:
+    _worthiness_evaluator = None
+    WORTHINESS_EVALUATOR_AVAILABLE = False
+    logger.warning("Memory worthiness evaluator not available")
+
 
 def _get_llm_service(project_settings, project_id):
     """Lazy-load LLMService to avoid import-time failures."""
@@ -44,30 +54,139 @@ def _get_memory_service(project_id, project_name):
     return ProjectAwareMemory(project_id, project_name)
 
 
+def _format_memory_context(memories: list) -> str:
+    """Format memory search results into a readable context string for the LLM.
+
+    Each memory entry includes a relevance percentage so the model can weigh
+    the importance of each recalled piece of context.
+    """
+    if not memories:
+        return ""
+
+    memory_parts = []
+    for mem in memories:
+        content = mem.get("content", mem.get("document", ""))
+        if not isinstance(content, str):
+            content = str(content)
+        # Truncate long content to keep the prompt manageable
+        content = content[:300]
+        similarity = mem.get("relevance_score", mem.get("similarity", 0))
+        memory_parts.append(f"[Relevance: {similarity:.0%}] {content}")
+
+    return "Relevant context from previous conversations:\n" + "\n---\n".join(memory_parts)
+
+
 async def _get_memory_context(message_content, project_id, project_name):
-    """Retrieve memory context for a message."""
-    memory_context = ""
+    """Retrieve memory context for a message.
+
+    Searches the project-scoped memory collection and formats results with
+    relevance scores. Returns an empty string on any failure so that the
+    chat pipeline is never blocked by memory issues.
+    """
     if not ADAM_MEMORY_AVAILABLE:
-        return memory_context
+        return ""
 
     try:
         memory_service = _get_memory_service(project_id, project_name)
-        if memory_service:
-            memories = await memory_service.search_memories(
-                query=message_content,
-                conversation_id=None,  # Search across all conversations in the project
-                limit=20
+        if not memory_service:
+            return ""
+
+        memories = await memory_service.search_memories(
+            query=message_content,
+            conversation_id=None,  # Search across all conversations in the project
+            limit=5,
+        )
+
+        if memories:
+            context = _format_memory_context(memories)
+            logger.info(
+                "Memory recall returned %d results for query '%.50s...'",
+                len(memories),
+                message_content,
             )
-
-            if memories:
-                memory_context = "\n\n=== Relevant Memories ===\n"
-                for mem in memories[:10]:
-                    content = mem.get("content", "") if isinstance(mem, dict) else str(mem)
-                    memory_context += f"- {content[:200]}...\n"
+            return context
     except Exception as e:
-        logger.error(f"Error retrieving memories: {e}")
+        logger.warning(f"Memory recall failed: {e}")
 
-    return memory_context
+    return ""
+
+
+async def _store_memory_if_worthy(
+    query: str,
+    response_content: str,
+    response_cost: float,
+    response_tokens: int,
+    model_used: str,
+    project_id: str,
+    project_name: str,
+    conversation_id: str,
+):
+    """Evaluate whether a response is worth storing in memory and persist it.
+
+    Uses the MemoryWorthinessEvaluator when available, otherwise falls back
+    to a simple heuristic based on cost and token count.  All failures are
+    caught and logged -- memory storage must never crash the chat.
+    """
+    should_store = False
+    store_reason = "heuristic"
+
+    if WORTHINESS_EVALUATOR_AVAILABLE and _worthiness_evaluator:
+        try:
+            complexity = _worthiness_evaluator.assess_query_complexity(query)
+            should_store, store_reason = _worthiness_evaluator.should_store_memory(
+                query, response_content, response_cost, complexity
+            )
+        except Exception as e:
+            logger.warning(f"Worthiness evaluation failed, falling back to heuristic: {e}")
+            should_store = None  # signal to use fallback
+
+    # Fallback heuristic when evaluator is unavailable or errored
+    if should_store is None or (not WORTHINESS_EVALUATOR_AVAILABLE):
+        is_substantial = len(response_content.split()) > 100 or any(
+            term in response_content.upper()
+            for term in ["DBT", "PDT", "MODEL", "SQL", "CREATE", "SELECT"]
+        )
+        cost_threshold = 0.000001
+        token_threshold = 200 if is_substantial else 500
+        should_store = response_cost > cost_threshold or response_tokens > token_threshold
+        store_reason = "heuristic-fallback"
+
+    if not should_store:
+        logger.debug(
+            "Memory storage skipped: %s (query='%.50s...')", store_reason, query
+        )
+        return
+
+    try:
+        memory_service = _get_memory_service(project_id, project_name)
+        if not memory_service:
+            return
+
+        mem_type = MemoryType.CONVERSATION if WORTHINESS_EVALUATOR_AVAILABLE else None
+        if mem_type is None:
+            from adam.memory.core import MemoryType as MT
+            mem_type = MT.CONVERSATION
+
+        memory_id = await memory_service.store_memory(
+            content=f"Q: {query}\n\nA: {response_content}",
+            memory_type=mem_type,
+            metadata={
+                "model": model_used,
+                "cost": response_cost,
+                "tokens": response_tokens,
+                "store_reason": store_reason,
+            },
+            conversation_id=conversation_id,
+            cost=response_cost,
+        )
+        logger.info(
+            "Stored memory %s for conversation %s (reason: %s)",
+            memory_id,
+            conversation_id,
+            store_reason,
+        )
+    except Exception as e:
+        logger.error(f"Error storing memory: {e}")
 
 
 @router.post("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
@@ -205,32 +324,18 @@ async def send_message(
         await db.commit()
         await db.refresh(assistant_message)
 
-        # Store in memory if worthy
-        is_substantial = len(response.content.split()) > 100 or any(
-            term in response.content.upper() for term in ["DBT", "PDT", "MODEL", "SQL", "CREATE", "SELECT"]
-        )
-        cost_threshold = 0.000001
-        token_threshold = 200 if is_substantial else 500
-
-        if message_data.use_memory and (response.cost > cost_threshold or response.tokens_used > token_threshold):
-            try:
-                memory_service = _get_memory_service(project.id, project.name)
-                if memory_service:
-                    from adam.memory.core import MemoryType
-                    memory_id = await memory_service.store_memory(
-                        content=f"Q: {message_data.content}\n\nA: {response.content}",
-                        memory_type=MemoryType.CONVERSATION,
-                        metadata={
-                            "model": response.model_used,
-                            "cost": response.cost,
-                            "tokens": response.tokens_used
-                        },
-                        conversation_id=conversation_id,
-                        cost=response.cost
-                    )
-                    logger.info(f"Stored memory {memory_id} for conversation {conversation_id}")
-            except Exception as e:
-                logger.error(f"Error storing memory: {e}")
+        # Store in memory if worthy (uses MemoryWorthinessEvaluator when available)
+        if message_data.use_memory:
+            await _store_memory_if_worthy(
+                query=message_data.content,
+                response_content=response.content,
+                response_cost=response.cost,
+                response_tokens=response.tokens_used,
+                model_used=response.model_used,
+                project_id=project.id,
+                project_name=project.name,
+                conversation_id=conversation_id,
+            )
 
         # Return both messages
         return [
@@ -380,31 +485,18 @@ async def send_message_stream(
             # Send completion event
             yield f"data: {json.dumps({'type': 'complete', 'id': assistant_message.id, 'tokens': tokens_used, 'cost': cost, 'model': model_used})}\n\n"
 
-            # Store in memory if worthy
-            is_substantial = len(full_response.split()) > 100 or any(
-                term in full_response.upper() for term in ["DBT", "PDT", "MODEL", "SQL", "CREATE", "SELECT"]
-            )
-            cost_threshold = 0.000001
-            token_threshold = 200 if is_substantial else 500
-
-            if message_data.use_memory and (cost > cost_threshold or tokens_used > token_threshold):
-                try:
-                    memory_service = _get_memory_service(project.id, project.name)
-                    if memory_service:
-                        from adam.memory.core import MemoryType
-                        await memory_service.store_memory(
-                            content=f"Q: {message_data.content}\n\nA: {full_response}",
-                            memory_type=MemoryType.CONVERSATION,
-                            metadata={
-                                "model": model_used,
-                                "cost": cost,
-                                "tokens": tokens_used
-                            },
-                            conversation_id=conversation_id,
-                            cost=cost
-                        )
-                except Exception as e:
-                    logger.error(f"Error storing memory: {e}")
+            # Store in memory if worthy (uses MemoryWorthinessEvaluator when available)
+            if message_data.use_memory:
+                await _store_memory_if_worthy(
+                    query=message_data.content,
+                    response_content=full_response,
+                    response_cost=cost,
+                    response_tokens=tokens_used,
+                    model_used=model_used,
+                    project_id=project.id,
+                    project_name=project.name,
+                    conversation_id=conversation_id,
+                )
 
         except Exception as e:
             logger.error(f"Error in stream: {e}")
