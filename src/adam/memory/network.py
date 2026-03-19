@@ -49,16 +49,10 @@ import logging
 import numpy as np
 
 # Import error handling
-try:
-    from ..errors import (
-        NetworkError, LoadError, SaveError, CorruptedMemoryError,
-        retry_with_backoff, ErrorHandler, ErrorContext
-    )
-except ImportError:
-    from adam.errors import (
-        NetworkError, LoadError, SaveError, CorruptedMemoryError,
-        retry_with_backoff, ErrorHandler, ErrorContext
-    )
+from adam.errors import (
+    NetworkError, LoadError, SaveError, CorruptedMemoryError,
+    retry_with_backoff, ErrorHandler, ErrorContext
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

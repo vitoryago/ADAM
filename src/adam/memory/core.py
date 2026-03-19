@@ -31,25 +31,14 @@ from sentence_transformers import SentenceTransformer
 from collections import deque
 
 # Memory configuration
-try:
-    from .config import MemoryConfig
-    from .lifecycle import MemoryLifecycleManager
-    from ..errors import (
-        ADAMError, MemoryError, StorageError, RetrievalError, 
-        CorruptedMemoryError, EmbeddingError, LoadError, SaveError,
-        retry_with_backoff, ErrorHandler, ErrorContext,
-        FallbackJSONRecovery, ConfigurationError
-    )
-except ImportError:
-    # Fallback if running standalone
-    from config import MemoryConfig
-    from lifecycle import MemoryLifecycleManager
-    from ..errors import (
-        ADAMError, MemoryError, StorageError, RetrievalError, 
-        CorruptedMemoryError, EmbeddingError, LoadError, SaveError,
-        retry_with_backoff, ErrorHandler, ErrorContext,
-        FallbackJSONRecovery, ConfigurationError
-    )
+from .config import MemoryConfig
+from .lifecycle import MemoryLifecycleManager
+from adam.errors import (
+    ADAMError, MemoryError, StorageError, RetrievalError,
+    CorruptedMemoryError, EmbeddingError, LoadError, SaveError,
+    retry_with_backoff, ErrorHandler, ErrorContext,
+    FallbackJSONRecovery, ConfigurationError
+)
 
 # Rich output for better visibility
 from rich.console import Console
@@ -633,42 +622,44 @@ class ADAMMemoryAdvanced:
     def recall_with_advanced_rag(self, query: str, n_results: int = 10) -> List[Dict[str, Any]]:
         """
         Retrieve memories using the Advanced RAG system with temporal scoring
-        
+
         This method leverages:
         1. BM25 for keyword matching
         2. Vector search for semantic similarity
         3. Graph traversal for connected memories
         4. Temporal scoring for recency preference
-        
+
         Returns memories with full retrieval metadata
         """
         # Import here to avoid circular imports
-        from .advanced_rag import AdvancedRAGSystem
+        from .rag import AdvancedRAGSystem
         from .network import MemoryNetworkSystem
-        from ..conversation_system import ConversationSystem
-        
+
         # Initialize systems if not already done
         if not hasattr(self, '_rag_system'):
-            # Create conversation system if needed
-            if not hasattr(self, '_conversation_system'):
-                self._conversation_system = ConversationSystem()
-            
+            # Create a minimal conversation system stub for MemoryNetworkSystem
+            # TODO(phase2): wire to real conversation system
+            class _ConversationStub:
+                class _SessionStub:
+                    session_id = "default"
+                current_session = _SessionStub()
+
             # Create memory network
             memory_network = MemoryNetworkSystem(
                 base_memory_system=self,
-                conversation_system=self._conversation_system
+                conversation_system=_ConversationStub()
             )
-            
+
             # Create Advanced RAG with temporal scoring enabled
             self._rag_system = AdvancedRAGSystem(
                 memory_system=self,
                 memory_network=memory_network,
                 temporal_config=None  # Use default config
             )
-        
+
         # Run advanced retrieval
         results = self._rag_system.retrieve(query, k=n_results)
-        
+
         # Convert RetrievalResult objects to dict format for compatibility
         memories = []
         for result in results:
@@ -681,15 +672,15 @@ class ADAMMemoryAdvanced:
                 'matched_terms': result.matched_terms,
                 'active_days': result.metadata.get('active_days', 0)
             }
-            
+
             # Include temporal scoring info if available
             if 'temporal_score' in result.metadata:
                 memory_dict['temporal_score'] = result.metadata['temporal_score']
                 memory_dict['semantic_score'] = result.metadata['semantic_score']
                 memory_dict['combined_score'] = result.metadata['combined_score']
-            
+
             memories.append(memory_dict)
-        
+
         return memories
     
     def update_memory_success(self, memory_id: str, success: bool, 
@@ -964,6 +955,346 @@ class ADAMMemoryAdvanced:
             json.dump(export_data, f, indent=2)
         
         console.print(f"[green]📤 Exported {len(all_data['ids'])} memories to {output_path}[/green]")
+
+
+# =============================================================================
+# Merged from scoring.py — Temporal Memory Scoring
+# =============================================================================
+
+class TemporalScoringConfig:
+    """Configuration for temporal scoring"""
+    def __init__(
+        self,
+        temporal_weight: float = 0.3,
+        half_life_days: float = 30.0,
+        min_temporal_score: float = 0.1,
+    ):
+        self.temporal_weight = temporal_weight
+        self.half_life_days = half_life_days
+        self.min_temporal_score = min_temporal_score
+
+
+class TemporalMemoryScorer:
+    """
+    Adds natural time decay to memory scoring without hard cutoffs.
+
+    This ensures recent memories are preferred but doesn't exclude
+    older memories that might be the only relevant ones.
+    """
+
+    def __init__(self, config: TemporalScoringConfig = None):
+        self.config = config or TemporalScoringConfig()
+
+    def calculate_temporal_score(self, timestamp: datetime) -> float:
+        """Calculate temporal relevance score using exponential decay."""
+        import math as _math
+
+        now = datetime.now()
+        if timestamp.tzinfo:
+            now = datetime.now(timestamp.tzinfo)
+
+        age_days = max(0, (now - timestamp).total_seconds() / 86400)
+        decay_rate = 0.693 / self.config.half_life_days
+        temporal_score = _math.exp(-decay_rate * age_days)
+        return max(temporal_score, self.config.min_temporal_score)
+
+    def combine_scores(self, semantic_score: float, temporal_score: float) -> float:
+        """Combine semantic and temporal scores with configured weights."""
+        return (
+            (1 - self.config.temporal_weight) * semantic_score
+            + self.config.temporal_weight * temporal_score
+        )
+
+    def score_memory(self, memory: Dict[str, Any]) -> float:
+        """Score a single memory considering both semantic relevance and recency."""
+        semantic_score = memory.get('similarity', 0.5)
+        if semantic_score < 0:
+            semantic_score = 0.1 + (semantic_score + 1) * 0.05
+
+        metadata = memory.get('metadata', {})
+        timestamp_str = metadata.get('timestamp', '')
+
+        if timestamp_str:
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                temporal_score = self.calculate_temporal_score(timestamp)
+            except Exception:
+                temporal_score = self.config.min_temporal_score
+        else:
+            temporal_score = self.config.min_temporal_score
+
+        memory['semantic_score'] = semantic_score
+        memory['temporal_score'] = temporal_score
+        return self.combine_scores(semantic_score, temporal_score)
+
+    def rerank_memories(self, memories: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Rerank memories using temporal scoring."""
+        for memory in memories:
+            memory['combined_score'] = self.score_memory(memory)
+        memories.sort(key=lambda m: m['combined_score'], reverse=True)
+        return memories
+
+    def explain_scoring(self, memory: Dict[str, Any]) -> str:
+        """Explain why a memory received its score."""
+        semantic = memory.get('semantic_score', 0)
+        temporal = memory.get('temporal_score', 0)
+        combined = memory.get('combined_score', 0)
+        metadata = memory.get('metadata', {})
+        timestamp_str = metadata.get('timestamp', 'unknown')
+        if timestamp_str != 'unknown':
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                age_days = (datetime.now(timestamp.tzinfo) - timestamp).days
+                age_str = f"{age_days} days old"
+            except Exception:
+                age_str = "unknown age"
+        else:
+            age_str = "unknown age"
+        return (
+            f"Score breakdown:\n"
+            f"  Semantic: {semantic:.3f} (70% weight)\n"
+            f"  Temporal: {temporal:.3f} (30% weight, {age_str})\n"
+            f"  Combined: {combined:.3f}"
+        )
+
+
+# =============================================================================
+# Merged from search.py — Enhanced Memory Search
+# =============================================================================
+
+import re as _re
+
+@dataclass
+class SearchContext:
+    """Context for enhanced memory search"""
+    current_query: str
+    conversation_history: List[Dict[str, str]]
+    technical_terms: List[str]
+    user_intent: str  # 'recall', 'continue', 'reference', 'general'
+
+
+class MemorySearchEnhancer:
+    """Enhances memory search queries for better retrieval"""
+
+    RECALL_PATTERNS = [
+        r"we (?:were|was) (?:talking|discussing|working)",
+        r"(?:remember|recall) (?:when|that)",
+        r"(?:the|that) (?:code|example|dag|model) (?:you|we)",
+        r"(?:bring|show|give) (?:me|us)? ?(?:back|again)?",
+        r"bring (?:me|us) back",
+        r"(?:previous|earlier|last) (?:conversation|discussion|code|dag)",
+        r"continue (?:our|the) (?:conversation|discussion)",
+        r"back to (?:our|the|that)",
+        r"can you (?:bring|show|give)",
+    ]
+
+    TECH_PATTERNS = {
+        'dag': r'\b(?:dag|dags|directed acyclic graph)\b',
+        'dbt': r'\b(?:dbt|data build tool)\b',
+        'airflow': r'\b(?:airflow|apache airflow)\b',
+        'model': r'\b(?:model|models|modeling)\b',
+        'operator': r'\b(?:operator|operators|bashoperator|pythonoperator)\b',
+        'task': r'\b(?:task|tasks|task_id)\b',
+        'python': r'\b(?:python|py|\.py|python files?|python code)\b',
+        'file': r'\b(?:files?|scripts?|modules?|code files?)\b',
+        'adam': r'\b(?:adam|memory system|improvements?|error handling)\b',
+        'schedule': r'\b(?:schedule|schedule_interval|cron)\b',
+    }
+
+    def __init__(self):
+        self.recall_regex = _re.compile('|'.join(self.RECALL_PATTERNS), _re.IGNORECASE)
+        self.tech_regex = {k: _re.compile(v, _re.IGNORECASE) for k, v in self.TECH_PATTERNS.items()}
+
+    def analyze_user_intent(self, query: str) -> str:
+        if self.recall_regex.search(query):
+            return 'recall'
+        elif 'continue' in query.lower() or 'go on' in query.lower():
+            return 'continue'
+        elif 'that' in query.lower() or 'the code' in query.lower():
+            return 'reference'
+        return 'general'
+
+    def extract_technical_terms(self, text: str) -> List[str]:
+        terms = []
+        for term, pattern in self.tech_regex.items():
+            if pattern.search(text):
+                terms.append(term)
+        return terms
+
+    def build_enhanced_query(self, context: SearchContext) -> str:
+        enhanced_parts = [context.current_query]
+        if context.user_intent in ['recall', 'continue', 'reference']:
+            for msg in context.conversation_history[-4:]:
+                if msg['role'] == 'user':
+                    enhanced_parts.append(f"previous question: {msg['content'][:100]}")
+            if context.technical_terms:
+                enhanced_parts.append(f"technical context: {' '.join(context.technical_terms)}")
+        if len(context.technical_terms) >= 2:
+            enhanced_parts.append(' '.join(context.technical_terms))
+        return ' '.join(enhanced_parts)
+
+    def score_memory_relevance(self, memory: Dict[str, Any], context: SearchContext) -> float:
+        base_similarity = memory.get('similarity', 0.5)
+        if base_similarity < 0:
+            score = 0.1 + (base_similarity + 1) * 0.1
+        else:
+            score = base_similarity
+
+        content = memory.get('content', '').lower()
+
+        for term in context.technical_terms:
+            if term in content:
+                score *= 1.2
+
+        if context.user_intent == 'recall':
+            has_code_block = '```python' in content or '```' in content
+            has_code_patterns = any(p in content for p in ['def ', 'class ', 'from ', 'import '])
+            if has_code_block:
+                score *= 2.0
+            elif has_code_patterns:
+                score *= 1.5
+
+        if context.user_intent == 'general':
+            metadata = memory.get('metadata', {})
+            timestamp_str = metadata.get('timestamp', '')
+            if timestamp_str:
+                try:
+                    memory_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    now = datetime.now(memory_time.tzinfo) if memory_time.tzinfo else datetime.now()
+                    hours_ago = (now - memory_time).total_seconds() / 3600
+                    if hours_ago < 24:
+                        score *= 20.0
+                    elif hours_ago < 72:
+                        score *= 15.0
+                    elif hours_ago < 168:
+                        score *= 10.0
+                    elif hours_ago < 336:
+                        score *= 5.0
+                except Exception:
+                    pass
+
+        memory_age_days = memory.get('active_days', 0)
+        if memory_age_days > 30 and context.user_intent != 'recall':
+            score *= 0.7
+
+        return score
+
+    def filter_and_rank_memories(self, memories: List[Dict[str, Any]], context: SearchContext) -> List[Dict[str, Any]]:
+        scored = []
+        for memory in memories:
+            memory['relevance_score'] = self.score_memory_relevance(memory, context)
+            scored.append(memory)
+        scored.sort(key=lambda m: m['relevance_score'], reverse=True)
+        if context.user_intent == 'recall':
+            filtered = [m for m in scored if len(m.get('content', '')) > 200]
+            if not filtered:
+                filtered = scored
+        else:
+            filtered = scored
+        return filtered[:5]
+
+    def enhance_memory_search(
+        self, query: str, conversation_history: List[Dict[str, str]], raw_memories: List[Dict[str, Any]]
+    ) -> Tuple[List[Dict[str, Any]], SearchContext]:
+        all_text = query + ' '.join(msg['content'] for msg in conversation_history[-4:])
+        technical_terms = self.extract_technical_terms(all_text)
+        user_intent = self.analyze_user_intent(query)
+        context = SearchContext(
+            current_query=query,
+            conversation_history=conversation_history,
+            technical_terms=technical_terms,
+            user_intent=user_intent,
+        )
+        enhanced_memories = self.filter_and_rank_memories(raw_memories, context)
+        return enhanced_memories, context
+
+
+def format_memory_for_prompt(memory: Dict[str, Any], context: SearchContext) -> str:
+    """Format a memory for inclusion in the prompt"""
+    content = memory.get('content', '')
+    if 'Query:' in content and 'Response:' in content:
+        parts = content.split('Response:', 1)
+        query_part = parts[0].replace('Query:', '').strip()
+        response_part = parts[1].strip() if len(parts) > 1 else ''
+        if context.user_intent == 'recall':
+            has_code = '```python' in response_part or '```' in response_part
+            is_code_query = any(t in query_part.lower() for t in ['dag', 'code', 'create', 'model', 'script', 'function'])
+            if has_code or is_code_query:
+                return f"=== PREVIOUS CONVERSATION ===\nUser asked: {query_part}\n\nYour response was:\n{response_part}\n"
+            return f"Previous conversation:\nUser: {query_part}\nYou: {response_part[:1500]}..."
+        else:
+            return f"Q: {query_part[:150]}...\nA: {response_part[:300]}..."
+    return f"Memory: {content[:500]}..."
+
+
+# =============================================================================
+# Merged from conversation.py — Conversation-Aware Memory helpers
+# =============================================================================
+
+class ConversationAwareMemorySystem:
+    """
+    Bridges the conversation system with memory network.
+
+    NOTE: The original ConversationSystem dependency (adam.conversation_system)
+    was deleted in Phase 1. This class retains the useful evaluation and
+    classification logic. Conversation tracking will be re-wired in Phase 2
+    when a proper session service is built.
+    """
+
+    def __init__(self, base_memory_system, memory_network=None, storage_path: str = "./adam_memory_advanced"):
+        self.base_memory_system = base_memory_system
+        self.memory_network = memory_network
+        self.current_context: Dict[str, Any] = {}
+        logger.info("Initialized conversation-aware memory system (consolidated)")
+
+    # -- Memory worthiness evaluation (from conversation.py) --
+
+    def evaluate_memory_worthiness(
+        self, query: str, response: str, generation_cost: float, topics: List[str]
+    ) -> bool:
+        """Determine if an exchange should be stored in memory."""
+        if generation_cost > 0.01:
+            return True
+        if any(w in query.lower() for w in ['error', 'issue', 'problem', 'fail']):
+            return True
+        if any(m in response for m in ['```', 'def ', 'class ', 'function']):
+            return True
+        if len(response.split()) > 100:
+            return True
+        if len(topics) >= 3:
+            return True
+        return False
+
+    def classify_memory_type(self, query: str, response: str) -> str:
+        """Classify the type of memory."""
+        q = query.lower()
+        if any(w in q for w in ['error', 'fail', 'issue', 'bug']):
+            return "error_solution"
+        if '```' in response or 'def ' in response:
+            return "code_implementation"
+        if q.startswith(('how to', 'how do', 'how can')):
+            return "how_to_guide"
+        if any(w in q for w in ['what is', 'explain', 'why']):
+            return "explanation"
+        if any(w in q for w in ['analyze', 'review', 'evaluate']):
+            return "analysis"
+        return "general"
+
+    @staticmethod
+    def format_time_ago(timestamp: datetime) -> str:
+        """Format a timestamp as human-readable time ago."""
+        delta = datetime.now() - timestamp
+        if delta.days > 1:
+            return f"{delta.days} days ago"
+        elif delta.days == 1:
+            return "yesterday"
+        elif delta.seconds > 3600:
+            hours = delta.seconds // 3600
+            return f"{hours} hour{'s' if hours != 1 else ''} ago"
+        elif delta.seconds > 60:
+            minutes = delta.seconds // 60
+            return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+        return "just now"
 
 
 def demonstrate_advanced_features():

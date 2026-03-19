@@ -1,106 +1,52 @@
-"""
-ADAM Memory System - Consolidated Module
+"""ADAM Memory System - Persistent memory with graph relationships and decay."""
 
-This module provides the complete memory system for ADAM, including:
-- Core memory operations (storage, retrieval, updates)
-- Memory network connections and relationships
-- Conversation-aware context handling
-- Project-based memory isolation
-- Advanced search and retrieval
-- Memory lifecycle management (compression, cleanup)
-"""
-
-# Core memory classes
 from .core import (
-    Memory,
-    MemoryType,
-    QueryComplexity,
     ADAMMemoryAdvanced,
+    MemoryType,
+    MemoryWorthinessEvaluator,
+    QueryComplexity,
+    Memory,
     ConversationState,
-    MemoryWorthinessEvaluator
+    # Merged from scoring.py
+    TemporalScoringConfig,
+    TemporalMemoryScorer,
+    # Merged from search.py
+    SearchContext,
+    MemorySearchEnhancer,
+    format_memory_for_prompt,
+    # Merged from conversation.py
+    ConversationAwareMemorySystem,
 )
-
-# Configuration
-from .config import (
-    EmbeddingProvider,
-    EmbeddingConfig
-)
-
-# Memory network and connections
-from .network import (
-    MemoryNetworkSystem,
-    MemoryNode,
-    ConversationThread,
-    MemoryConnection,
-    ConnectionType
-)
-
-# Conversation handling
-from .conversation import (
-    ConversationAwareMemorySystem
-)
-
-# Project isolation
-from .project import (
-    ProjectAwareMemory
-)
-
-# Search and retrieval
-from .search import (
-    SearchContext
-)
-
-# Lifecycle management
-from .lifecycle import (
-    MemoryLifecycleManager
-)
-
-# Compression utilities
-from .compressor import (
-    MemoryCompressor
-)
-
-# Temporal scoring
-from .scoring import (
-    TemporalScoringConfig
-)
+from .network import MemoryNetworkSystem, MemoryNode, ConversationThread
+from .lifecycle import MemoryLifecycleManager
+from .config import MemoryConfig
+from .project import ProjectAwareMemory
 
 __all__ = [
     # Core
-    'Memory',
-    'MemoryType', 
-    'QueryComplexity',
     'ADAMMemoryAdvanced',
-    'ConversationState',
+    'MemoryType',
     'MemoryWorthinessEvaluator',
-    
-    # Config
-    'EmbeddingProvider',
-    'EmbeddingConfig',
-    
+    'QueryComplexity',
+    'Memory',
+    'ConversationState',
+    # Temporal scoring (was scoring.py)
+    'TemporalScoringConfig',
+    'TemporalMemoryScorer',
+    # Search (was search.py)
+    'SearchContext',
+    'MemorySearchEnhancer',
+    'format_memory_for_prompt',
+    # Conversation-aware (was conversation.py)
+    'ConversationAwareMemorySystem',
     # Network
     'MemoryNetworkSystem',
     'MemoryNode',
     'ConversationThread',
-    'MemoryConnection',
-    'ConnectionType',
-    
-    # Conversation
-    'ConversationAwareMemorySystem',
-    
-    # Project
-    'ProjectAwareMemory',
-    
-    # Search
-    'SearchContext',
-    
     # Lifecycle
     'MemoryLifecycleManager',
-    'MemoryCompressor',
-    
-    # Scoring
-    'TemporalScoringConfig'
+    # Config
+    'MemoryConfig',
+    # Project
+    'ProjectAwareMemory',
 ]
-
-# Version info
-__version__ = '2.0.0'

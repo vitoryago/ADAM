@@ -11,12 +11,8 @@ from dataclasses import dataclass
 import logging
 
 # For LLM integration
-try:
-    from ..llm.client import UnifiedLLMClient
-    from ..llm.config import LLMConfig
-except ImportError:
-    from adam.llm.client import UnifiedLLMClient
-    from adam.llm.config import LLMConfig
+from adam.llm.client import UnifiedLLMClient
+from adam.llm.config import LLMConfig
 
 logger = logging.getLogger(__name__)
 

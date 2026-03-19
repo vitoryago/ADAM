@@ -12,12 +12,8 @@ from pathlib import Path
 import logging
 
 # Import activity tracker and compressor
-try:
-    from ..activity_tracker import ActivityTracker
-    from .compressor import MemoryCompressor, CompressionResult
-except ImportError:
-    from activity_tracker import ActivityTracker
-    from memory_compressor import MemoryCompressor, CompressionResult
+from adam.activity_tracker import ActivityTracker
+from .compressor import MemoryCompressor, CompressionResult
 
 logger = logging.getLogger(__name__)
 

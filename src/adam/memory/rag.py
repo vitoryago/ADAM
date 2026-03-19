@@ -64,11 +64,11 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
-# Import our existing systems
-from .memory.core import ADAMMemoryAdvanced as MemorySystem, Memory
-from .memory.network import MemoryNetworkSystem, MemoryNode
-from .memory.conversation import ConversationAwareMemorySystem
-from .memory.scoring import TemporalMemoryScorer, TemporalScoringConfig
+# Import our existing systems (updated for consolidated memory package)
+from .core import ADAMMemoryAdvanced as MemorySystem, Memory
+from .core import TemporalMemoryScorer, TemporalScoringConfig
+from .core import ConversationAwareMemorySystem
+from .network import MemoryNetworkSystem, MemoryNode
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -914,6 +914,83 @@ class AdvancedRAGSystem:
                 "Vector search could benefit from domain-specific embeddings"
             ]
         }
+
+
+# =============================================================================
+# Merged from adam_v2/services/advanced_memory_service.py — BM25 evaluation
+# =============================================================================
+
+from enum import Enum as _Enum
+
+
+class MemoryWorthiness(_Enum):
+    """Memory worthiness levels (from v2 advanced_memory_service)"""
+    ESSENTIAL = "essential"
+    VALUABLE = "valuable"
+    MODERATE = "moderate"
+    TRIVIAL = "trivial"
+
+
+async def evaluate_memory_worthiness(
+    query: str,
+    response: str,
+    cost: float = 0.0,
+    model: str = "unknown",
+) -> Tuple[MemoryWorthiness, Dict[str, Any]]:
+    """
+    Evaluate if a query-response pair is worth storing.
+    Standalone async function extracted from v2 AdvancedMemoryService.
+    """
+    metadata: Dict[str, Any] = {"evaluated_at": datetime.now().isoformat(), "factors": {}}
+
+    # Factor 1: Cost
+    if cost > 0.01:
+        metadata["factors"]["cost"] = "expensive"
+        return MemoryWorthiness.ESSENTIAL, metadata
+    elif cost > 0.001:
+        metadata["factors"]["cost"] = "moderate"
+        cost_score = 0.5
+    else:
+        metadata["factors"]["cost"] = "cheap"
+        cost_score = 0.1
+
+    # Factor 2: Query complexity (simple heuristic)
+    word_count = len(query.split())
+    has_code = any(m in query for m in ['()', '[]', '{}', '->', 'def', 'class'])
+    if word_count > 20 or has_code:
+        complexity_score = 0.9
+    elif word_count > 10:
+        complexity_score = 0.6
+    else:
+        complexity_score = 0.2
+    metadata["factors"]["complexity"] = complexity_score
+
+    # Factor 3: Response characteristics
+    response_score = 0.3
+    if "```" in response:
+        response_score += 0.3
+    if any(m in response for m in ["1.", "- ", "* ", "##"]):
+        response_score += 0.2
+    if len(response.split()) > 200:
+        response_score += 0.2
+
+    # Factor 4: Error/implementation queries
+    query_lower = query.lower()
+    if any(w in query_lower for w in ["error", "bug", "fix", "issue", "problem"]):
+        return MemoryWorthiness.ESSENTIAL, metadata
+    if any(w in query_lower for w in ["implement", "create", "build", "design"]):
+        response_score += 0.3
+
+    final_score = cost_score * 0.4 + complexity_score * 0.3 + response_score * 0.3
+    metadata["factors"]["final_score"] = round(final_score, 2)
+
+    if final_score >= 0.7:
+        return MemoryWorthiness.ESSENTIAL, metadata
+    elif final_score >= 0.5:
+        return MemoryWorthiness.VALUABLE, metadata
+    elif final_score >= 0.3:
+        return MemoryWorthiness.MODERATE, metadata
+    return MemoryWorthiness.TRIVIAL, metadata
 
 
 def demonstrate_retrieval_differences():
