@@ -6,6 +6,7 @@ intelligent routing, and memory storage.
 
 import os
 import re
+import inspect
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from dataclasses import dataclass
 import logging
@@ -531,7 +532,7 @@ class LLMService:
                 "system_prompt": final_system_prompt,
                 "temperature": style_temperature,
                 "max_tokens": style_max_tokens,
-                "stream": False
+                "stream": True
             }
 
             if use_search and final_model in ["grok-3-mini", "grok-3-mini-high", "grok-4", "grok-4-reasoning"]:
@@ -553,39 +554,69 @@ class LLMService:
 
                 complete_kwargs["image_data"] = image_bytes
 
-            stream_response = await self.llm_client.complete(**complete_kwargs)
-
             accumulated_content = ""
-            token_count = 0
+            chunk_count = 0
 
-            logger.info(f"Getting response from model {final_model} (streaming disabled)")
+            try:
+                stream = await self.llm_client.complete(**complete_kwargs)
 
-            content = stream_response.content if hasattr(stream_response, 'content') else str(stream_response)
-            accumulated_content = content
-            token_count = len(accumulated_content.split()) * 1.3
+                # Check if the client returned an async generator (real streaming)
+                # or an LLMResponse object (streaming not supported for this model)
+                if inspect.isasyncgen(stream):
+                    # Real streaming: iterate over async generator of string chunks
+                    logger.info(f"Streaming response from model {final_model}")
+                    async for chunk_text in stream:
+                        if chunk_text:
+                            chunk_count += 1
+                            accumulated_content += chunk_text
+                            yield StreamChunk(
+                                content=chunk_text,
+                                model_used=final_model,
+                                tokens_used=0,
+                                cost=0.0
+                            )
+                    logger.info(f"Streaming complete: {chunk_count} chunks, {len(accumulated_content)} total chars")
+                else:
+                    # Fallback: client returned a complete LLMResponse (no streaming support)
+                    logger.info(f"Model {final_model} returned non-streaming response, yielding as single chunk")
+                    content = stream.content if hasattr(stream, 'content') else str(stream)
+                    accumulated_content = content
+                    yield StreamChunk(
+                        content=content,
+                        model_used=final_model,
+                        tokens_used=getattr(stream, 'total_tokens', 0),
+                        cost=getattr(stream, 'cost', 0.0)
+                    )
 
-            yield StreamChunk(
-                content=content,
-                model_used=final_model,
-                tokens_used=int(token_count),
-                cost=0.0
-            )
+            except Exception as stream_error:
+                logger.warning(f"Streaming failed for {final_model}, falling back to non-streaming: {stream_error}")
+                # Fallback: retry without streaming
+                complete_kwargs["stream"] = False
+                fallback_response = await self.llm_client.complete(**complete_kwargs)
+                content = fallback_response.content if hasattr(fallback_response, 'content') else str(fallback_response)
+                accumulated_content = content
+                yield StreamChunk(
+                    content=content,
+                    model_used=final_model,
+                    tokens_used=getattr(fallback_response, 'total_tokens', 0),
+                    cost=getattr(fallback_response, 'cost', 0.0)
+                )
 
-            logger.info(f"Response complete: {len(accumulated_content)} total chars")
-
+            # Calculate final token count and cost
             model_config = MODEL_CONFIGS.get(final_model)
             if model_config and hasattr(model_config, 'cost_per_1k_tokens'):
                 cost_per_1k = model_config.cost_per_1k_tokens
             else:
                 cost_per_1k = 0.002
 
-            final_token_count = int(token_count * 1.1)
-            estimated_cost = (final_token_count / 1000) * cost_per_1k
+            token_count = int(len(accumulated_content.split()) * 1.3)
+            estimated_cost = (token_count / 1000) * cost_per_1k
 
+            # Final chunk with metadata
             yield StreamChunk(
                 content="",
                 model_used=final_model,
-                tokens_used=final_token_count,
+                tokens_used=token_count,
                 cost=estimated_cost,
                 is_final=True
             )
