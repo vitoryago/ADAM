@@ -1,41 +1,54 @@
 """
-Database Engine and Connection Management
+ADAM Database Module
+
+Unified database engine setup with SQLAlchemy. Provides engine creation,
+session management, and the Base declarative base for ORM models.
+
+ORM model definitions live in adam.api.models (Task 7).
 """
 
-import asyncio
-from typing import Optional, AsyncGenerator
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import text
 import logging
+from typing import Optional, AsyncGenerator
 
-from adam.config import get_config
-from .models import Base
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
+
+# Declarative base for all ORM models
+Base = declarative_base()
 
 
 class DatabaseEngine:
     """
-    Unified database engine manager
-    Handles connection pooling, session management, and cleanup
+    Unified database engine manager.
+    Handles connection pooling, session management, and cleanup.
     """
 
     def __init__(self, database_url: Optional[str] = None):
         """
-        Initialize database engine
+        Initialize database engine.
 
         Args:
-            database_url: Database URL (if None, loads from config)
+            database_url: Database URL. If None, loads from config.
+                          Defaults to sqlite:///./data/adam.db
         """
         if database_url is None:
+            from adam.config import get_config
             config = get_config()
             database_url = config.database.url
+
+        # Ensure async driver for SQLite
+        if database_url.startswith('sqlite:///') and 'aiosqlite' not in database_url:
+            database_url = database_url.replace('sqlite:///', 'sqlite+aiosqlite:///')
 
         self.database_url = database_url
 
         # Create async engine with optimized settings
         engine_kwargs = {
-            'echo': False,  # Set to True for SQL debugging
+            'echo': False,
             'future': True,
         }
 
@@ -50,8 +63,8 @@ class DatabaseEngine:
 
         self.engine = create_async_engine(database_url, **engine_kwargs)
 
-        # Create session maker
-        self.async_session = async_sessionmaker(
+        # Create session maker (compatible with SQLAlchemy 1.4+)
+        self.async_session = sessionmaker(
             self.engine,
             class_=AsyncSession,
             expire_on_commit=False
@@ -66,12 +79,6 @@ class DatabaseEngine:
         except Exception as e:
             logger.error(f"Error creating database tables: {e}")
             raise
-
-    async def drop_tables(self):
-        """Drop all tables (use with caution!)"""
-        async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-        logger.warning("All database tables dropped")
 
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
         """Get an async database session"""
@@ -109,7 +116,7 @@ _engine: Optional[DatabaseEngine] = None
 
 def get_engine(database_url: Optional[str] = None) -> DatabaseEngine:
     """
-    Get the global database engine instance
+    Get the global database engine instance.
 
     Args:
         database_url: Database URL (only used on first call)
@@ -125,7 +132,7 @@ def get_engine(database_url: Optional[str] = None) -> DatabaseEngine:
 
 async def create_tables(database_url: Optional[str] = None):
     """
-    Create all database tables
+    Create all database tables.
 
     Args:
         database_url: Database URL (optional)
@@ -136,7 +143,7 @@ async def create_tables(database_url: Optional[str] = None):
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """
-    Get an async database session from the global engine
+    Get an async database session from the global engine.
 
     Returns:
         AsyncSession instance
@@ -146,7 +153,34 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-# Context manager for easy session usage
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Get database session for FastAPI dependency injection.
+    Commits on success, rolls back on error.
+    """
+    engine = get_engine()
+    async with engine.async_session() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+async def init_db():
+    """Initialize database tables (convenience alias)."""
+    await create_tables()
+
+
+async def close_db():
+    """Close database connections."""
+    engine = get_engine()
+    await engine.close()
+
+
 class DatabaseSession:
     """Context manager for database sessions"""
 
@@ -167,20 +201,12 @@ class DatabaseSession:
             logger.error(f"Error closing database session: {e}")
 
 
-# Convenience function
 def db_session(engine: Optional[DatabaseEngine] = None) -> DatabaseSession:
     """
-    Create a database session context manager
-
-    Args:
-        engine: Optional database engine
-
-    Returns:
-        DatabaseSession context manager
+    Create a database session context manager.
 
     Usage:
         async with db_session() as session:
-            # Use session here
             result = await session.execute(...)
     """
     return DatabaseSession(engine)

@@ -12,13 +12,13 @@ from adam.llm.async_client import AsyncLLMClient
 
 class ADAMSystem:
     """
-    Main ADAM system class
-    Provides a simple interface to the unified architecture
+    Main ADAM system class.
+    Provides a simple interface to the unified architecture.
     """
 
     def __init__(self, config=None):
         """
-        Initialize ADAM system
+        Initialize ADAM system.
 
         Args:
             config: Configuration object (optional)
@@ -35,7 +35,7 @@ class ADAMSystem:
 
     async def complete(self, prompt: str, **kwargs) -> str:
         """
-        Simple completion method
+        Simple completion method.
 
         Args:
             prompt: User prompt

@@ -113,6 +113,6 @@ adam_v2.db
 *.csv
 
 # Temporary files
-test_*.py
+/test_*.py
 temp/
 tmp/

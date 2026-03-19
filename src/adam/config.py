@@ -1,6 +1,8 @@
 """
-Unified Configuration System for ADAM
-Replaces all scattered config files with a single, hierarchical system
+ADAM Configuration Module
+
+Unified configuration system that loads from environment variables,
+.env files, and provides typed dataclass configs for all subsystems.
 """
 
 import os
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DatabaseConfig:
     """Database configuration"""
-    url: str = "sqlite+aiosqlite:///./data/adam_unified.db"
+    url: str = "sqlite:///./data/adam.db"
     echo: bool = False
     pool_size: int = 5
     max_overflow: int = 10
@@ -136,7 +138,7 @@ class UnifiedConfig:
         # Load environment variables
         if env_file is None:
             # Look for .env file in project root
-            project_root = Path(__file__).parent.parent.parent.parent
+            project_root = Path(__file__).parent.parent.parent
             env_file = project_root / ".env"
 
         if Path(env_file).exists():
@@ -163,7 +165,7 @@ class UnifiedConfig:
         """Load core ADAM settings"""
         return {
             'name': os.getenv('ADAM_NAME', 'ADAM'),
-            'version': os.getenv('ADAM_VERSION', '2.0.0'),
+            'version': os.getenv('ADAM_VERSION', '4.0.0'),
             'language': os.getenv('ADAM_LANGUAGE', 'en'),
             'log_level': os.getenv('ADAM_LOG_LEVEL', 'INFO'),
             'debug': os.getenv('DEBUG', 'false').lower() == 'true'
@@ -172,7 +174,7 @@ class UnifiedConfig:
     def _load_database_config(self) -> DatabaseConfig:
         """Load database configuration"""
         return DatabaseConfig(
-            url=os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///./data/adam_unified.db'),
+            url=os.getenv('DATABASE_URL', 'sqlite:///./data/adam.db'),
             echo=os.getenv('LOG_SQL_QUERIES', 'false').lower() == 'true',
             pool_size=int(os.getenv('DB_POOL_SIZE', '5')),
             max_overflow=int(os.getenv('DB_MAX_OVERFLOW', '10'))
@@ -323,7 +325,7 @@ class UnifiedConfig:
 
 
 # Global configuration instance
-config: Optional[UnifiedConfig] = None
+_config: Optional[UnifiedConfig] = None
 
 
 def get_config(env_file: Optional[str] = None) -> UnifiedConfig:
@@ -336,10 +338,10 @@ def get_config(env_file: Optional[str] = None) -> UnifiedConfig:
     Returns:
         UnifiedConfig instance
     """
-    global config
-    if config is None:
-        config = UnifiedConfig(env_file)
-    return config
+    global _config
+    if _config is None:
+        _config = UnifiedConfig(env_file)
+    return _config
 
 
 def reload_config(env_file: Optional[str] = None) -> UnifiedConfig:
@@ -352,6 +354,10 @@ def reload_config(env_file: Optional[str] = None) -> UnifiedConfig:
     Returns:
         New UnifiedConfig instance
     """
-    global config
-    config = UnifiedConfig(env_file)
-    return config
+    global _config
+    _config = UnifiedConfig(env_file)
+    return _config
+
+
+# Convenience alias
+Config = get_config
