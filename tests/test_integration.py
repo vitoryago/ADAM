@@ -302,3 +302,110 @@ def test_memory_types_endpoint():
         data = resp.json()
         assert "available" in data
         assert "types" in data
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 integration tests -- multi-agent reasoning system
+# ---------------------------------------------------------------------------
+
+def test_multi_agent_imports():
+    """All multi-agent components are importable."""
+    from adam.agents import (
+        Agent, AgentConfig, Scratchpad, ScratchpadEntry,
+        AgentRole, EntryType, Orchestrator, OrchestrationPattern,
+        CostGuard, FallbackSynthesizer,
+        create_reasoner, create_coder, create_researcher,
+        create_critic, create_synthesizer,
+    )
+    assert Orchestrator is not None
+    assert len(AgentRole) == 5
+    assert len(EntryType) == 7
+
+
+def test_multi_agent_trigger_detection():
+    """Orchestrator correctly identifies multi-agent queries."""
+    from adam.agents import Orchestrator
+    orch = Orchestrator.__new__(Orchestrator)
+
+    # Should trigger
+    assert orch.should_use_multi_agent("Design a distributed caching system", "complex")
+    assert orch.should_use_multi_agent("Compare React vs Vue for our project", "complex")
+
+    # Should NOT trigger
+    assert not orch.should_use_multi_agent("What time is it?", "simple")
+    assert not orch.should_use_multi_agent("How do I print in Python?", "moderate")
+
+
+def test_pattern_selection():
+    """Correct pattern selected based on query type."""
+    from adam.agents import Orchestrator, OrchestrationPattern
+    orch = Orchestrator.__new__(Orchestrator)
+
+    assert orch.select_pattern("Implement a REST API") == OrchestrationPattern.SEQUENTIAL
+    assert orch.select_pattern("Compare pros and cons of SQL vs NoSQL") == OrchestrationPattern.DEBATE
+
+
+def test_scratchpad_visibility_rules():
+    """Agents see only what they should see."""
+    from adam.agents import Scratchpad, ScratchpadEntry, AgentRole, EntryType
+
+    pad = Scratchpad(query="Design an API")
+    pad.add_entry(ScratchpadEntry(
+        agent_role=AgentRole.REASONER, agent_name="Reasoner",
+        content="Plan: 3 endpoints", entry_type=EntryType.PLAN
+    ))
+    pad.add_entry(ScratchpadEntry(
+        agent_role=AgentRole.CODER, agent_name="Coder",
+        content="def endpoint():", entry_type=EntryType.CODE
+    ))
+    pad.add_entry(ScratchpadEntry(
+        agent_role=AgentRole.CRITIC, agent_name="Critic",
+        content="Missing error handling", entry_type=EntryType.CRITIQUE
+    ))
+
+    # Reasoner sees nothing (works from query only)
+    assert len(pad._get_visible_entries(AgentRole.REASONER)) == 0
+
+    # Coder sees plan but not critique
+    coder_visible = pad._get_visible_entries(AgentRole.CODER)
+    assert any(e.entry_type == EntryType.PLAN for e in coder_visible)
+    assert not any(e.entry_type == EntryType.CRITIQUE for e in coder_visible)
+
+    # Synthesizer sees everything
+    assert len(pad._get_visible_entries(AgentRole.SYNTHESIZER)) == 3
+
+
+def test_cost_guard_budget():
+    """Cost guard enforces budget limits."""
+    from adam.agents import CostGuard
+    guard = CostGuard(budget=0.10)
+    assert guard.can_afford(0.05)
+    guard.record_spend("agent1", 0.08)
+    assert not guard.can_afford(0.05)
+    assert guard.suggest_action() == "cheap_model"
+
+
+def test_fallback_synthesis():
+    """Fallback synthesizer produces response from scratchpad."""
+    from adam.agents import Scratchpad, ScratchpadEntry, AgentRole, EntryType, FallbackSynthesizer
+
+    pad = Scratchpad(query="test")
+    pad.add_entry(ScratchpadEntry(
+        agent_role=AgentRole.REASONER, agent_name="R",
+        content="Step 1: Do X", entry_type=EntryType.PLAN
+    ))
+    pad.add_entry(ScratchpadEntry(
+        agent_role=AgentRole.CODER, agent_name="C",
+        content="def x(): pass", entry_type=EntryType.CODE
+    ))
+
+    result = FallbackSynthesizer.synthesize(pad)
+    assert "Step 1" in result
+    assert "def x" in result
+
+
+def test_llm_service_has_multi_agent():
+    """LLMService has generate_with_agents method."""
+    from adam.services.llm_service import LLMService
+    assert hasattr(LLMService, 'generate_with_agents')
+    assert callable(getattr(LLMService, 'generate_with_agents'))
