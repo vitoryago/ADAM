@@ -89,6 +89,7 @@ Desktop.ini
 # Testing
 .pytest_cache/
 .coverage
+*.coverage
 htmlcov/
 
 # Frontend

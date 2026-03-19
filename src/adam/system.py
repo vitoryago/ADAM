@@ -64,27 +64,3 @@ class ADAMSystem:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit"""
         await self.close()
-
-
-# Backward compatibility
-class ADAMMemoryAdvanced:
-    """Legacy memory system for backward compatibility"""
-
-    def __init__(self, persist_directory=None):
-        self.persist_directory = persist_directory
-
-    def search(self, query, k=5):
-        """Mock search method"""
-        return []
-
-    def add_memory(self, content, metadata=None):
-        """Mock add memory method"""
-        pass
-
-    def get_statistics(self):
-        """Mock statistics method"""
-        return {
-            'total_memories': 0,
-            'collections': 0,
-            'last_updated': 'N/A'
-        }
