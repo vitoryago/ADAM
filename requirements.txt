@@ -1,0 +1,57 @@
+# ADAM 4.0 - Unified Requirements
+# Core runtime dependencies for the ADAM backend
+
+# ===== Web Framework =====
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-multipart>=0.0.6
+
+# ===== Database =====
+sqlalchemy>=2.0.23
+aiosqlite>=0.19.0
+
+# ===== LLM Providers =====
+openai>=1.6.0
+anthropic>=0.8.0
+langchain>=0.1.0
+langchain-community>=0.0.13
+langchain-openai>=0.0.5
+langchain-anthropic>=0.1.0
+langgraph>=0.0.26
+
+# ===== Memory & Vector Search =====
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+
+# ===== Graph & ML =====
+networkx>=3.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+
+# ===== Async & Networking =====
+httpx>=0.25.0
+aiohttp>=3.9.0
+websockets>=12.0
+
+# ===== Utilities =====
+python-dotenv>=1.0.0
+pyyaml>=6.0
+ruamel.yaml>=0.17.0
+
+# ===== SQL / dbt =====
+sqlparse>=0.4.4
+
+# ===== Voice (optional) =====
+# elevenlabs>=0.2.27
+# pyttsx3>=2.90
+# SpeechRecognition>=3.10.0
+
+# ===== Development =====
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.0.0

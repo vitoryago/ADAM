@@ -12,7 +12,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name="adam-assistant",
-    version="2.0.0",
+    version="4.0.0",
     author="ADAM Development Team",
     author_email="adam@example.com",
     description="Analytics Data Assistant with Memory - An intelligent AI assistant with conversation tracking and memory networks",
@@ -34,45 +34,62 @@ setup(
     ],
     python_requires=">=3.9",
     install_requires=[
+        # Web Framework
+        "fastapi>=0.104.0",
+        "uvicorn[standard]>=0.24.0",
+        "pydantic>=2.5.0",
+        "python-multipart>=0.0.6",
+        # Database
+        "sqlalchemy>=2.0.23",
+        "aiosqlite>=0.19.0",
+        # LLM Providers
+        "openai>=1.6.0",
+        "anthropic>=0.8.0",
         "langchain>=0.1.0",
         "langchain-community>=0.0.13",
-        "ollama>=0.1.0",
+        "langchain-openai>=0.0.5",
+        "langchain-anthropic>=0.1.0",
+        "langgraph>=0.0.26",
+        # Memory & ML
         "chromadb>=0.4.0",
         "sentence-transformers>=2.2.0",
         "networkx>=3.0",
         "numpy>=1.24.0",
         "scikit-learn>=1.3.0",
-        "matplotlib>=3.7.0",
-        "seaborn>=0.12.0",
-        "rich>=13.0.0",
-        "pyttsx3>=2.90",
+        # Utilities
         "python-dotenv>=1.0.0",
-        "xai-sdk>=0.1.0",
-        "fastapi>=0.104.0",
-        "uvicorn>=0.24.0",
+        "pyyaml>=6.0",
+        "ruamel.yaml>=0.17.0",
+        "httpx>=0.25.0",
+        "aiohttp>=3.9.0",
+        "websockets>=12.0",
+        # SQL/dbt
+        "sqlparse>=0.4.4",
     ],
     extras_require={
         "dev": [
             "pytest>=7.4.0",
+            "pytest-asyncio>=0.23.0",
             "pytest-cov>=4.1.0",
             "black>=23.0.0",
-            "flake8>=6.0.0",
+            "ruff>=0.1.0",
             "mypy>=1.0.0",
         ],
-        "vision": [
-            "openai>=1.6.0",
-            "openai-whisper>=20231117",
+        "voice": [
+            "elevenlabs>=0.2.27",
+            "pyttsx3>=2.90",
+            "SpeechRecognition>=3.10.0",
         ],
-        "web": [
-            "streamlit>=1.29.0",
-            "gradio>=4.13.0",
+        "viz": [
+            "matplotlib>=3.7.0",
+            "seaborn>=0.12.0",
+            "plotly>=5.18.0",
+            "pydot>=1.4.2",
         ],
     },
     entry_points={
         "console_scripts": [
-            "adam-chat=adam.cli.chat:main",
-            "adam-complete=adam.cli.complete:main",
-            "adam-server=adam.cli.server:main",
+            "adam-server=uvicorn:main",
         ],
     },
 )
