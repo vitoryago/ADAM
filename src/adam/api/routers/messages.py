@@ -40,6 +40,33 @@ except ImportError:
     logger.warning("Memory worthiness evaluator not available")
 
 
+import re
+
+# Phrases that force multi-agent mode regardless of complexity analysis.
+_FORCE_MULTI_AGENT_RE = re.compile(
+    r"\b(deep\s+think|multi[\s-]?agent|reason\s+deeply)\b", re.IGNORECASE
+)
+
+
+def _should_use_multi_agent(message: str) -> bool:
+    """Decide whether to engage the multi-agent orchestrator.
+
+    Returns True if:
+    - The message contains an explicit trigger phrase, OR
+    - The Orchestrator's heuristic determines the query is complex enough.
+
+    The Orchestrator is imported lazily to avoid circular imports.
+    """
+    if _FORCE_MULTI_AGENT_RE.search(message):
+        return True
+    try:
+        from adam.agents.orchestrator import Orchestrator
+        orch = Orchestrator.__new__(Orchestrator)
+        return orch.should_use_multi_agent(message)
+    except Exception:
+        return False
+
+
 def _get_llm_service(project_settings, project_id):
     """Lazy-load LLMService to avoid import-time failures."""
     from adam.services.llm_service import LLMService
@@ -287,18 +314,41 @@ async def send_message(
     # Use memory context for AI response
     combined_context = memory_context
 
+    # Determine whether multi-agent reasoning should be used.
+    use_multi_agent = False
+    if not message_data.has_image:  # multi-agent does not handle images
+        try:
+            use_multi_agent = _should_use_multi_agent(message_data.content)
+        except Exception:
+            use_multi_agent = False
+
     # Generate AI response
     try:
-        response = await llm_service.generate_response(
-            message=enhanced_content,
-            history=history,
-            memory_context=combined_context,
-            model=message_data.model,
-            image_data=message_data.image_data if message_data.has_image else None,
-            use_search=message_data.use_search,
-            search_mode=message_data.search_mode,
-            response_style=message_data.response_style
-        )
+        response = None
+
+        # Try multi-agent path first when appropriate
+        if use_multi_agent:
+            try:
+                logger.info("Using multi-agent reasoning for query: '%.60s...'", message_data.content)
+                response = await llm_service.generate_with_agents(
+                    message=enhanced_content, budget=0.50
+                )
+            except Exception as ma_err:
+                logger.warning("Multi-agent reasoning failed, falling back to single model: %s", ma_err)
+                response = None  # fall through to single-model path
+
+        # Single-model fallback (or default path for simple queries)
+        if response is None:
+            response = await llm_service.generate_response(
+                message=enhanced_content,
+                history=history,
+                memory_context=combined_context,
+                model=message_data.model,
+                image_data=message_data.image_data if message_data.has_image else None,
+                use_search=message_data.use_search,
+                search_mode=message_data.search_mode,
+                response_style=message_data.response_style
+            )
 
         # Create assistant message
         assistant_message = Message(
@@ -323,8 +373,9 @@ async def send_message(
         await db.commit()
         await db.refresh(assistant_message)
 
-        # Store in memory if worthy (uses MemoryWorthinessEvaluator when available)
-        if message_data.use_memory:
+        # Store in memory if worthy (uses MemoryWorthinessEvaluator when available).
+        # Multi-agent responses are expensive and complex -- always attempt storage.
+        if message_data.use_memory or (response.metadata and response.metadata.get("multi_agent")):
             await _store_memory_if_worthy(
                 query=message_data.content,
                 response_content=response.content,
@@ -436,6 +487,14 @@ async def send_message_stream(
             message_data.content, project.id, project.name
         )
 
+    # Determine whether multi-agent reasoning should be used for streaming.
+    use_multi_agent = False
+    if not message_data.has_image:
+        try:
+            use_multi_agent = _should_use_multi_agent(message_data.content)
+        except Exception:
+            use_multi_agent = False
+
     async def stream_response():
         """Stream the response as Server-Sent Events"""
         try:
@@ -447,24 +506,75 @@ async def send_message_stream(
             tokens_used = 0
             cost = 0.0
             model_used = message_data.model or "automatic"
+            used_multi_agent = False
 
-            async for chunk in llm_service.stream_response(
-                message=enhanced_content,
-                history=history,
-                memory_context=memory_context,
-                model=message_data.model,
-                image_data=message_data.image_data if message_data.has_image else None,
-                response_style=message_data.response_style,
-                use_search=message_data.use_search,
-                search_mode=message_data.search_mode
-            ):
-                full_response += chunk.content
-                tokens_used = chunk.tokens_used
-                cost = chunk.cost
-                model_used = chunk.model_used
+            # --- Multi-agent streaming path ---
+            if use_multi_agent:
+                try:
+                    from adam.agents.orchestrator import Orchestrator
 
-                # Send chunk
-                yield f"data: {json.dumps({'type': 'assistant_chunk', 'content': chunk.content})}\n\n"
+                    logger.info("Streaming multi-agent reasoning for query: '%.60s...'", message_data.content)
+                    orchestrator = Orchestrator(llm_service.llm_client, llm_service.memory_service)
+
+                    async for event in orchestrator.orchestrate_stream(enhanced_content, budget=0.50):
+                        event_type = event.get("type", "")
+
+                        if event_type == "orchestration_start":
+                            yield f"data: {json.dumps({'type': 'agent_status', 'agent': 'orchestrator', 'status': 'started', 'pattern': event.get('pattern')})}\n\n"
+
+                        elif event_type == "agent_start":
+                            agent_name = event.get("agent", "unknown")
+                            yield f"data: {json.dumps({'type': 'agent_status', 'agent': agent_name, 'status': 'thinking'})}\n\n"
+
+                        elif event_type == "agent_chunk":
+                            agent_name = event.get("agent", "unknown")
+                            chunk_content = event.get("content", "")
+                            yield f"data: {json.dumps({'type': 'agent_chunk', 'agent': agent_name, 'content': chunk_content})}\n\n"
+
+                        elif event_type == "agent_done":
+                            agent_name = event.get("agent", "unknown")
+                            agent_cost = event.get("cost", 0.0)
+                            cost += agent_cost
+                            yield f"data: {json.dumps({'type': 'agent_done', 'agent': agent_name, 'cost': agent_cost})}\n\n"
+
+                        elif event_type == "done":
+                            full_response = event.get("response", "")
+                            tokens_used = event.get("tokens", 0)
+                            cost = event.get("total_cost", cost)
+                            model_used = f"multi-agent ({event.get('pattern', 'unknown')})"
+                            used_multi_agent = True
+
+                            # Stream the final synthesis as assistant content
+                            yield f"data: {json.dumps({'type': 'assistant_chunk', 'content': full_response})}\n\n"
+
+                        elif event_type in ("debate_start", "debate_round"):
+                            yield f"data: {json.dumps({'type': 'agent_status', 'agent': 'debate', 'status': event_type})}\n\n"
+
+                except Exception as ma_err:
+                    logger.warning("Multi-agent streaming failed, falling back to single model: %s", ma_err)
+                    full_response = ""
+                    used_multi_agent = False
+                    # Fall through to single-model streaming below
+
+            # --- Single-model streaming path (default or fallback) ---
+            if not used_multi_agent:
+                async for chunk in llm_service.stream_response(
+                    message=enhanced_content,
+                    history=history,
+                    memory_context=memory_context,
+                    model=message_data.model,
+                    image_data=message_data.image_data if message_data.has_image else None,
+                    response_style=message_data.response_style,
+                    use_search=message_data.use_search,
+                    search_mode=message_data.search_mode
+                ):
+                    full_response += chunk.content
+                    tokens_used = chunk.tokens_used
+                    cost = chunk.cost
+                    model_used = chunk.model_used
+
+                    # Send chunk
+                    yield f"data: {json.dumps({'type': 'assistant_chunk', 'content': chunk.content})}\n\n"
 
             # Create assistant message in database
             assistant_message = Message(
@@ -483,8 +593,9 @@ async def send_message_stream(
             # Send completion event
             yield f"data: {json.dumps({'type': 'complete', 'id': assistant_message.id, 'tokens': tokens_used, 'cost': cost, 'model': model_used})}\n\n"
 
-            # Store in memory if worthy (uses MemoryWorthinessEvaluator when available)
-            if message_data.use_memory:
+            # Store in memory if worthy.
+            # Multi-agent responses are expensive and complex -- always attempt storage.
+            if message_data.use_memory or used_multi_agent:
                 await _store_memory_if_worthy(
                     query=message_data.content,
                     response_content=full_response,

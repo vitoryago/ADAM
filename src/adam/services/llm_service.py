@@ -645,6 +645,39 @@ class LLMService:
                 is_final=True
             )
 
+    async def generate_with_agents(self, message: str, budget: float = 0.50) -> LLMResponse:
+        """Use multi-agent reasoning for complex queries.
+
+        Lazily imports the Orchestrator to avoid circular dependencies, runs
+        the full orchestration pipeline, and wraps the result in a standard
+        LLMResponse so callers can treat it identically to single-model output.
+
+        Args:
+            message: The user's query.
+            budget: Maximum dollar spend for the orchestration run.
+
+        Returns:
+            LLMResponse with content from the synthesized multi-agent result.
+        """
+        from adam.agents.orchestrator import Orchestrator
+
+        orchestrator = Orchestrator(self.llm_client, self.memory_service)
+        result = await orchestrator.orchestrate(message, budget=budget)
+
+        return LLMResponse(
+            content=result["response"],
+            model_used=f"multi-agent ({result['pattern']})",
+            tokens_used=sum(
+                e.get("tokens", 0) for e in result["scratchpad"]["entries"]
+            ),
+            cost=result["total_cost"],
+            metadata={
+                "multi_agent": True,
+                "pattern": result["pattern"],
+                "agents_used": result["agents_used"],
+            },
+        )
+
     def _select_model_by_complexity(self, complexity: 'QueryComplexity') -> str:
         """Select model based on query complexity"""
         if not QueryComplexity:
