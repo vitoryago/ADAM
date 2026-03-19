@@ -227,12 +227,11 @@ async def send_message(
     await db.commit()
     await db.refresh(user_message)
 
-    # Get conversation history
+    # Get full conversation history (sliding window in LLMService handles truncation)
     history_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at.asc())
-        .limit(30)
     )
     history = history_result.scalars().all()
 
@@ -389,12 +388,11 @@ async def send_message_stream(
     await db.commit()
     await db.refresh(user_message)
 
-    # Get history
+    # Get full conversation history (sliding window in LLMService handles truncation)
     history_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at.asc())
-        .limit(10)
     )
     history = history_result.scalars().all()
 

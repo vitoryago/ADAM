@@ -117,6 +117,48 @@ class LLMService:
             except Exception as e:
                 logger.warning(f"Failed to initialize memory service: {e}")
 
+    def _build_conversation_context(self, history: list, max_recent: int = 10, max_summary: int = 20) -> list:
+        """Build conversation context with sliding window.
+
+        - Last max_recent messages: include in full
+        - Messages max_recent+1 to max_recent+max_summary: summarize to 150 chars each
+        - Older messages: dropped
+        """
+        messages = []
+
+        if not history:
+            return messages
+
+        total = len(history)
+
+        # Determine boundaries
+        recent_start = max(0, total - max_recent)
+        summary_start = max(0, recent_start - max_summary)
+
+        # Summarize older messages (condensed context)
+        if summary_start < recent_start:
+            older = history[summary_start:recent_start]
+            if older:
+                summary_lines = []
+                for msg in older:
+                    content = msg.content if hasattr(msg, 'content') else str(msg)
+                    role = msg.role if hasattr(msg, 'role') else 'unknown'
+                    preview = content[:150] + "..." if len(content) > 150 else content
+                    summary_lines.append(f"{role.upper()}: {preview}")
+                messages.append({
+                    "role": "system",
+                    "content": f"Summary of earlier conversation ({len(older)} messages):\n" + "\n".join(summary_lines)
+                })
+
+        # Recent messages in full
+        recent = history[recent_start:]
+        for msg in recent:
+            content = msg.content if hasattr(msg, 'content') else str(msg)
+            role = msg.role if hasattr(msg, 'role') else 'user'
+            messages.append({"role": role, "content": content})
+
+        return messages
+
     async def generate_response(
         self,
         message: str,
@@ -140,14 +182,8 @@ class LLMService:
                 cost=0.0
             )
 
-        # Build conversation history
-        messages = []
-        if history:
-            for msg in history[-30:]:  # Last 30 messages
-                messages.append({
-                    "role": msg.role,
-                    "content": msg.content
-                })
+        # Build conversation history with sliding window
+        messages = self._build_conversation_context(history, max_recent=10, max_summary=20)
 
         # Add memory context if available
         full_prompt = message
@@ -417,30 +453,8 @@ class LLMService:
             )
             return
 
-        # Build conversation history with smart truncation
-        messages = []
-        if history:
-            total_history = len(history)
-            recent_messages = history[-10:]
-
-            if total_history > 10:
-                older_messages = history[-30:-10] if total_history > 30 else history[:-10]
-                if older_messages:
-                    summary = "Previous conversation context:\n"
-                    for i, msg in enumerate(older_messages):
-                        content_preview = msg.content[:150] + "..." if len(msg.content) > 150 else msg.content
-                        summary += f"{msg.role.upper()}: {content_preview}\n"
-
-                    messages.append({
-                        "role": "system",
-                        "content": summary
-                    })
-
-            for msg in recent_messages:
-                messages.append({
-                    "role": msg.role,
-                    "content": msg.content
-                })
+        # Build conversation history with sliding window
+        messages = self._build_conversation_context(history, max_recent=10, max_summary=20)
 
         # Add memory context
         full_prompt = message
