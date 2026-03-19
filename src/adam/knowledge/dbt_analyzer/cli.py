@@ -237,19 +237,19 @@ def main():
         epilog="""
 Examples:
   # Analyze a DBT project
-  python -m adam_v2.dbt_analyzer.cli analyze /path/to/dbt/project
+  python -m adam.knowledge.dbt_analyzer.cli analyze /path/to/dbt/project
 
   # Generate documentation for a model
-  python -m adam_v2.dbt_analyzer.cli document my_model --project-path /path/to/dbt
+  python -m adam.knowledge.dbt_analyzer.cli document my_model --project-path /path/to/dbt
 
   # Analyze lineage
-  python -m adam_v2.dbt_analyzer.cli lineage my_model --project-path /path/to/dbt
+  python -m adam.knowledge.dbt_analyzer.cli lineage my_model --project-path /path/to/dbt
 
   # Get optimization suggestions
-  python -m adam_v2.dbt_analyzer.cli optimize my_model --platform snowflake
+  python -m adam.knowledge.dbt_analyzer.cli optimize my_model --platform snowflake
 
   # Search models in memory
-  python -m adam_v2.dbt_analyzer.cli search "customer orders"
+  python -m adam.knowledge.dbt_analyzer.cli search "customer orders"
         """
     )
 

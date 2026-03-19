@@ -556,3 +556,250 @@ class ColumnIntelligenceEngine:
                     suggestions[model]['columns'].append(column_def)
 
         return suggestions
+
+
+# ---------------------------------------------------------------------------
+# Higher-level service (merged from dbt_column_service.py)
+# ---------------------------------------------------------------------------
+
+class DBTColumnDocumentationService:
+    """
+    Service for intelligent column documentation generation.
+    Integrates AI, pattern recognition, and cross-model analysis.
+
+    Merged from: src/adam_v2/services/dbt_column_service.py
+    """
+
+    def __init__(self):
+        from adam.llm.client import UnifiedLLMClient
+        from .sql_intelligence import SQLIntelligenceEngine
+        from .pattern_learning import PatternLearningEngine
+
+        self.llm_client = UnifiedLLMClient()
+        self.sql_intelligence = SQLIntelligenceEngine()
+        self.pattern_learning: Dict[str, PatternLearningEngine] = {}
+        self.engines: Dict[str, ColumnIntelligenceEngine] = {}
+        self.readers: Dict[str, "DirectDBTReader"] = {}
+        self.parsers: Dict[str, "DBTManifestParser"] = {}
+
+    def _get_or_create_engine(self, project_path: str) -> ColumnIntelligenceEngine:
+        """Get or create a column intelligence engine for a project"""
+        if project_path not in self.engines:
+            from pathlib import Path
+
+            parser = None
+            reader = None
+
+            manifest_path = Path(project_path) / "target" / "manifest.json"
+            if manifest_path.exists():
+                if project_path not in self.parsers:
+                    self.parsers[project_path] = DBTManifestParser(str(manifest_path))
+                    self.parsers[project_path].parse()
+                parser = self.parsers[project_path]
+            else:
+                if project_path not in self.readers:
+                    self.readers[project_path] = DirectDBTReader(project_path)
+                    self.readers[project_path].read_project()
+                reader = self.readers[project_path]
+
+            self.engines[project_path] = ColumnIntelligenceEngine(parser=parser, reader=reader)
+
+        return self.engines[project_path]
+
+    async def analyze_columns(self, project_path: str, use_ai: bool = True) -> Dict[str, Any]:
+        """Analyze all columns in a DBT project"""
+        engine = self._get_or_create_engine(project_path)
+        column_catalog = engine.analyze_project_columns()
+        report = engine.generate_documentation_report()
+
+        if use_ai:
+            report = await self._enhance_with_ai(report, column_catalog, project_path)
+
+        return report
+
+    async def document_model_columns(
+        self,
+        project_path: str,
+        model_name: str,
+        use_ai: bool = True,
+        preserve_existing: bool = True,
+    ) -> Dict[str, Any]:
+        """Generate column documentation for a specific model"""
+        engine = self._get_or_create_engine(project_path)
+
+        if not engine.column_catalog:
+            engine.analyze_project_columns()
+
+        model_columns: Dict[str, Any] = {}
+        for col_name, col_info in engine.column_catalog.items():
+            if model_name in col_info.appears_in_models:
+                description = None
+
+                if preserve_existing and model_name in col_info.existing_descriptions:
+                    description = col_info.existing_descriptions[model_name]
+                else:
+                    if use_ai:
+                        description = await self._generate_ai_description(
+                            col_name, model_name, col_info, project_path
+                        )
+                    else:
+                        description = engine.suggest_column_description(col_name, model_name)
+
+                model_columns[col_name] = {
+                    'name': col_name,
+                    'description': description,
+                    'pattern': col_info.pattern.pattern_type if col_info.pattern else None,
+                    'is_foreign_key': col_info.is_foreign_key,
+                    'references': (
+                        f"{col_info.references_table}.{col_info.references_column}"
+                        if col_info.references_table else None
+                    ),
+                    'appears_in_other_models': list(col_info.appears_in_models - {model_name}),
+                }
+
+                tests = self._suggest_tests_for_column(col_info)
+                if tests:
+                    model_columns[col_name]['suggested_tests'] = tests
+
+        return {
+            'model': model_name,
+            'columns': model_columns,
+            'total_columns': len(model_columns),
+            'documented_columns': sum(1 for c in model_columns.values() if c['description']),
+            'pattern_columns': sum(1 for c in model_columns.values() if c['pattern']),
+            'foreign_keys': sum(1 for c in model_columns.values() if c['is_foreign_key']),
+        }
+
+    async def _generate_ai_description(
+        self,
+        column_name: str,
+        model_name: Optional[str],
+        col_info: ColumnInfo,
+        project_path: str,
+        sql_content: Optional[str] = None,
+    ) -> str:
+        """Generate an AI-enhanced column description using LLM"""
+        sql_insight = ""
+        if sql_content and model_name:
+            try:
+                transformation = await self.sql_intelligence.analyze_column_sql(
+                    sql_content, column_name, model_name
+                )
+                if transformation and transformation.business_logic:
+                    sql_insight = f"\n\nSQL Analysis: {transformation.business_logic}"
+                    sql_insight += f"\nTransformation: {transformation.logic_description}"
+                    if transformation.source_columns:
+                        sql_insight += f"\nDerived from: {', '.join(transformation.source_columns)}"
+            except Exception as e:
+                logger.debug(f"SQL intelligence analysis skipped: {e}")
+
+        context = f"Generate a concise, clear description for the database column '{column_name}'"
+        if model_name:
+            context += f" in the model '{model_name}'"
+        if sql_insight:
+            context += sql_insight
+        if col_info.pattern:
+            context += f". This appears to be a {col_info.pattern.pattern_type} column"
+        if col_info.is_foreign_key and col_info.references_table:
+            context += f". It's a foreign key referencing {col_info.references_table}.{col_info.references_column}"
+        if len(col_info.appears_in_models) > 1:
+            context += f". This column appears in {len(col_info.appears_in_models)} models"
+        if col_info.existing_descriptions:
+            existing = list(col_info.existing_descriptions.values())[0]
+            context += f". Existing description: '{existing}'. Please improve or standardize it"
+        context += ". Keep the description under 150 characters and make it business-friendly."
+
+        try:
+            response = await self.llm_client.complete(
+                prompt=context,
+                model="claude-sonnet-4-5-20250929",
+                temperature=0.3,
+                max_tokens=100,
+            )
+            return response.content.strip()
+        except Exception as e:
+            logger.warning(f"AI description generation failed: {e}")
+            engine = self._get_or_create_engine(project_path)
+            return engine.suggest_column_description(column_name, model_name)
+
+    async def _enhance_with_ai(
+        self,
+        report: Dict,
+        column_catalog: Dict[str, ColumnInfo],
+        project_path: str,
+    ) -> Dict:
+        """Enhance the report with AI-generated insights"""
+        try:
+            patterns_summary = json.dumps(report['patterns_detected'], indent=2)
+            prompt = f"""Analyze these column patterns from a DBT project and provide insights:
+
+{patterns_summary}
+
+Provide 3-5 key insights about:
+1. Data model maturity
+2. Naming convention consistency
+3. Missing documentation priorities
+4. Potential data quality issues
+
+Keep each insight concise (1-2 sentences)."""
+
+            response = await self.llm_client.complete(
+                prompt=prompt,
+                model="claude-sonnet-4-5",
+                temperature=0.5,
+                max_tokens=300,
+            )
+
+            insights = response.content.strip().split('\n')
+            report['ai_insights'] = [i.strip() for i in insights if i.strip()]
+
+        except Exception as e:
+            logger.warning(f"AI enhancement failed: {e}")
+            report['ai_insights'] = []
+
+        return report
+
+    @staticmethod
+    def _suggest_tests_for_column(col_info: ColumnInfo) -> List:
+        """Suggest DBT tests for a column based on its pattern"""
+        tests: List = []
+
+        if col_info.pattern:
+            pattern_type = col_info.pattern.pattern_type
+
+            if pattern_type == 'id':
+                tests.extend(['unique', 'not_null'])
+            elif pattern_type in ['timestamp', 'date']:
+                tests.append('not_null')
+            elif pattern_type == 'boolean':
+                tests.extend(['not_null', {'accepted_values': {'values': [True, False]}}])
+            elif pattern_type == 'status':
+                tests.append('not_null')
+            elif pattern_type == 'email':
+                tests.append('not_null')
+            elif pattern_type in ['money', 'count']:
+                tests.extend([
+                    'not_null',
+                    {'dbt_utils.expression_is_true': {'expression': f'{col_info.name} >= 0'}},
+                ])
+
+        if col_info.is_foreign_key and col_info.references_table:
+            tests.append({
+                'relationships': {
+                    'to': f"ref('{col_info.references_table}')",
+                    'field': col_info.references_column or 'id',
+                }
+            })
+
+        return tests
+
+    def clear_cache(self, project_path: Optional[str] = None):
+        """Clear cached engines and readers"""
+        if project_path:
+            self.engines.pop(project_path, None)
+            self.readers.pop(project_path, None)
+            self.parsers.pop(project_path, None)
+        else:
+            self.engines.clear()
+            self.readers.clear()
+            self.parsers.clear()

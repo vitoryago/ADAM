@@ -18,7 +18,7 @@ except ImportError:
     SQLGLOT_AVAILABLE = False
     print("Warning: sqlglot not installed. Run: pip install sqlglot")
 
-from ...adam.llm.client import UnifiedLLMClient
+from adam.llm.client import UnifiedLLMClient
 
 logger = logging.getLogger(__name__)
 
