@@ -69,23 +69,92 @@ export class ADAMChatProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ type: 'typing', isTyping: true });
 
         try {
-            // Always send the message with current context
-            // The ADAM client will handle workspace context automatically
-            const response = await this.adamClient.sendMessage(content);
-            
-            // Check for file creation markers in the response
-            await this.handleFileCreation(response.content);
-            
-            // Add assistant response
-            this.addMessage(response);
-        } catch (error) {
-            this.addMessage({
-                role: 'assistant',
-                content: `Error: ${error}`
-            });
+            // Try streaming first, fall back to sync
+            await this.handleUserMessageStreaming(content);
+        } catch (streamError) {
+            console.warn('Streaming failed, falling back to sync:', streamError);
+            try {
+                const response = await this.adamClient.sendMessage(content);
+                await this.handleFileCreation(response.content);
+                this.addMessage(response);
+            } catch (syncError) {
+                this.addMessage({
+                    role: 'assistant',
+                    content: `Error: ${syncError}`
+                });
+            }
         } finally {
             this._view?.webview.postMessage({ type: 'typing', isTyping: false });
+            this._view?.webview.postMessage({ type: 'streamEnd' });
         }
+    }
+
+    /** Handle a user message using SSE streaming */
+    private async handleUserMessageStreaming(content: string): Promise<void> {
+        let firstChunkReceived = false;
+
+        const response = await this.adamClient.sendMessageStream(content, {
+            onChunk: (text: string) => {
+                if (!firstChunkReceived) {
+                    firstChunkReceived = true;
+                    // Hide typing indicator, start streaming display
+                    this._view?.webview.postMessage({ type: 'typing', isTyping: false });
+                    this._view?.webview.postMessage({ type: 'streamStart' });
+                }
+                this._view?.webview.postMessage({
+                    type: 'streamChunk',
+                    content: text
+                });
+            },
+
+            onAgentStatus: (agent: string, status: string, pattern?: string) => {
+                this._view?.webview.postMessage({
+                    type: 'agentStatus',
+                    agent,
+                    status,
+                    pattern
+                });
+            },
+
+            onAgentChunk: (agent: string, agentContent: string) => {
+                this._view?.webview.postMessage({
+                    type: 'agentChunk',
+                    agent,
+                    content: agentContent
+                });
+            },
+
+            onAgentDone: (agent: string, cost: number) => {
+                this._view?.webview.postMessage({
+                    type: 'agentDone',
+                    agent,
+                    cost
+                });
+            },
+
+            onComplete: (id: string, tokens: number, cost: number, model: string) => {
+                this._view?.webview.postMessage({
+                    type: 'streamComplete',
+                    id,
+                    tokens,
+                    cost,
+                    model
+                });
+            },
+
+            onError: (message: string) => {
+                this._view?.webview.postMessage({
+                    type: 'streamError',
+                    message
+                });
+            }
+        });
+
+        // Check for file creation markers in the response
+        await this.handleFileCreation(response.content);
+
+        // Store the final message in our local history
+        this.messages.push(response);
     }
 
     private async handleFileCreation(content: string) {
@@ -93,31 +162,26 @@ export class ADAMChatProvider implements vscode.WebviewViewProvider {
         // Format: <<<CREATE_FILE:path>>> or <<<UPDATE_FILE:path>>> content <<<END_FILE>>>
         const filePattern = /<<<(CREATE_FILE|UPDATE_FILE):(.*?)>>>([\s\S]*?)<<<END_FILE>>>/g;
         let match;
-        
+
         while ((match = filePattern.exec(content)) !== null) {
-            const operation = match[1]; // CREATE_FILE or UPDATE_FILE
+            const operation = match[1];
             const filePath = match[2].trim();
             const fileContent = match[3].trim();
-            
+
             try {
-                // Get workspace folder
                 const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
                 if (!workspaceFolder) {
                     vscode.window.showErrorMessage('No workspace folder open');
                     continue;
                 }
-                
-                // Handle active file updates
+
                 const activeEditor = vscode.window.activeTextEditor;
                 let fullPath: vscode.Uri;
-                
+
                 if (operation === 'UPDATE_FILE' && activeEditor) {
-                    // If updating, prefer to update the active file or create in same directory
                     if (!filePath || filePath === 'current' || filePath === 'this') {
-                        // Update the current active file
                         fullPath = activeEditor.document.uri;
                     } else if (!filePath.includes('/')) {
-                        // Just a filename - create in same directory as active file
                         const activeDir = vscode.Uri.joinPath(activeEditor.document.uri, '..');
                         const pathParts = filePath.split('.');
                         if (pathParts.length > 1) {
@@ -129,30 +193,25 @@ export class ADAMChatProvider implements vscode.WebviewViewProvider {
                         }
                         fullPath = vscode.Uri.joinPath(activeDir, pathParts.join('.'));
                     } else {
-                        // Has path - use workspace root
                         fullPath = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
                     }
                 } else {
-                    // CREATE_FILE or no active editor - use workspace root
                     fullPath = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
-                    
-                    // For CREATE_FILE, ensure directories exist
+
                     if (operation === 'CREATE_FILE') {
                         const dirPath = vscode.Uri.joinPath(fullPath, '..');
                         await vscode.workspace.fs.createDirectory(dirPath);
                     }
                 }
-                
-                // Write file
+
                 const encoder = new TextEncoder();
                 await vscode.workspace.fs.writeFile(fullPath, encoder.encode(fileContent));
-                
-                // Show success message and open file
+
                 const action = operation === 'UPDATE_FILE' ? 'Updated' : 'Created';
                 vscode.window.showInformationMessage(`${action} file: ${fullPath.fsPath}`);
                 const doc = await vscode.workspace.openTextDocument(fullPath);
                 await vscode.window.showTextDocument(doc);
-                
+
             } catch (error) {
                 const action = operation === 'UPDATE_FILE' ? 'update' : 'create';
                 vscode.window.showErrorMessage(`Failed to ${action} file ${filePath}: ${error}`);
@@ -190,36 +249,36 @@ export class ADAMChatProvider implements vscode.WebviewViewProvider {
         <body>
             <div class="chat-container">
                 <div class="chat-header">
-                    <h3>🧠 ADAM Assistant</h3>
+                    <h3>ADAM Assistant</h3>
                     <div class="header-actions">
                         <select id="styleSelect" title="Response style">
                             <option value="normal">Normal</option>
                             <option value="concise">Concise</option>
                             <option value="explanatory">Explanatory</option>
                         </select>
-                        <button id="clearBtn" title="Clear chat">🗑️</button>
-                        <button id="exportBtn" title="Export conversation">📋</button>
+                        <button id="clearBtn" title="Clear chat">Clear</button>
+                        <button id="exportBtn" title="Export conversation">Export</button>
                     </div>
                 </div>
-                
+
                 <div id="messages" class="messages-container"></div>
-                
+
                 <div id="typingIndicator" class="typing-indicator" style="display: none;">
                     <span></span>
                     <span></span>
                     <span></span>
                 </div>
-                
+
                 <div class="input-container">
-                    <textarea 
-                        id="messageInput" 
+                    <textarea
+                        id="messageInput"
                         placeholder="Ask ADAM anything... (Shift+Enter for new line)"
                         rows="3"
                     ></textarea>
                     <button id="sendBtn">Send</button>
                 </div>
             </div>
-            
+
             <script src="${scriptUri}"></script>
         </body>
         </html>`;

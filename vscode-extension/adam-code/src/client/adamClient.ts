@@ -1,6 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
 import * as vscode from 'vscode';
-// WebSocket will be added when backend supports it
 
 export interface Message {
     role: 'user' | 'assistant' | 'system';
@@ -34,14 +33,37 @@ export interface DBTModel {
     tests: string[];
 }
 
+/** SSE event emitted during streaming */
+export interface StreamEvent {
+    type: 'user_message' | 'assistant_chunk' | 'agent_status' | 'agent_chunk' | 'agent_done' | 'complete' | 'error';
+    content?: string;
+    agent?: string;
+    status?: string;
+    pattern?: string;
+    cost?: number;
+    tokens?: number;
+    model?: string;
+    id?: string;
+    message?: string;
+}
+
+/** Diagnostic info from the editor */
+export interface EditorDiagnostic {
+    severity: 'error' | 'warning' | 'info' | 'hint';
+    message: string;
+    line: number;
+    source?: string;
+}
+
 export class ADAMClient {
     private api: AxiosInstance;
-    private ws: any | null = null;  // Will be WebSocket when implemented
+    private baseURL: string;
     private projectId: string;
     private conversationId: string | null = null;
     private responseStyle: 'normal' | 'concise' | 'explanatory' = 'normal';
 
     constructor(baseURL: string, projectId: string) {
+        this.baseURL = baseURL;
         this.api = axios.create({
             baseURL,
             headers: {
@@ -49,55 +71,6 @@ export class ADAMClient {
             }
         });
         this.projectId = projectId;
-        this.connectWebSocket(baseURL);
-    }
-
-    private connectWebSocket(baseURL: string) {
-        // Commenting out WebSocket for now since backend doesn't have /ws endpoint yet
-        // We'll use regular HTTP polling instead
-        console.log('WebSocket connection disabled - using HTTP instead');
-        return;
-        
-        /* Will re-enable when backend has WebSocket support
-        const wsURL = baseURL.replace('http', 'ws') + '/ws';
-        try {
-            this.ws = new WebSocket(wsURL);
-            
-            this.ws.on('open', () => {
-                console.log('ADAM WebSocket connected');
-                this.ws?.send(JSON.stringify({
-                    type: 'init',
-                    projectId: this.projectId
-                }));
-            });
-
-            this.ws.on('message', (data: Buffer) => {
-                const message = JSON.parse(data.toString());
-                this.handleWebSocketMessage(message);
-            });
-
-            this.ws.on('error', (error: Error) => {
-                console.error('ADAM WebSocket error:', error);
-            });
-
-            this.ws.on('close', () => {
-                console.log('ADAM WebSocket disconnected');
-                // Reconnect after 5 seconds
-                setTimeout(() => this.connectWebSocket(baseURL), 5000);
-            });
-        } catch (error) {
-            console.error('Failed to connect WebSocket:', error);
-        }
-        */
-    }
-
-    private handleWebSocketMessage(message: any) {
-        // Handle real-time updates from ADAM
-        if (message.type === 'memory_update') {
-            vscode.window.showInformationMessage(`ADAM Memory Updated: ${message.summary}`);
-        } else if (message.type === 'task_complete') {
-            vscode.window.showInformationMessage(`ADAM Task Complete: ${message.task}`);
-        }
     }
 
     setResponseStyle(style: 'normal' | 'concise' | 'explanatory') {
@@ -109,85 +82,116 @@ export class ADAMClient {
         return this.responseStyle;
     }
 
+    /** Ensure a conversation exists, creating one if needed */
+    private async ensureConversation(): Promise<string> {
+        if (!this.conversationId) {
+            const convResponse = await this.api.post(`/api/projects/${this.projectId}/conversations`, {
+                title: `VSCode Session ${new Date().toLocaleString()}`
+            });
+            this.conversationId = convResponse.data.id;
+        }
+        return this.conversationId!;
+    }
+
+    /** Build workspace context from the active editor, including diagnostics */
+    getWorkspaceContext(content: string): any {
+        const activeEditor = vscode.window.activeTextEditor;
+        let workspaceContext: any = null;
+
+        if (activeEditor) {
+            const selection = activeEditor.selection;
+            const selectedText = !selection.isEmpty ? activeEditor.document.getText(selection) : null;
+
+            const contentLower = content.toLowerCase();
+            const isReferringToFile = (
+                contentLower.includes('this') ||
+                contentLower.includes('file') ||
+                contentLower.includes('code') ||
+                contentLower.includes('show') ||
+                contentLower.includes('dependencies') ||
+                contentLower.includes('explain') ||
+                contentLower.includes('analyze') ||
+                contentLower.includes('what') ||
+                contentLower.includes('read') ||
+                contentLower.includes('review') ||
+                contentLower.includes('shared') ||
+                contentLower.includes('sharing') ||
+                contentLower.includes('update') ||
+                contentLower.includes('edit') ||
+                contentLower.includes('modify') ||
+                contentLower.includes('change') ||
+                contentLower.includes('fix') ||
+                contentLower.includes('improve') ||
+                contentLower.includes('refactor') ||
+                contentLower.includes('optimize')
+            );
+
+            workspaceContext = {
+                activeFile: {
+                    file: activeEditor.document.fileName,
+                    language: activeEditor.document.languageId,
+                    content: isReferringToFile ? activeEditor.document.getText() : selectedText,
+                    isUpdateRequest: contentLower.includes('update') || contentLower.includes('edit') ||
+                                   contentLower.includes('modify') || contentLower.includes('change') ||
+                                   contentLower.includes('fix') || contentLower.includes('improve')
+                },
+                diagnostics: this.collectDiagnostics(activeEditor.document.uri),
+                terminalErrors: []
+            };
+
+            console.log('Active file:', activeEditor.document.fileName);
+            console.log('Is referring to file:', isReferringToFile);
+            console.log('Diagnostics count:', workspaceContext.diagnostics.length);
+        }
+
+        return workspaceContext;
+    }
+
+    /** Collect VS Code diagnostics (errors, warnings) for a given document */
+    collectDiagnostics(uri: vscode.Uri): EditorDiagnostic[] {
+        const diagnostics = vscode.languages.getDiagnostics(uri);
+        return diagnostics.map(d => ({
+            severity: d.severity === vscode.DiagnosticSeverity.Error ? 'error'
+                : d.severity === vscode.DiagnosticSeverity.Warning ? 'warning'
+                : d.severity === vscode.DiagnosticSeverity.Information ? 'info'
+                : 'hint',
+            message: d.message,
+            line: d.range.start.line + 1, // 1-based for display
+            source: d.source
+        }));
+    }
+
+    /** Build the message payload used by both sync and streaming endpoints */
+    private buildMessagePayload(content: string, useMemory: boolean): any {
+        const workspaceContext = this.getWorkspaceContext(content);
+        return {
+            content,
+            use_memory: useMemory,
+            response_style: this.responseStyle,
+            workspace_context: workspaceContext,
+            context: {
+                editor: 'vscode',
+                workspace: vscode.workspace.name || 'VSCode',
+                activeFile: vscode.window.activeTextEditor?.document.fileName || ''
+            }
+        };
+    }
+
+    /** Send a message synchronously (non-streaming fallback) */
     async sendMessage(content: string, useMemory: boolean = true): Promise<Message> {
         try {
-            // Create or get conversation
-            if (!this.conversationId) {
-                const convResponse = await this.api.post(`/api/projects/${this.projectId}/conversations`, {
-                    title: `VSCode Session ${new Date().toLocaleString()}`  // Changed from 'name' to 'title'
-                });
-                this.conversationId = convResponse.data.id;
-            }
+            const conversationId = await this.ensureConversation();
+            const payload = this.buildMessagePayload(content, useMemory);
 
-            // Get workspace context for better responses
-            const activeEditor = vscode.window.activeTextEditor;
-            let workspaceContext: any = null;
-            
-            // Always include the active file content if there's an active editor
-            if (activeEditor) {
-                const selection = activeEditor.selection;
-                const selectedText = !selection.isEmpty ? activeEditor.document.getText(selection) : null;
-                
-                // Get the full file content if user seems to be referring to it
-                const contentLower = content.toLowerCase();
-                const isReferringToFile = (
-                    contentLower.includes('this') ||
-                    contentLower.includes('file') ||
-                    contentLower.includes('code') ||
-                    contentLower.includes('show') ||
-                    contentLower.includes('dependencies') ||
-                    contentLower.includes('explain') ||
-                    contentLower.includes('analyze') ||
-                    contentLower.includes('what') ||
-                    contentLower.includes('read') ||
-                    contentLower.includes('review') ||
-                    contentLower.includes('shared') ||
-                    contentLower.includes('sharing') ||
-                    contentLower.includes('update') ||
-                    contentLower.includes('edit') ||
-                    contentLower.includes('modify') ||
-                    contentLower.includes('change') ||
-                    contentLower.includes('fix') ||
-                    contentLower.includes('improve') ||
-                    contentLower.includes('refactor') ||
-                    contentLower.includes('optimize')
-                );
-                
-                workspaceContext = {
-                    activeFile: {
-                        file: activeEditor.document.fileName,
-                        language: activeEditor.document.languageId,
-                        content: isReferringToFile ? activeEditor.document.getText() : selectedText,
-                        isUpdateRequest: contentLower.includes('update') || contentLower.includes('edit') || 
-                                       contentLower.includes('modify') || contentLower.includes('change') ||
-                                       contentLower.includes('fix') || contentLower.includes('improve')
-                    }
-                };
-                
-                // Log for debugging
-                console.log('Active file:', activeEditor.document.fileName);
-                console.log('Is referring to file:', isReferringToFile);
-            }
+            const response = await this.api.post(
+                `/api/conversations/${conversationId}/messages`,
+                payload
+            );
 
-            // Send message with response style
-            const response = await this.api.post(`/api/conversations/${this.conversationId}/messages`, {
-                content,
-                use_memory: useMemory,
-                response_style: this.responseStyle,  // Add response style
-                workspace_context: workspaceContext,  // Enhanced context
-                context: {
-                    editor: 'vscode',
-                    workspace: vscode.workspace.name || 'VSCode',
-                    activeFile: vscode.window.activeTextEditor?.document.fileName || ''
-                }
-            });
-
-            // Log the response for debugging
             console.log('ADAM Response:', response.data);
 
             // The endpoint returns an array of [user_message, assistant_message]
             if (response.data && Array.isArray(response.data)) {
-                // Get the assistant message (should be the second item or last item with role='assistant')
                 const assistantMsg = response.data.find((m: any) => m.role === 'assistant');
                 if (assistantMsg) {
                     return {
@@ -198,11 +202,10 @@ export class ADAMClient {
                     };
                 }
             }
-            
-            // Fallback if response format is unexpected
-            return { 
-                role: 'assistant', 
-                content: 'Message sent but no response received. Check console for details.' 
+
+            return {
+                role: 'assistant',
+                content: 'Message sent but no response received. Check console for details.'
             };
         } catch (error) {
             console.error('ADAM API error:', error);
@@ -210,22 +213,165 @@ export class ADAMClient {
         }
     }
 
+    /**
+     * Send a message with SSE streaming.
+     *
+     * Uses fetch() instead of axios because we need access to ReadableStream
+     * for incremental SSE parsing. Calls onEvent() for each parsed SSE event,
+     * letting the caller update the UI progressively.
+     *
+     * Returns the final accumulated assistant content and metadata.
+     */
+    async sendMessageStream(
+        content: string,
+        callbacks: {
+            onChunk: (text: string) => void;
+            onAgentStatus?: (agent: string, status: string, pattern?: string) => void;
+            onAgentChunk?: (agent: string, content: string) => void;
+            onAgentDone?: (agent: string, cost: number) => void;
+            onComplete?: (id: string, tokens: number, cost: number, model: string) => void;
+            onError?: (message: string) => void;
+        },
+        useMemory: boolean = true
+    ): Promise<Message> {
+        const conversationId = await this.ensureConversation();
+        const payload = this.buildMessagePayload(content, useMemory);
+        const url = `${this.baseURL}/api/conversations/${conversationId}/messages/stream`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Stream request failed (${response.status}): ${errorText}`);
+        }
+
+        if (!response.body) {
+            throw new Error('Response body is null -- streaming not supported');
+        }
+
+        // Read SSE events from the response stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+        let finalModel = '';
+        let finalCost = 0;
+        let finalTokens = 0;
+        let buffer = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) { break; }
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // Parse SSE lines: each event is "data: <json>\n\n"
+                const lines = buffer.split('\n');
+                buffer = '';
+
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+
+                    // If this line doesn't end with \n and is the last line,
+                    // it might be an incomplete chunk -- keep in buffer
+                    if (i === lines.length - 1 && line !== '') {
+                        buffer = line;
+                        continue;
+                    }
+
+                    if (!line.startsWith('data: ')) { continue; }
+
+                    const jsonStr = line.slice(6).trim();
+                    if (!jsonStr || jsonStr === '[DONE]') { continue; }
+
+                    try {
+                        const event: StreamEvent = JSON.parse(jsonStr);
+
+                        switch (event.type) {
+                            case 'assistant_chunk':
+                                if (event.content) {
+                                    fullContent += event.content;
+                                    callbacks.onChunk(event.content);
+                                }
+                                break;
+
+                            case 'agent_status':
+                                callbacks.onAgentStatus?.(
+                                    event.agent || 'unknown',
+                                    event.status || 'thinking',
+                                    event.pattern
+                                );
+                                break;
+
+                            case 'agent_chunk':
+                                callbacks.onAgentChunk?.(
+                                    event.agent || 'unknown',
+                                    event.content || ''
+                                );
+                                break;
+
+                            case 'agent_done':
+                                callbacks.onAgentDone?.(
+                                    event.agent || 'unknown',
+                                    event.cost || 0
+                                );
+                                break;
+
+                            case 'complete':
+                                finalModel = event.model || '';
+                                finalCost = event.cost || 0;
+                                finalTokens = event.tokens || 0;
+                                callbacks.onComplete?.(
+                                    event.id || '',
+                                    finalTokens,
+                                    finalCost,
+                                    finalModel
+                                );
+                                break;
+
+                            case 'error':
+                                callbacks.onError?.(event.message || 'Unknown stream error');
+                                break;
+
+                            case 'user_message':
+                                // Acknowledgment of user message -- no UI action needed
+                                break;
+                        }
+                    } catch (parseErr) {
+                        console.warn('Failed to parse SSE event:', jsonStr, parseErr);
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
+        }
+
+        return {
+            role: 'assistant',
+            content: fullContent,
+            model: finalModel,
+            cost: finalCost
+        };
+    }
+
     async explainCode(code: string, language: string, fileName: string): Promise<string> {
         const prompt = `Explain this ${language} code from ${fileName}:\n\`\`\`${language}\n${code}\n\`\`\`\n\nProvide a clear explanation of what this code does, its purpose, and any potential improvements.`;
-        
+
         const response = await this.sendMessage(prompt);
         return response.content;
     }
 
     async optimizeSQL(query: string, dialect: string): Promise<SQLOptimization> {
         const prompt = `Optimize this ${dialect} SQL query for performance:\n\`\`\`sql\n${query}\n\`\`\`\n\nProvide the optimized query and explain the improvements.`;
-        
+
         const response = await this.sendMessage(prompt);
-        
-        // Parse the response to extract structured data
-        const lines = response.content.split('\n');
+
         const optimizedQuery = this.extractCodeBlock(response.content, 'sql');
-        
+
         return {
             query: optimizedQuery || query,
             explanation: this.extractSection(response.content, 'Explanation'),
@@ -239,12 +385,12 @@ export class ADAMClient {
         1. The SQL model with proper CTEs and transformations
         2. Documentation in YAML format
         3. Basic data quality tests`;
-        
+
         const response = await this.sendMessage(prompt);
-        
+
         const sql = this.extractCodeBlock(response.content, 'sql') || '';
         const yaml = this.extractCodeBlock(response.content, 'yaml') || '';
-        
+
         return {
             sql,
             documentation: yaml,
@@ -254,21 +400,20 @@ export class ADAMClient {
 
     async createBranch(branchName: string): Promise<{ formattedName: string; description: string }> {
         const prompt = `Format this branch name according to git best practices: "${branchName}". Also provide a brief description of what this branch is for.`;
-        
+
         const response = await this.sendMessage(prompt, false);
-        
-        // Extract formatted name and description
+
         const formattedName = this.extractBranchName(response.content) || branchName.toLowerCase().replace(/\s+/g, '-');
         const description = this.extractDescription(response.content);
-        
+
         return { formattedName, description };
     }
 
     async generatePRDetails(changes: string): Promise<PRDetails> {
         const prompt = `Based on these git changes, generate a pull request title and description:\n\`\`\`diff\n${changes}\n\`\`\``;
-        
+
         const response = await this.sendMessage(prompt);
-        
+
         return {
             title: this.extractTitle(response.content),
             body: this.extractBody(response.content),
@@ -306,9 +451,8 @@ export class ADAMClient {
 
             const data = response.data;
 
-            // Format documentation for display
             const documentation = Object.values(data.columns)
-                .map((col: any) => `- **${col.name}**: ${col.description}${col.is_foreign_key ? ` (FK → ${col.references})` : ''}`)
+                .map((col: any) => `- **${col.name}**: ${col.description}${col.is_foreign_key ? ` (FK -> ${col.references})` : ''}`)
                 .join('\n');
 
             return {
@@ -376,21 +520,15 @@ export class ADAMClient {
     }
 
     async standardizeColumnDescription(columnName: string, suggestedDescription: string): Promise<void> {
-        // This would update all occurrences of the column with the standardized description
-        // For now, we'll just log it
         console.log(`Standardizing ${columnName} with description: ${suggestedDescription}`);
-        // In a real implementation, this would call an API to update all schema.yml files
     }
 
     async saveDBTDocumentation(modelName: string, yamlContent: string): Promise<void> {
-        // This would save the documentation to the appropriate schema.yml file
-        // For now, we'll create or update a schema.yml in the model's directory
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             throw new Error('No workspace folder open');
         }
 
-        // Find the model file
         const modelFiles = await vscode.workspace.findFiles(`**/${modelName}.sql`);
         if (modelFiles.length === 0) {
             throw new Error(`Model ${modelName} not found`);
@@ -399,7 +537,6 @@ export class ADAMClient {
         const modelPath = modelFiles[0];
         const schemaPath = vscode.Uri.joinPath(modelPath, '..', 'schema.yml');
 
-        // Write the YAML content
         await vscode.workspace.fs.writeFile(schemaPath, Buffer.from(yamlContent));
     }
 
@@ -421,11 +558,12 @@ ${col.is_foreign_key ? `          - relationships:
         return yaml;
     }
 
-    // Memory operations
+    // Memory operations -- fixed paths to match backend convenience endpoints
+
     async searchMemory(query: string): Promise<any[]> {
         try {
-            const response = await this.api.get(`/api/projects/${this.projectId}/memories/search`, {
-                params: { query, limit: 10 }
+            const response = await this.api.get('/api/memories/search', {
+                params: { query, project_id: this.projectId, limit: 10 }
             });
             return response.data;
         } catch (error) {
@@ -436,7 +574,9 @@ ${col.is_foreign_key ? `          - relationships:
 
     async getMemoryStats(): Promise<any> {
         try {
-            const response = await this.api.get(`/api/projects/${this.projectId}/memories/stats`);
+            const response = await this.api.get('/api/memories/stats', {
+                params: { project_id: this.projectId }
+            });
             return response.data;
         } catch (error) {
             console.error('Memory stats error:', error);
@@ -494,8 +634,6 @@ ${col.is_foreign_key ? `          - relationships:
     }
 
     disconnect() {
-        if (this.ws) {
-            this.ws.close();
-        }
+        // No persistent connection to close (using HTTP/SSE)
     }
 }

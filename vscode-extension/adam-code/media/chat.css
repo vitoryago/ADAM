@@ -52,17 +52,20 @@ body {
 }
 
 .header-actions button {
-    background: none;
-    border: none;
-    font-size: 16px;
+    background: var(--vscode-button-secondaryBackground, transparent);
+    color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+    border: 1px solid var(--vscode-panel-border);
+    font-size: 12px;
     cursor: pointer;
-    padding: 4px;
+    padding: 4px 8px;
+    border-radius: 2px;
     opacity: 0.8;
     transition: opacity 0.2s;
 }
 
 .header-actions button:hover {
     opacity: 1;
+    background-color: var(--vscode-list-hoverBackground);
 }
 
 .messages-container {
@@ -221,4 +224,212 @@ body {
 
 .messages-container::-webkit-scrollbar-thumb:hover {
     background-color: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+/* =========================================================================
+   Streaming styles
+   ========================================================================= */
+
+.streaming-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 400;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background-color: var(--vscode-progressBar-background);
+    color: var(--vscode-editor-background);
+    margin-left: 6px;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.streaming-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background-color: var(--vscode-editorCursor-foreground, var(--vscode-foreground));
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: blink 0.8s step-end infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+.message.streaming {
+    border-color: var(--vscode-progressBar-background);
+}
+
+.stream-error {
+    color: var(--vscode-errorForeground, #f44747);
+    padding: 8px;
+    border: 1px solid var(--vscode-errorForeground, #f44747);
+    border-radius: 4px;
+    background-color: rgba(244, 71, 71, 0.1);
+    margin-top: 4px;
+}
+
+/* =========================================================================
+   Multi-agent activity panel
+   ========================================================================= */
+
+.agent-activity {
+    margin: 12px 0;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    background-color: var(--vscode-sideBar-background);
+    overflow: hidden;
+}
+
+.agent-activity.collapsed .agent-activity-body {
+    display: none;
+}
+
+.agent-activity.collapsed .agent-activity-toggle {
+    transform: rotate(-90deg);
+}
+
+.agent-activity-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    background-color: var(--vscode-editor-background);
+    border-bottom: 1px solid var(--vscode-panel-border);
+    user-select: none;
+}
+
+.agent-activity-header:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.agent-activity-title {
+    font-weight: 600;
+    font-size: 12px;
+    flex: 1;
+}
+
+.agent-activity-cost {
+    font-size: 11px;
+    opacity: 0.7;
+    font-weight: 500;
+}
+
+.agent-activity-toggle {
+    font-size: 10px;
+    opacity: 0.6;
+    transition: transform 0.2s;
+}
+
+.agent-activity-body {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Agent cards */
+
+.agent-card {
+    border: 1px solid var(--vscode-panel-border);
+    border-left: 3px solid #888;
+    border-radius: 4px;
+    background-color: var(--vscode-editor-background);
+    overflow: hidden;
+}
+
+.agent-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    user-select: none;
+}
+
+.agent-card-header:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.agent-name {
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.agent-status {
+    font-size: 11px;
+    opacity: 0.7;
+    flex: 1;
+}
+
+.agent-status.thinking {
+    animation: pulse 1.5s infinite;
+}
+
+.agent-status.done {
+    color: var(--vscode-testing-iconPassed, #3ddc84);
+    opacity: 1;
+}
+
+.agent-status.started {
+    color: var(--vscode-progressBar-background);
+    opacity: 1;
+}
+
+.agent-cost-badge {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background-color: var(--vscode-badge-background, rgba(255,255,255,0.1));
+    color: var(--vscode-badge-foreground, var(--vscode-foreground));
+}
+
+.agent-toggle {
+    font-size: 12px;
+    opacity: 0.5;
+    font-weight: bold;
+    min-width: 14px;
+    text-align: center;
+}
+
+.agent-card.expanded .agent-toggle {
+    transform: rotate(45deg);
+}
+
+.agent-card-content {
+    display: none;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    border-top: 1px solid var(--vscode-panel-border);
+    max-height: 200px;
+    overflow-y: auto;
+    background-color: var(--vscode-textBlockQuote-background);
+}
+
+.agent-card.expanded .agent-card-content {
+    display: block;
+}
+
+.agent-card-content pre {
+    margin: 4px 0;
+    padding: 6px;
+    font-size: 11px;
+    border-radius: 3px;
+    background-color: var(--vscode-editor-background);
+    overflow-x: auto;
+}
+
+.agent-card-content code {
+    font-family: var(--vscode-editor-font-family);
+    font-size: 0.9em;
 }
