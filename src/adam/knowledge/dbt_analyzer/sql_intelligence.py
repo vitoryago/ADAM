@@ -16,7 +16,21 @@ try:
     SQLGLOT_AVAILABLE = True
 except ImportError:
     SQLGLOT_AVAILABLE = False
-    print("Warning: sqlglot not installed. Run: pip install sqlglot")
+    # Create a stub module so type annotations using exp.Expression don't fail
+    # at class-definition time.
+    import types
+    exp = types.ModuleType("exp")
+    exp.Expression = object  # type: ignore[attr-defined]
+    exp.Select = object  # type: ignore[attr-defined]
+    exp.Column = object  # type: ignore[attr-defined]
+    exp.Alias = object  # type: ignore[attr-defined]
+    exp.Anonymous = object  # type: ignore[attr-defined]
+    exp.Case = object  # type: ignore[attr-defined]
+    exp.Window = object  # type: ignore[attr-defined]
+    exp.Cast = object  # type: ignore[attr-defined]
+    exp.If = object  # type: ignore[attr-defined]
+    logger_init = logging.getLogger(__name__)
+    logger_init.debug("sqlglot not installed -- SQL intelligence features will be limited")
 
 from adam.llm.client import UnifiedLLMClient
 

@@ -5,7 +5,7 @@ Provides smart column documentation generation using AI and pattern recognition
 
 import re
 import logging
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from collections import defaultdict
 import json

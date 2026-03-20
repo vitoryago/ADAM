@@ -283,6 +283,25 @@ class DirectDBTReader:
                 models_using_source.append(name)
         return models_using_source
 
+    def get_all_models(self) -> Dict[str, Dict]:
+        """Return all models as plain dicts for compatibility with ColumnIntelligenceEngine.
+
+        The returned dict maps model_name -> {'sql': ..., 'columns': ...}
+        so that callers expecting dict-style access work correctly.
+        """
+        result: Dict[str, Dict] = {}
+        for name, model in self.models.items():
+            result[name] = {
+                "sql": model.sql,
+                "columns": {
+                    col_name: {"description": col_desc}
+                    for col_name, col_desc in model.columns.items()
+                },
+                "description": model.description,
+                "path": model.path,
+            }
+        return result
+
     def get_project_stats(self) -> Dict:
         """Get overall project statistics"""
         total_models = len(self.models)

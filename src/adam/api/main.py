@@ -65,7 +65,7 @@ app.add_middleware(
 # Include routers
 from adam.api.routers import (
     conversations, projects, memories, messages,
-    voice, voice_streaming, lineage, styles
+    voice, voice_streaming, lineage, styles, dbt
 )
 
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
@@ -76,6 +76,7 @@ app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 app.include_router(voice_streaming.router, prefix="/api/voice/stream", tags=["voice-streaming"])
 app.include_router(lineage.router, prefix="/api/lineage", tags=["lineage"])
 app.include_router(styles.router, prefix="/api", tags=["styles"])
+app.include_router(dbt.router, prefix="/api/dbt", tags=["dbt"])
 
 
 @app.get("/health")
