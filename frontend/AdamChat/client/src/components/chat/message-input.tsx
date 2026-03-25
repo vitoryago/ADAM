@@ -22,15 +22,17 @@ interface MessageInputProps {
   model?: string;
   useSearch?: boolean;
   onConversationComplete?: () => void;
+  onGoDeep?: () => void;
 }
 
-export function MessageInput({ 
-  onSendMessage, 
+export function MessageInput({
+  onSendMessage,
   disabled = false,
   conversationId,
   model,
   useSearch = false,
-  onConversationComplete
+  onConversationComplete,
+  onGoDeep
 }: MessageInputProps) {
   const [message, setMessage] = useState("");
   const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
@@ -240,6 +242,17 @@ export function MessageInput({
                 <Paperclip className="w-4 h-4 mr-2" />
                 Attach File
               </Button>
+              {onGoDeep && conversationId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onGoDeep}
+                  disabled={disabled}
+                  className="h-8 px-3 border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                >
+                  🧠 Go Deep
+                </Button>
+              )}
               <input
                 ref={fileInputRef}
                 type="file"

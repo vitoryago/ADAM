@@ -15,6 +15,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Brain, Menu, Moon, Sun } from "lucide-react";
 import type { Message, Conversation, Project } from "@shared/schema";
 import { transformMessage } from "@/lib/api-types";
+import { GoDeepModal } from "@/components/deep-discussion/go-deep-modal";
 
 interface ChatAreaProps {
   project: Project;
@@ -35,6 +36,7 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
   const [responseStyle, setResponseStyle] = useState<string>("normal");
   
   const { isConnected, isTyping, error, sendMessage, onMessage, reconnect } = useWebSocket();
+  const [isGoDeepModalOpen, setIsGoDeepModalOpen] = useState(false);
 
   // Load messages for current conversation
   const { data: conversationMessages = [], isLoading } = useQuery<Message[]>({
@@ -457,19 +459,30 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
       </div>
 
       {/* Message Input */}
-      <MessageInput 
-        onSendMessage={handleSendMessage} 
+      <MessageInput
+        onSendMessage={handleSendMessage}
         disabled={!isConnected}
         conversationId={conversationId || undefined}
         model={selectedModel}
         useSearch={searchEnabled}
         onConversationComplete={() => {
           // Refresh messages when voice conversation completes
-          queryClient.invalidateQueries({ 
-            queryKey: ["/api/conversations", conversationId, "messages"] 
+          queryClient.invalidateQueries({
+            queryKey: ["/api/conversations", conversationId, "messages"]
           });
         }}
+        onGoDeep={conversationId ? () => setIsGoDeepModalOpen(true) : undefined}
       />
+
+      {/* Go Deep Modal */}
+      {conversationId && (
+        <GoDeepModal
+          isOpen={isGoDeepModalOpen}
+          onClose={() => setIsGoDeepModalOpen(false)}
+          projectId={project.id.toString()}
+          conversationId={conversationId}
+        />
+      )}
     </div>
   );
 }
