@@ -214,3 +214,67 @@ class MemorySearchResponse(BaseModel):
     """Response model for memory search"""
     memories: List[Dict[str, Any]]
     total_results: int
+
+
+# SQLAlchemy Model for Deep Discussion Sessions
+class DeepDiscussionSessionDB(Base):
+    """Deep Discussion Session model - tracks multi-agent reasoning sessions"""
+    __tablename__ = "deep_discussion_sessions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False)
+    conversation_id = Column(String, ForeignKey("conversations.id"), nullable=True)
+    question = Column(Text, nullable=False)
+    pattern = Column(String(20), nullable=False)  # sequential/debate/peer_review
+    model_assignments = Column(JSON, nullable=False, server_default='{}')
+    budget = Column(Float, nullable=False, default=2.0)
+    total_cost = Column(Float, nullable=False, default=0.0)
+    status = Column(String(20), nullable=False, default="configuring")
+    result = Column(Text, nullable=True)
+    scratchpad_data = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def __init__(self, **kwargs):
+        # Set Python-side defaults
+        kwargs.setdefault('id', str(uuid.uuid4()))
+        kwargs.setdefault('status', 'configuring')
+        kwargs.setdefault('total_cost', 0.0)
+        kwargs.setdefault('budget', 2.0)
+        kwargs.setdefault('model_assignments', {})
+        super().__init__(**kwargs)
+
+
+# Pydantic schemas for Deep Discussion Sessions
+class DeepDiscussionSessionCreate(BaseModel):
+    """Request model for creating a deep discussion session"""
+    project_id: str
+    question: str
+    pattern: str = "peer_review"
+    conversation_id: Optional[str] = None
+
+
+class DeepDiscussionSessionUpdate(BaseModel):
+    """Request model for updating a deep discussion session"""
+    model_assignments: Optional[Dict[str, str]] = None
+    pattern: Optional[str] = None
+    budget: Optional[float] = None
+
+
+class DeepDiscussionSessionResponse(BaseModel):
+    """Response model for deep discussion session"""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    project_id: str
+    conversation_id: Optional[str] = None
+    question: str
+    pattern: str
+    model_assignments: Dict[str, str]
+    budget: float
+    total_cost: float = 0.0
+    status: str
+    result: Optional[str] = None
+    scratchpad_data: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
