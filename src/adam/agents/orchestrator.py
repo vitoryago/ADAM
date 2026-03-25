@@ -23,6 +23,7 @@ class OrchestrationPattern(Enum):
     SEQUENTIAL = "sequential"  # Reasoner -> Coder -> Critic -> Synthesizer
     DEBATE = "debate"          # Two perspectives -> Reconciler
     SINGLE = "single"          # No multi-agent, just one model
+    PEER_REVIEW = "peer_review"  # Produce -> Review -> Rebut -> React -> Synthesize
 
 
 # Keywords that indicate a query is complex enough for multi-agent reasoning.
