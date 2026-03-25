@@ -22,6 +22,8 @@ class EntryType(Enum):
     CRITIQUE = "critique"     # Critic's review
     SYNTHESIS = "synthesis"   # Final combined answer
     NOTE = "note"             # General contribution
+    REBUTTAL = "rebuttal"     # Producer's response to reviewer feedback
+    REACTION = "reaction"     # Reviewer's follow-up to the rebuttal
 
 
 @dataclass
