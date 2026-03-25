@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ConfigScreen } from "@/components/deep-discussion/config-screen";
+import { LiveView } from "@/components/deep-discussion/live-view";
 import { listSessions } from "@/lib/deep-discussion-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ export default function DeepDiscussion() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     routeSessionId || null,
   );
+  const [replaySessionId, setReplaySessionId] = useState<string | null>(null);
 
   const { data: sessions = [], refetch: refetchSessions } = useQuery<
     DeepDiscussionSession[]
@@ -39,6 +41,14 @@ export default function DeepDiscussion() {
   };
 
   const handleNewSession = () => {
+    setActiveSessionId(null);
+    setReplaySessionId(null);
+    setLocation(`/project/${projectId}/deep-discussion`);
+  };
+
+  const handleReplay = () => {
+    // Store the session being replayed so ConfigScreen can pre-fill
+    setReplaySessionId(activeSessionId);
     setActiveSessionId(null);
     setLocation(`/project/${projectId}/deep-discussion`);
   };
@@ -107,12 +117,10 @@ export default function DeepDiscussion() {
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
         {activeSessionId ? (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center text-muted-foreground">
-              <p className="text-lg font-medium mb-2">Session: {activeSessionId}</p>
-              <p>Live view coming in Task 8</p>
-            </div>
-          </div>
+          <LiveView
+            sessionId={activeSessionId}
+            onReplay={handleReplay}
+          />
         ) : (
           <ConfigScreen
             projectId={projectId!}
