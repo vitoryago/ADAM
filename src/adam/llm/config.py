@@ -15,6 +15,7 @@ class ModelProvider(Enum):
     GROK = "grok"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    GEMINI = "gemini"
 
 class ModelCapability(Enum):
     BASIC_QA = "basic_qa"
@@ -50,6 +51,7 @@ class LLMConfig:
             ModelProvider.GROK: os.getenv("XAI_API_KEY"),
             ModelProvider.OPENAI: os.getenv("OPENAI_API_KEY"),
             ModelProvider.ANTHROPIC: os.getenv("ANTHROPIC_API_KEY"),
+            ModelProvider.GEMINI: os.getenv("GEMINI_API_KEY"),
         }
         
         # Model configurations
@@ -289,21 +291,190 @@ class LLMConfig:
                 cost_per_1k_tokens=0.003,  # $3 per 1M input tokens, $15 per 1M output tokens average
                 cost_per_1k_input_tokens=0.003,
                 cost_per_1k_output_tokens=0.015
-            )
+            ),
+
+            # ----------------------------------------------------------------
+            # New model roster (current versions as of 2026-03)
+            # ----------------------------------------------------------------
+
+            # Grok (X.AI) — new versioned models
+            "grok-4.20-multi-agent-0309": ModelConfig(
+                name="grok-4.20-multi-agent-0309",
+                provider=ModelProvider.GROK,
+                api_name="grok-4.20-multi-agent-0309",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",
+                max_tokens=128000,
+                supports_streaming=True,
+                supports_vision=True,
+            ),
+
+            "grok-4.20-0309-reasoning": ModelConfig(
+                name="grok-4.20-0309-reasoning",
+                provider=ModelProvider.GROK,
+                api_name="grok-4.20-0309-reasoning",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=True,
+                reasoning_param="reasoning_effort",
+                max_tokens=128000,
+                supports_streaming=True,
+                supports_vision=True,
+            ),
+
+            "grok-4.20-0309-non-reasoning": ModelConfig(
+                name="grok-4.20-0309-non-reasoning",
+                provider=ModelProvider.GROK,
+                api_name="grok-4.20-0309-non-reasoning",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=128000,
+                supports_streaming=True,
+                supports_vision=True,
+            ),
+
+            # Claude (Anthropic) — new versioned models
+            "claude-opus-4-6": ModelConfig(
+                name="claude-opus-4-6",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-opus-4-6",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=8192,
+                supports_streaming=True,
+                supports_vision=True,
+            ),
+
+            "claude-sonnet-4-6": ModelConfig(
+                name="claude-sonnet-4-6",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-sonnet-4-6",
+                capabilities=[
+                    ModelCapability.CODE_GENERATION,
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=8192,
+                supports_streaming=True,
+                supports_vision=True,
+            ),
+
+            "claude-haiku-4-5": ModelConfig(
+                name="claude-haiku-4-5",
+                provider=ModelProvider.ANTHROPIC,
+                api_name="claude-haiku-4-5",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=4096,
+                supports_streaming=True,
+            ),
+
+            # OpenAI — new versioned models
+            "gpt-5.4-2026-03-05": ModelConfig(
+                name="gpt-5.4-2026-03-05",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-5.4-2026-03-05",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=32768,
+                supports_streaming=True,
+                supports_vision=True,
+            ),
+
+            "gpt-5.4-mini-2026-03-17": ModelConfig(
+                name="gpt-5.4-mini-2026-03-17",
+                provider=ModelProvider.OPENAI,
+                api_name="gpt-5.4-mini-2026-03-17",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=16384,
+                supports_streaming=True,
+                supports_vision=True,
+            ),
+
+            # Gemini (Google) — via OpenAI-compatible endpoint
+            "gemini-3.1-pro-preview": ModelConfig(
+                name="gemini-3.1-pro-preview",
+                provider=ModelProvider.GEMINI,
+                api_name="gemini-3.1-pro-preview",
+                capabilities=[
+                    ModelCapability.REASONING,
+                    ModelCapability.COMPLEX_ANALYSIS,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=32768,
+                supports_streaming=True,
+                supports_vision=True,
+            ),
+
+            "gemini-3-flash-preview": ModelConfig(
+                name="gemini-3-flash-preview",
+                provider=ModelProvider.GEMINI,
+                api_name="gemini-3-flash-preview",
+                capabilities=[
+                    ModelCapability.FAST_RESPONSE,
+                    ModelCapability.BASIC_QA,
+                    ModelCapability.CODE_GENERATION
+                ],
+                supports_reasoning=False,
+                reasoning_param=None,
+                max_tokens=8192,
+                supports_streaming=True,
+                supports_vision=True,
+            ),
         }
 
         # Add backward compatibility aliases for old model names
         # These point to the new fast models
         self.models["grok-4-reasoning"] = self.models["grok-4-fast-reasoning"]
         self.models["grok-4"] = self.models["grok-4-fast-non-reasoning"]
+        # Aliases mapping old versioned names to new versioned names
+        self.models["grok-4-fast-reasoning-alias"] = self.models["grok-4.20-0309-reasoning"]
+        self.models["grok-4-fast-non-reasoning-alias"] = self.models["grok-4.20-0309-non-reasoning"]
 
         # Default model selection rules - balance speed and intelligence
         self.default_models = {
-            "complex": "grok-4-fast-reasoning",           # For complex queries requiring deep thinking
-            "medium": "grok-4-fast-non-reasoning",       # For standard queries (fast version)
-            "fast": "grok-4-fast-non-reasoning",         # For basic queries (fast non-reasoning)
-            "reasoning": "grok-4-fast-reasoning",        # For deep reasoning
-            "code": "claude-sonnet-4-5"                  # Code generation - use Claude Sonnet 4.5
+            "complex": "grok-4.20-0309-reasoning",        # For complex queries requiring deep thinking
+            "medium": "grok-4.20-0309-non-reasoning",     # For standard queries
+            "fast": "grok-4.20-0309-non-reasoning",       # For basic queries
+            "reasoning": "grok-4.20-0309-reasoning",      # For deep reasoning
+            "code": "claude-sonnet-4-6"                   # Code generation - use Claude Sonnet 4.6
         }
     
     def get_api_key(self, provider: ModelProvider) -> Optional[str]:

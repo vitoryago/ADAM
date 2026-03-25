@@ -70,6 +70,7 @@ class AsyncLLMProvider(Enum):
     XAI = "xai"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    GEMINI = "gemini"
 
 
 class AsyncLLMClient:
@@ -146,6 +147,21 @@ class AsyncLLMClient:
             except Exception as e:
                 logger.error(f"Failed to initialize Anthropic client: {e}")
 
+        # Initialize Gemini async client (via OpenAI-compatible endpoint)
+        if OPENAI_AVAILABLE and self.config.get_api_key(ModelProvider.GEMINI):
+            try:
+                import os
+                gemini_api_key = self.config.get_api_key(ModelProvider.GEMINI)
+                self.clients[AsyncLLMProvider.GEMINI] = AsyncOpenAI(
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                    api_key=gemini_api_key,
+                    timeout=300.0
+                )
+                self._client_locks[AsyncLLMProvider.GEMINI] = asyncio.Semaphore(5)
+                logger.info("Initialized Gemini async client")
+            except Exception as e:
+                logger.error(f"Failed to initialize Gemini client: {e}")
+
     async def _ensure_initialized(self):
         """Ensure client is initialized"""
         if not self._initialized:
@@ -220,6 +236,8 @@ class AsyncLLMClient:
             return await self._complete_openai(model, prompt, system_prompt, temperature, max_tokens, **kwargs)
         elif provider == AsyncLLMProvider.ANTHROPIC:
             return await self._complete_anthropic(model, prompt, system_prompt, temperature, max_tokens, **kwargs)
+        elif provider == AsyncLLMProvider.GEMINI:
+            return await self._complete_gemini(model, prompt, system_prompt, temperature, max_tokens, **kwargs)
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
@@ -243,6 +261,9 @@ class AsyncLLMClient:
                 yield chunk
         elif provider == AsyncLLMProvider.ANTHROPIC:
             async for chunk in self._stream_anthropic(model, prompt, system_prompt, temperature, max_tokens, **kwargs):
+                yield chunk
+        elif provider == AsyncLLMProvider.GEMINI:
+            async for chunk in self._stream_gemini(model, prompt, system_prompt, temperature, max_tokens, **kwargs):
                 yield chunk
         else:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -373,6 +394,45 @@ class AsyncLLMClient:
             logger.error(f"Anthropic completion failed: {e}")
             raise
 
+    async def _complete_gemini(
+        self,
+        model: str,
+        prompt: str,
+        system_prompt: Optional[str],
+        temperature: float,
+        max_tokens: Optional[int],
+        **kwargs
+    ) -> AsyncLLMResponse:
+        """Complete request using Gemini (via OpenAI-compatible endpoint)"""
+        client = self.clients[AsyncLLMProvider.GEMINI]
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs
+            )
+
+            return AsyncLLMResponse(
+                content=response.choices[0].message.content,
+                model=model,
+                provider="gemini",
+                total_tokens=response.usage.total_tokens,
+                completion_tokens=response.usage.completion_tokens,
+                raw_response=response.model_dump()
+            )
+
+        except Exception as e:
+            logger.error(f"Gemini completion failed: {e}")
+            raise
+
     async def _stream_xai(self, model: str, prompt: str, system_prompt: Optional[str],
                           temperature: float, max_tokens: Optional[int], **kwargs) -> AsyncGenerator[str, None]:
         """Stream from xAI"""
@@ -444,6 +504,31 @@ class AsyncLLMClient:
             logger.error(f"Anthropic streaming failed: {e}")
             raise
 
+    async def _stream_gemini(self, model: str, prompt: str, system_prompt: Optional[str],
+                             temperature: float, max_tokens: Optional[int], **kwargs) -> AsyncGenerator[str, None]:
+        """Stream from Gemini (via OpenAI-compatible endpoint)"""
+        client = self.clients[AsyncLLMProvider.GEMINI]
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            async for chunk in await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+                **kwargs
+            ):
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            logger.error(f"Gemini streaming failed: {e}")
+            raise
+
     def _get_provider_for_model(self, model: str) -> AsyncLLMProvider:
         """Get provider for a given model"""
         if model.startswith('grok-'):
@@ -452,6 +537,8 @@ class AsyncLLMClient:
             return AsyncLLMProvider.OPENAI
         elif model.startswith('claude-'):
             return AsyncLLMProvider.ANTHROPIC
+        elif model.startswith('gemini-'):
+            return AsyncLLMProvider.GEMINI
         else:
             # Default to XAI for unknown models (assuming they're Grok variants)
             return AsyncLLMProvider.XAI
