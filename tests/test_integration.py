@@ -319,7 +319,7 @@ def test_multi_agent_imports():
     )
     assert Orchestrator is not None
     assert len(AgentRole) == 5
-    assert len(EntryType) == 7
+    assert len(EntryType) == 9  # 7 original + REBUTTAL + REACTION
 
 
 def test_multi_agent_trigger_detection():
