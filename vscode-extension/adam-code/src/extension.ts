@@ -6,9 +6,11 @@ import { SQLOptimizer } from './tools/sqlOptimizer';
 import { DBTGenerator } from './tools/dbtGenerator';
 import { FileManager } from './tools/fileManager';
 import { VoiceChat } from './features/voiceChat';
+import { DeepDiscussionProvider } from './providers/deepDiscussionProvider';
 
 let adamClient: ADAMClient;
 let chatProvider: ADAMChatProvider;
+let deepDiscussionProvider: DeepDiscussionProvider;
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('ADAM Code is activating...');
@@ -31,6 +33,11 @@ export function activate(context: vscode.ExtensionContext) {
     // Register webview provider
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('adam.chatView', chatProvider)
+    );
+
+    deepDiscussionProvider = new DeepDiscussionProvider(context.extensionUri, adamClient);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider('adam.deepDiscussionView', deepDiscussionProvider)
     );
 
     // Register commands
@@ -455,6 +462,12 @@ function registerCommands(context: vscode.ExtensionContext) {
                     vscode.window.showErrorMessage(`ADAM Error: ${error}`);
                 }
             });
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adam.deepDiscussion', () => {
+            vscode.commands.executeCommand('adam.deepDiscussionView.focus');
         })
     );
 
