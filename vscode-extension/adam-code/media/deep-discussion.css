@@ -1,0 +1,675 @@
+/* ==========================================================================
+   Deep Discussion Webview — VS Code sidebar (~300px wide)
+   Three modes: config | live | complete
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Base / Reset
+   -------------------------------------------------------------------------- */
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    color: var(--vscode-foreground);
+    background-color: var(--vscode-editor-background);
+}
+
+/* --------------------------------------------------------------------------
+   Main container
+   -------------------------------------------------------------------------- */
+
+#app {
+    padding: 12px;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Mode visibility — only one mode shown at a time
+   -------------------------------------------------------------------------- */
+
+.config-mode,
+.live-mode,
+.complete-mode {
+    display: none;
+}
+
+.config-mode.active,
+.live-mode.active,
+.complete-mode.active {
+    display: block;
+}
+
+/* --------------------------------------------------------------------------
+   Section labels / helpers
+   -------------------------------------------------------------------------- */
+
+.section-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--vscode-descriptionForeground);
+    margin-bottom: 6px;
+    margin-top: 14px;
+}
+
+.section-label:first-child {
+    margin-top: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Shared form controls
+   -------------------------------------------------------------------------- */
+
+select,
+textarea,
+input[type="text"],
+input[type="number"] {
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    color: var(--vscode-input-foreground);
+    background-color: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+    border-radius: 2px;
+    box-sizing: border-box;
+}
+
+select:focus,
+textarea:focus,
+input[type="text"]:focus,
+input[type="number"]:focus {
+    outline: none;
+    border-color: var(--vscode-focusBorder);
+}
+
+/* --------------------------------------------------------------------------
+   Config Mode — Question textarea
+   -------------------------------------------------------------------------- */
+
+.question-input {
+    width: 100%;
+    height: 80px;
+    padding: 6px 8px;
+    resize: vertical;
+    line-height: 1.5;
+    box-sizing: border-box;
+}
+
+.question-input::placeholder {
+    color: var(--vscode-input-placeholderForeground);
+}
+
+/* --------------------------------------------------------------------------
+   Config Mode — Pattern select
+   -------------------------------------------------------------------------- */
+
+.pattern-select {
+    width: 100%;
+    padding: 5px 8px;
+    cursor: pointer;
+    background-color: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+    border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+    border-radius: 2px;
+    box-sizing: border-box;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 24px;
+}
+
+.pattern-select:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+/* --------------------------------------------------------------------------
+   Config Mode — Start button
+   -------------------------------------------------------------------------- */
+
+.start-btn {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
+    padding: 8px 16px;
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 2px;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.2s;
+    box-sizing: border-box;
+}
+
+.start-btn:hover:not(:disabled) {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.start-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* --------------------------------------------------------------------------
+   Config Mode — Advanced toggle
+   -------------------------------------------------------------------------- */
+
+.advanced-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 14px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+    user-select: none;
+    transition: color 0.15s;
+}
+
+.advanced-toggle:hover {
+    color: var(--vscode-foreground);
+}
+
+.advanced-toggle-icon {
+    font-size: 10px;
+    transition: transform 0.2s;
+}
+
+.advanced-toggle.open .advanced-toggle-icon {
+    transform: rotate(90deg);
+}
+
+/* --------------------------------------------------------------------------
+   Config Mode — Advanced section (collapsible)
+   -------------------------------------------------------------------------- */
+
+.advanced-section {
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    background-color: var(--vscode-sideBar-background);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.advanced-section.hidden {
+    display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Config Mode — Agent config rows (label + select)
+   -------------------------------------------------------------------------- */
+
+.agent-config-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.agent-config-row label {
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+.agent-config-row select {
+    flex: 1;
+    padding: 4px 6px;
+    font-size: 12px;
+    background-color: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+    border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+    border-radius: 2px;
+    cursor: pointer;
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+.agent-config-row select:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+/* --------------------------------------------------------------------------
+   Config Mode — Budget row (label + range + value display)
+   -------------------------------------------------------------------------- */
+
+.budget-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.budget-row label {
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+.budget-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--vscode-button-background);
+    cursor: pointer;
+    min-width: 0;
+}
+
+.budget-value {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--vscode-foreground);
+    min-width: 36px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Config Mode — History section
+   -------------------------------------------------------------------------- */
+
+.history-section {
+    margin-top: 20px;
+    border-top: 1px solid var(--vscode-panel-border);
+    padding-top: 12px;
+}
+
+.history-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--vscode-descriptionForeground);
+    margin-bottom: 8px;
+}
+
+.history-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+    border: 1px solid transparent;
+}
+
+.history-item:hover {
+    background-color: var(--vscode-list-hoverBackground);
+    border-color: var(--vscode-panel-border);
+}
+
+.history-item-question {
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-item-meta {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+}
+
+/* --------------------------------------------------------------------------
+   Live Mode — Header
+   -------------------------------------------------------------------------- */
+
+.live-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.live-pattern-name {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.live-status {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+    animation: pulse 1.5s infinite;
+}
+
+.live-cost-counter {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--vscode-descriptionForeground);
+    font-variant-numeric: tabular-nums;
+}
+
+.cancel-link {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    transition: color 0.15s, text-decoration-color 0.15s;
+    margin-bottom: 10px;
+}
+
+.cancel-link:hover {
+    color: var(--vscode-errorForeground, #f44747);
+    text-decoration-color: var(--vscode-errorForeground, #f44747);
+}
+
+/* --------------------------------------------------------------------------
+   Live Mode — Progress bar
+   -------------------------------------------------------------------------- */
+
+.progress-bar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 4px;
+}
+
+.progress-step {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    margin: 0 2px;
+    transition: background-color 0.3s;
+}
+
+.progress-step.done {
+    background-color: var(--vscode-testing-iconPassed, #22c55e);
+}
+
+.progress-step.active {
+    background-color: #f59e0b;
+    animation: pulse-amber 1.2s ease-in-out infinite;
+}
+
+.progress-step.pending {
+    background-color: var(--vscode-foreground);
+    opacity: 0.3;
+}
+
+.step-labels {
+    display: flex;
+    margin-bottom: 14px;
+}
+
+.step-label {
+    flex: 1;
+    text-align: center;
+    font-size: 10px;
+    color: var(--vscode-descriptionForeground);
+    padding: 0 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --------------------------------------------------------------------------
+   Live Mode — Agent rows
+   -------------------------------------------------------------------------- */
+
+.agent-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--vscode-panel-border);
+    margin-bottom: 6px;
+    cursor: pointer;
+    background-color: var(--vscode-editor-background);
+    transition: background-color 0.15s;
+    user-select: none;
+}
+
+.agent-row:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.agent-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.agent-dot.reasoner {
+    background-color: #4a9eff;
+}
+
+.agent-dot.coder {
+    background-color: #3ddc84;
+}
+
+.agent-dot.critic {
+    background-color: #ff9f43;
+}
+
+.agent-dot.synthesizer {
+    background-color: #a855f7;
+}
+
+.agent-name {
+    font-weight: 600;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.agent-status {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-status.thinking {
+    animation: pulse 1.5s infinite;
+    color: var(--vscode-progressBar-background);
+}
+
+.agent-status.done {
+    color: var(--vscode-testing-iconPassed, #22c55e);
+    opacity: 1;
+}
+
+.agent-status.pending {
+    opacity: 0.5;
+}
+
+.agent-cost {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background-color: var(--vscode-badge-background, rgba(255, 255, 255, 0.1));
+    color: var(--vscode-badge-foreground, var(--vscode-foreground));
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.agent-content {
+    display: none;
+    margin: 0 8px 6px 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    border: 1px solid var(--vscode-panel-border);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    background-color: var(--vscode-textBlockQuote-background);
+}
+
+.agent-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.agent-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.agent-content::-webkit-scrollbar-thumb {
+    background-color: var(--vscode-scrollbarSlider-background);
+    border-radius: 3px;
+}
+
+.agent-content::-webkit-scrollbar-thumb:hover {
+    background-color: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+.agent-row.expanded .agent-content {
+    display: block;
+}
+
+/* --------------------------------------------------------------------------
+   Complete Mode — Final answer
+   -------------------------------------------------------------------------- */
+
+.complete-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.complete-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.complete-meta {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.final-answer {
+    padding: 10px 12px;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    background-color: var(--vscode-sideBar-background);
+    font-size: 13px;
+    line-height: 1.6;
+    margin-bottom: 14px;
+    overflow-y: auto;
+    max-height: 55vh;
+}
+
+.final-answer::-webkit-scrollbar {
+    width: 6px;
+}
+
+.final-answer::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.final-answer::-webkit-scrollbar-thumb {
+    background-color: var(--vscode-scrollbarSlider-background);
+    border-radius: 3px;
+}
+
+.final-answer::-webkit-scrollbar-thumb:hover {
+    background-color: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+.final-answer pre {
+    background-color: var(--vscode-textBlockQuote-background);
+    border: 1px solid var(--vscode-textBlockQuote-border);
+    border-radius: 4px;
+    padding: 8px;
+    overflow-x: auto;
+    margin: 8px 0;
+    font-size: 12px;
+}
+
+.final-answer code {
+    font-family: var(--vscode-editor-font-family);
+    font-size: 0.9em;
+    background-color: var(--vscode-textBlockQuote-background);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.run-again-btn {
+    display: block;
+    width: 100%;
+    padding: 7px 14px;
+    background-color: var(--vscode-button-secondaryBackground, transparent);
+    color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 2px;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.2s, opacity 0.2s;
+    box-sizing: border-box;
+}
+
+.run-again-btn:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+/* --------------------------------------------------------------------------
+   Shared — Error message
+   -------------------------------------------------------------------------- */
+
+.error-message {
+    padding: 8px 10px;
+    margin: 8px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--vscode-errorForeground, #f44747);
+    border: 1px solid var(--vscode-errorForeground, #f44747);
+    border-radius: 4px;
+    background-color: rgba(244, 71, 71, 0.08);
+}
+
+/* --------------------------------------------------------------------------
+   Animations
+   -------------------------------------------------------------------------- */
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+@keyframes pulse-amber {
+    0%, 100% {
+        opacity: 1;
+        background-color: #f59e0b;
+    }
+    50% {
+        opacity: 0.6;
+        background-color: #fbbf24;
+    }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
