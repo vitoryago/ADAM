@@ -633,6 +633,252 @@ ${col.is_foreign_key ? `          - relationships:
         return [];
     }
 
+    // Deep Discussion API methods
+
+    /** Create a new Deep Discussion session */
+    async createDeepDiscussionSession(
+        question: string,
+        pattern: string,
+        conversationId?: string
+    ): Promise<any> {
+        try {
+            const response = await fetch(`${this.baseURL}/api/deep-discussion/sessions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_id: this.projectId,
+                    question,
+                    pattern,
+                    conversation_id: conversationId
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Create session failed (${response.status}): ${errorText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Deep Discussion create session error:', error);
+            throw error;
+        }
+    }
+
+    /** Update configuration for an existing Deep Discussion session */
+    async updateDeepDiscussionConfig(
+        sessionId: string,
+        config: { model_assignments?: Record<string, string>; pattern?: string; budget?: number }
+    ): Promise<any> {
+        try {
+            const response = await fetch(`${this.baseURL}/api/deep-discussion/sessions/${sessionId}/config`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model_assignments: config.model_assignments,
+                    pattern: config.pattern,
+                    budget: config.budget
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Update config failed (${response.status}): ${errorText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Deep Discussion update config error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Start a Deep Discussion session with SSE streaming.
+     *
+     * Uses fetch() + ReadableStream for incremental SSE parsing.
+     * Calls the appropriate callback for each parsed SSE event type.
+     * Accepts an AbortSignal for cancellation.
+     */
+    async startDeepDiscussion(
+        sessionId: string,
+        signal: AbortSignal | undefined,
+        callbacks: {
+            onSessionStart?: (data: any) => void;
+            onStepStart?: (data: any) => void;
+            onAgentStart?: (agent: string, data: any) => void;
+            onAgentChunk?: (agent: string, content: string) => void;
+            onAgentDone?: (agent: string, data: any) => void;
+            onStepComplete?: (data: any) => void;
+            onSessionComplete?: (data: any) => void;
+            onDone?: () => void;
+            onError?: (message: string) => void;
+        }
+    ): Promise<void> {
+        const url = `${this.baseURL}/api/deep-discussion/sessions/${sessionId}/start`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Start discussion failed (${response.status}): ${errorText}`);
+        }
+
+        if (!response.body) {
+            throw new Error('Response body is null -- streaming not supported');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) { break; }
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // Parse SSE lines: each event is "data: <json>\n\n"
+                const lines = buffer.split('\n');
+                buffer = '';
+
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+
+                    // If this line doesn't end with \n and is the last line,
+                    // it might be an incomplete chunk -- keep in buffer
+                    if (i === lines.length - 1 && line !== '') {
+                        buffer = line;
+                        continue;
+                    }
+
+                    if (!line.startsWith('data: ')) { continue; }
+
+                    const jsonStr = line.slice(6).trim();
+                    if (!jsonStr || jsonStr === '[DONE]') { continue; }
+
+                    try {
+                        const event = JSON.parse(jsonStr);
+
+                        switch (event.type) {
+                            case 'session_start':
+                                callbacks.onSessionStart?.(event);
+                                break;
+
+                            case 'step_start':
+                                callbacks.onStepStart?.(event);
+                                break;
+
+                            case 'agent_start':
+                                callbacks.onAgentStart?.(event.agent || 'unknown', event);
+                                break;
+
+                            case 'agent_chunk':
+                                callbacks.onAgentChunk?.(
+                                    event.agent || 'unknown',
+                                    event.content || ''
+                                );
+                                break;
+
+                            case 'agent_done':
+                                callbacks.onAgentDone?.(event.agent || 'unknown', event);
+                                break;
+
+                            case 'step_complete':
+                                callbacks.onStepComplete?.(event);
+                                break;
+
+                            case 'session_complete':
+                                callbacks.onSessionComplete?.(event);
+                                break;
+
+                            case 'done':
+                                callbacks.onDone?.();
+                                break;
+
+                            case 'session_error':
+                                callbacks.onError?.(event.message || 'Unknown session error');
+                                break;
+                        }
+                    } catch (parseErr) {
+                        console.warn('Failed to parse Deep Discussion SSE event:', jsonStr, parseErr);
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
+    /** Get a Deep Discussion session by ID */
+    async getDeepDiscussionSession(sessionId: string): Promise<any> {
+        try {
+            const response = await fetch(`${this.baseURL}/api/deep-discussion/sessions/${sessionId}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Get session failed (${response.status}): ${errorText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Deep Discussion get session error:', error);
+            throw error;
+        }
+    }
+
+    /** List Deep Discussion sessions for the current project */
+    async listDeepDiscussionSessions(limit: number = 10): Promise<any[]> {
+        try {
+            const response = await fetch(
+                `${this.baseURL}/api/deep-discussion/sessions?project_id=${encodeURIComponent(this.projectId)}`,
+                {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                }
+            );
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`List sessions failed (${response.status}): ${errorText}`);
+            }
+
+            const sessions: any[] = await response.json();
+            return sessions.slice(0, limit);
+        } catch (error) {
+            console.error('Deep Discussion list sessions error:', error);
+            throw error;
+        }
+    }
+
+    /** Replay a completed Deep Discussion session */
+    async replayDeepDiscussion(sessionId: string): Promise<any> {
+        try {
+            const response = await fetch(`${this.baseURL}/api/deep-discussion/sessions/${sessionId}/replay`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Replay session failed (${response.status}): ${errorText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Deep Discussion replay session error:', error);
+            throw error;
+        }
+    }
+
     disconnect() {
         // No persistent connection to close (using HTTP/SSE)
     }
