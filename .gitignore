@@ -116,3 +116,4 @@ adam_v2.db
 /test_*.py
 temp/
 tmp/
+.superpowers/
