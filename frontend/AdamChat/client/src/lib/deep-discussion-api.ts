@@ -12,11 +12,18 @@ export async function createSession(
   question: string,
   pattern: string,
   conversationId?: string,
+  preferLocal?: boolean,
 ) {
   const res = await fetch(`${API_BASE}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: projectId, question, pattern, conversation_id: conversationId }),
+    body: JSON.stringify({
+      project_id: projectId,
+      question,
+      pattern,
+      conversation_id: conversationId,
+      prefer_local: preferLocal ?? false,
+    }),
     credentials: "include",
   });
   await throwIfResNotOk(res);

@@ -1,4 +1,14 @@
 import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+
+interface LocalModel {
+  model_id: string;
+  display_name: string;
+  backend: string;
+  parameter_count: number;
+  quantization: string;
+  available: boolean;
+}
 
 interface ModelSelectorProps {
   value: string;
@@ -6,7 +16,7 @@ interface ModelSelectorProps {
   className?: string;
 }
 
-const MODEL_GROUPS = [
+const CLOUD_MODEL_GROUPS = [
   {
     label: "X.AI",
     models: [
@@ -40,6 +50,16 @@ const MODEL_GROUPS = [
 ];
 
 export function ModelSelector({ value, onChange, className }: ModelSelectorProps) {
+  const { data: localModels = [] } = useQuery<LocalModel[]>({
+    queryKey: ["/api/local-models"],
+    queryFn: async () => {
+      const res = await fetch("/api/local-models");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+
   return (
     <select
       value={value}
@@ -51,7 +71,16 @@ export function ModelSelector({ value, onChange, className }: ModelSelectorProps
         className,
       )}
     >
-      {MODEL_GROUPS.map((group) => (
+      {localModels.length > 0 && (
+        <optgroup label="Local  $0.00">
+          {localModels.map((m) => (
+            <option key={m.model_id} value={m.model_id}>
+              {m.display_name}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {CLOUD_MODEL_GROUPS.map((group) => (
         <optgroup key={group.label} label={group.label}>
           {group.models.map((model) => (
             <option key={model.id} value={model.id}>

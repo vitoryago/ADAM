@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { PatternSelector } from "./pattern-selector";
@@ -62,6 +63,7 @@ export function ConfigScreen({ projectId, onStart, conversationId }: ConfigScree
     Object.fromEntries(AGENT_CARDS.map((a) => [a.defaultModelKey, DEFAULT_MODEL])),
   );
   const [budget, setBudget] = useState(DEFAULT_BUDGET);
+  const [preferLocal, setPreferLocal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const questionRef = useRef<HTMLTextAreaElement>(null);
@@ -87,6 +89,7 @@ export function ConfigScreen({ projectId, onStart, conversationId }: ConfigScree
         question.trim(),
         pattern,
         conversationId,
+        preferLocal,
       );
       if (hasCustomAssignments || budget !== DEFAULT_BUDGET) {
         await updateSessionConfig(session.id, {
@@ -133,6 +136,30 @@ export function ConfigScreen({ projectId, onStart, conversationId }: ConfigScree
       <div className="flex flex-col gap-2">
         <label className="text-sm font-semibold">Discussion Pattern</label>
         <PatternSelector value={pattern} onChange={setPattern} />
+      </div>
+
+      {/* Prefer Local Toggle */}
+      <div className="flex items-center justify-between py-2">
+        <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+          <span>Prefer Local Models</span>
+        </label>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={preferLocal}
+          onClick={() => setPreferLocal(!preferLocal)}
+          className={cn(
+            "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+            preferLocal ? "bg-primary" : "bg-muted",
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block h-3.5 w-3.5 transform rounded-full bg-background transition-transform",
+              preferLocal ? "translate-x-4" : "translate-x-0.5",
+            )}
+          />
+        </button>
       </div>
 
       {/* Agent Cards */}
