@@ -71,6 +71,7 @@ class AsyncLLMProvider(Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    LOCAL = "local"
 
 
 class AsyncLLMClient:
@@ -92,6 +93,7 @@ class AsyncLLMClient:
         self._client_locks = {}
         self._initialize_lock = asyncio.Lock()
         self._initialized = False
+        self._local_provider = None
 
     async def initialize(self):
         """
@@ -162,6 +164,31 @@ class AsyncLLMClient:
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini client: {e}")
 
+        # Initialize local model provider
+        import os
+        local_enabled = os.getenv("LOCAL_MODEL_ENABLED", "true").lower() == "true"
+        if local_enabled and OPENAI_AVAILABLE:
+            try:
+                from adam.llm.local_provider import LocalModelProvider
+                self._local_provider = LocalModelProvider()
+                await self._local_provider.discover()
+                seen_urls = set()
+                for model in self._local_provider.models.values():
+                    if model.base_url not in seen_urls:
+                        seen_urls.add(model.base_url)
+                        self.clients[(AsyncLLMProvider.LOCAL, model.base_url)] = AsyncOpenAI(
+                            base_url=model.base_url,
+                            api_key="not-needed",
+                            timeout=300.0,
+                        )
+                if self._local_provider.models:
+                    self._client_locks[AsyncLLMProvider.LOCAL] = asyncio.Semaphore(3)
+                    logger.info("Initialized LOCAL provider with %d model(s)", len(self._local_provider.models))
+                    await self._local_provider.start_health_checks()
+            except Exception as e:
+                logger.error(f"Failed to initialize local provider: {e}")
+                self._local_provider = LocalModelProvider(endpoints=[])
+
     async def _ensure_initialized(self):
         """Ensure client is initialized"""
         if not self._initialized:
@@ -206,7 +233,11 @@ class AsyncLLMClient:
         ):
             provider = self._get_provider_for_model(model)
 
-            if provider not in self.clients:
+            # LOCAL clients are stored with tuple keys (LOCAL, base_url)
+            if provider == AsyncLLMProvider.LOCAL:
+                if not self._local_provider or not self._local_provider.has_model(model):
+                    raise ValueError(f"Provider {provider.value} not available or not configured")
+            elif provider not in self.clients:
                 raise ValueError(f"Provider {provider.value} not available or not configured")
 
             # Use semaphore to limit concurrent requests per provider
@@ -238,6 +269,8 @@ class AsyncLLMClient:
             return await self._complete_anthropic(model, prompt, system_prompt, temperature, max_tokens, **kwargs)
         elif provider == AsyncLLMProvider.GEMINI:
             return await self._complete_gemini(model, prompt, system_prompt, temperature, max_tokens, **kwargs)
+        elif provider == AsyncLLMProvider.LOCAL:
+            return await self._complete_local(model, prompt, system_prompt, temperature, max_tokens, **kwargs)
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
@@ -264,6 +297,9 @@ class AsyncLLMClient:
                 yield chunk
         elif provider == AsyncLLMProvider.GEMINI:
             async for chunk in self._stream_gemini(model, prompt, system_prompt, temperature, max_tokens, **kwargs):
+                yield chunk
+        elif provider == AsyncLLMProvider.LOCAL:
+            async for chunk in self._stream_local(model, prompt, system_prompt, temperature, max_tokens, **kwargs):
                 yield chunk
         else:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -529,6 +565,80 @@ class AsyncLLMClient:
             logger.error(f"Gemini streaming failed: {e}")
             raise
 
+    async def _complete_local(
+        self,
+        model: str,
+        prompt: str,
+        system_prompt: Optional[str],
+        temperature: float,
+        max_tokens: Optional[int],
+        **kwargs
+    ) -> AsyncLLMResponse:
+        """Complete request using a local model (via OpenAI-compatible endpoint)"""
+        base_url = self._local_provider.get_base_url(model)
+        client = self.clients.get((AsyncLLMProvider.LOCAL, base_url))
+        if not client:
+            raise ValueError(f"No local client configured for model {model} at {base_url}")
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs
+            )
+
+            total_tokens = getattr(response.usage, 'total_tokens', 0) if response.usage else 0
+            completion_tokens = getattr(response.usage, 'completion_tokens', 0) if response.usage else 0
+
+            return AsyncLLMResponse(
+                content=response.choices[0].message.content,
+                model=model,
+                provider="local",
+                total_tokens=total_tokens,
+                completion_tokens=completion_tokens,
+                cost=0.0,  # Local models are free
+                raw_response=response.model_dump() if hasattr(response, 'model_dump') else None,
+            )
+
+        except Exception as e:
+            logger.error(f"Local completion failed for {model}: {e}")
+            raise
+
+    async def _stream_local(self, model: str, prompt: str, system_prompt: Optional[str],
+                            temperature: float, max_tokens: Optional[int], **kwargs) -> AsyncGenerator[str, None]:
+        """Stream from a local model (via OpenAI-compatible endpoint)"""
+        base_url = self._local_provider.get_base_url(model)
+        client = self.clients.get((AsyncLLMProvider.LOCAL, base_url))
+        if not client:
+            raise ValueError(f"No local client configured for model {model} at {base_url}")
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            async for chunk in await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+                **kwargs
+            ):
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            logger.error(f"Local streaming failed for {model}: {e}")
+            raise
+
     def _get_provider_for_model(self, model: str) -> AsyncLLMProvider:
         """Get provider for a given model"""
         if model.startswith('grok-'):
@@ -540,6 +650,9 @@ class AsyncLLMClient:
         elif model.startswith('gemini-'):
             return AsyncLLMProvider.GEMINI
         else:
+            local = getattr(self, '_local_provider', None)
+            if local and local.has_model(model):
+                return AsyncLLMProvider.LOCAL
             # Default to XAI for unknown models (assuming they're Grok variants)
             return AsyncLLMProvider.XAI
 
@@ -571,6 +684,11 @@ class AsyncLLMClient:
 
     async def close(self):
         """Clean up resources"""
+        # Stop local provider health checks
+        if self._local_provider:
+            await safe_await(self._local_provider.stop_health_checks(), default=None)
+            self._local_provider = None
+
         for client in self.clients.values():
             if hasattr(client, 'close'):
                 await safe_await(client.close(), default=None)

@@ -16,6 +16,7 @@ class ModelProvider(Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    LOCAL = "local"
 
 class ModelCapability(Enum):
     BASIC_QA = "basic_qa"
