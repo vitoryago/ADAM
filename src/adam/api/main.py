@@ -66,7 +66,7 @@ app.add_middleware(
 from adam.api.routers import (
     conversations, projects, memories, messages,
     voice, voice_streaming, lineage, styles, dbt,
-    deep_discussion,
+    deep_discussion, local_models,
 )
 
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
@@ -79,6 +79,7 @@ app.include_router(lineage.router, prefix="/api/lineage", tags=["lineage"])
 app.include_router(styles.router, prefix="/api", tags=["styles"])
 app.include_router(dbt.router, prefix="/api/dbt", tags=["dbt"])
 app.include_router(deep_discussion.router, prefix="/api/deep-discussion", tags=["deep-discussion"])
+app.include_router(local_models.router, prefix="/api/local-models", tags=["local-models"])
 
 
 @app.get("/health")
