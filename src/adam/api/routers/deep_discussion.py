@@ -52,7 +52,16 @@ async def create_session(
         )
 
     # Apply smart defaults for model assignments
-    smart_defaults = get_smart_defaults()
+    smart_defaults = get_smart_defaults(prefer_local=session_data.prefer_local)
+
+    budget = 2.0
+    if session_data.prefer_local:
+        local_count = sum(
+            1 for m in smart_defaults.values()
+            if not any(m.startswith(p) for p in ("grok-", "claude-", "gpt-", "gemini-"))
+        )
+        if local_count >= 3:
+            budget = 0.50
 
     session = DeepDiscussionSessionDB(
         project_id=session_data.project_id,
@@ -60,6 +69,8 @@ async def create_session(
         question=session_data.question,
         pattern=session_data.pattern,
         model_assignments=smart_defaults,
+        prefer_local=session_data.prefer_local,
+        budget=budget,
     )
 
     db.add(session)

@@ -6,24 +6,44 @@ constants for the available models a user can choose from.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Smart defaults
-# ---------------------------------------------------------------------------
+def _get_local_models() -> list:
+    """Return available local models, or empty list if provider not ready."""
+    try:
+        from adam.services.llm_service import LLMService
+        service = LLMService()
+        if service.llm_client and service.llm_client._local_provider:
+            return service.llm_client._local_provider.get_available_models()
+    except Exception:
+        pass
+    return []
 
 
-def get_smart_defaults() -> Dict[str, str]:
+def get_smart_defaults(prefer_local: bool = False) -> Dict[str, str]:
     """Return the default model-per-role mapping.
 
-    The four canonical roles map to best-in-class models that cover
-    reasoning, coding, critique, and synthesis respectively.
-
-    Returns:
-        A dict with keys ``reasoner``, ``coder``, ``critic``, ``synthesizer``.
+    Args:
+        prefer_local: When True, assign the most capable local model to
+            all roles. Falls back to cloud defaults if no local models
+            are available.
     """
+    if prefer_local:
+        local_models = _get_local_models()
+        if local_models:
+            best_local = max(local_models, key=lambda m: m.parameter_count)
+            return {
+                "reasoner": best_local.model_id,
+                "coder": best_local.model_id,
+                "critic": best_local.model_id,
+                "synthesizer": best_local.model_id,
+            }
+
     return {
         "reasoner": "grok-4.20-multi-agent-0309",
         "coder": "claude-opus-4-6",
@@ -32,59 +52,30 @@ def get_smart_defaults() -> Dict[str, str]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Available models catalogue
-# ---------------------------------------------------------------------------
-
-#: All models the user may assign to any role, keyed by human-readable label.
-#: Grouped loosely by provider for display purposes.
 AVAILABLE_MODELS: Dict[str, str] = {
-    # Anthropic
     "Claude Opus 4.6": "claude-opus-4-6",
     "Claude Sonnet 4.6": "claude-sonnet-4-6",
     "Claude Haiku 3.5": "claude-haiku-3-5",
-    # OpenAI
     "GPT-5.4 (2026-03-05)": "gpt-5.4-2026-03-05",
     "GPT-4o": "gpt-4o",
     "o3": "o3",
-    # xAI
     "Grok 4.20 Multi-Agent": "grok-4.20-multi-agent-0309",
     "Grok 3": "grok-3",
-    # Google
     "Gemini 2.5 Pro": "gemini-2.5-pro",
     "Gemini 2.0 Flash": "gemini-2.0-flash",
 }
 
 
-# ---------------------------------------------------------------------------
-# SessionConfig dataclass
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class SessionConfig:
-    """Configuration for a single Deep Discussion session.
-
-    Attributes:
-        question: The user's question or topic to discuss.
-        pattern: Orchestration pattern — one of ``"sequential"``,
-            ``"debate"``, or ``"peer_review"``.
-        model_assignments: Maps canonical role names to model IDs.
-            Defaults to :func:`get_smart_defaults` when not provided.
-        budget: Maximum spend in USD for the session. Defaults to ``2.0``.
-        conversation_id: Optional ID of an existing ADAM conversation to
-            associate this session with.
-        conversation_context: Optional prior conversation text injected as
-            extra context for all agents.
-    """
-
     question: str
-    pattern: str  # "sequential" | "debate" | "peer_review"
+    pattern: str
     model_assignments: Dict[str, str] = field(default_factory=dict)
     budget: float = 2.0
+    prefer_local: bool = False
     conversation_id: Optional[str] = None
     conversation_context: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.model_assignments:
-            self.model_assignments = get_smart_defaults()
+            self.model_assignments = get_smart_defaults(prefer_local=self.prefer_local)

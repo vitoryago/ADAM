@@ -228,6 +228,7 @@ class DeepDiscussionSessionDB(Base):
     pattern = Column(String(20), nullable=False)  # sequential/debate/peer_review
     model_assignments = Column(JSON, nullable=False, server_default='{}')
     budget = Column(Float, nullable=False, default=2.0)
+    prefer_local = Column(Boolean, nullable=False, default=False)
     total_cost = Column(Float, nullable=False, default=0.0)
     status = Column(String(20), nullable=False, default="configuring")
     result = Column(Text, nullable=True)
@@ -241,6 +242,7 @@ class DeepDiscussionSessionDB(Base):
         kwargs.setdefault('status', 'configuring')
         kwargs.setdefault('total_cost', 0.0)
         kwargs.setdefault('budget', 2.0)
+        kwargs.setdefault('prefer_local', False)
         kwargs.setdefault('model_assignments', {})
         super().__init__(**kwargs)
 
@@ -252,6 +254,7 @@ class DeepDiscussionSessionCreate(BaseModel):
     question: str
     pattern: str = "peer_review"
     conversation_id: Optional[str] = None
+    prefer_local: bool = False
 
 
 class DeepDiscussionSessionUpdate(BaseModel):
@@ -272,6 +275,7 @@ class DeepDiscussionSessionResponse(BaseModel):
     pattern: str
     model_assignments: Dict[str, str]
     budget: float
+    prefer_local: bool = False
     total_cost: float = 0.0
     status: str
     result: Optional[str] = None
