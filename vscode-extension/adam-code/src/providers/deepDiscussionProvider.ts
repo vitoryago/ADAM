@@ -43,6 +43,9 @@ export class DeepDiscussionProvider implements vscode.WebviewViewProvider {
                 case 'runAgain':
                     await this.handleRunAgain();
                     break;
+                case 'fetchLocalModels':
+                    await this.handleFetchLocalModels();
+                    break;
             }
         });
 
@@ -55,6 +58,7 @@ export class DeepDiscussionProvider implements vscode.WebviewViewProvider {
         pattern: string;
         modelAssignments?: Record<string, string>;
         budget?: number;
+        preferLocal?: boolean;
     }) {
         try {
             // Create the session
@@ -66,10 +70,11 @@ export class DeepDiscussionProvider implements vscode.WebviewViewProvider {
             this.currentSessionId = session.id;
 
             // Update config if advanced settings were provided
-            if (data.modelAssignments || data.budget !== undefined) {
+            if (data.modelAssignments || data.budget !== undefined || data.preferLocal !== undefined) {
                 await this.adamClient.updateDeepDiscussionConfig(session.id, {
                     model_assignments: data.modelAssignments,
-                    budget: data.budget
+                    budget: data.budget,
+                    prefer_local: data.preferLocal
                 });
             }
 
@@ -191,6 +196,19 @@ export class DeepDiscussionProvider implements vscode.WebviewViewProvider {
                 type: 'error',
                 message: `Failed to replay session: ${error?.message || error}`
             });
+        }
+    }
+
+    private async handleFetchLocalModels() {
+        try {
+            const baseURL = this.adamClient.baseURL || 'http://localhost:8000';
+            const response = await fetch(`${baseURL}/api/local-models`);
+            if (response.ok) {
+                const models = await response.json();
+                this._view?.webview.postMessage({ type: 'localModelsData', models });
+            }
+        } catch (_) {
+            // Silently fail — local models are optional
         }
     }
 

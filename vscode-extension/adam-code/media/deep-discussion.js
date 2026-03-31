@@ -14,6 +14,8 @@
     var historySessions = [];
     var currentPattern = 'peer_review';
     var advancedExpanded = false;
+    var preferLocal = false;
+    var localModels = [];
 
     // ========================================================================
     // Model & Pattern Data
@@ -100,6 +102,10 @@
             "'": '&#039;'
         };
         return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+    }
+
+    function fetchLocalModels() {
+        vscode.postMessage({ type: 'fetchLocalModels' });
     }
 
     // ========================================================================
@@ -211,6 +217,22 @@
         var advSection = document.createElement('div');
         advSection.className = advancedExpanded ? 'advanced-section' : 'advanced-section hidden';
 
+        // Prefer Local toggle row
+        var localRow = document.createElement('div');
+        localRow.className = 'agent-config-row';
+        var localLabel = document.createElement('label');
+        localLabel.textContent = 'Prefer Local';
+        localRow.appendChild(localLabel);
+        var localToggle = document.createElement('button');
+        localToggle.className = preferLocal ? 'toggle-btn on' : 'toggle-btn';
+        localToggle.textContent = preferLocal ? 'ON' : 'OFF';
+        localToggle.addEventListener('click', function() {
+            preferLocal = !preferLocal;
+            renderConfig(prefill);
+        });
+        localRow.appendChild(localToggle);
+        advSection.appendChild(localRow);
+
         var roles = ['reasoner', 'coder', 'critic', 'synthesizer'];
         for (var r = 0; r < roles.length; r++) {
             var role = roles[r];
@@ -227,6 +249,18 @@
 
             var sel = document.createElement('select');
             sel.id = 'dd-model-' + role;
+            if (localModels.length > 0) {
+                var localGroup = document.createElement('optgroup');
+                localGroup.label = 'Local  $0.00';
+                for (var lm = 0; lm < localModels.length; lm++) {
+                    var lmOpt = document.createElement('option');
+                    lmOpt.value = localModels[lm].model_id;
+                    lmOpt.textContent = localModels[lm].display_name;
+                    if (localModels[lm].model_id === defaultModel) { lmOpt.selected = true; }
+                    localGroup.appendChild(lmOpt);
+                }
+                sel.appendChild(localGroup);
+            }
             for (var g = 0; g < MODEL_GROUPS.length; g++) {
                 var group = MODEL_GROUPS[g];
                 var optgroup = document.createElement('optgroup');
@@ -621,7 +655,8 @@
             question: question,
             pattern: pattern,
             modelAssignments: modelAssignments,
-            budget: budget
+            budget: budget,
+            preferLocal: preferLocal
         });
     };
 
@@ -781,6 +816,11 @@
                 }
                 break;
 
+            case 'localModelsData':
+                localModels = msg.models || [];
+                if (mode === 'config') { renderConfig(); }
+                break;
+
             case 'sessionData':
                 // Reconstruct complete view from saved session data
                 mode = 'complete';
@@ -827,5 +867,6 @@
     // ========================================================================
 
     vscode.postMessage({ type: 'loadHistory' });
+    fetchLocalModels();
     render();
 })();

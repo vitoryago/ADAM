@@ -1,5 +1,17 @@
-import axios, { AxiosInstance } from 'axios';
 import * as vscode from 'vscode';
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+type QueryValue = string | number | boolean | null | undefined;
+
+interface RequestOptions {
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    body?: unknown;
+    query?: Record<string, QueryValue>;
+    timeoutMs?: number;
+}
 
 export interface Message {
     role: 'user' | 'assistant' | 'system';
@@ -56,21 +68,146 @@ export interface EditorDiagnostic {
 }
 
 export class ADAMClient {
-    private api: AxiosInstance;
-    private baseURL: string;
+    public baseURL: string;
     private projectId: string;
     private conversationId: string | null = null;
     private responseStyle: 'normal' | 'concise' | 'explanatory' = 'normal';
 
     constructor(baseURL: string, projectId: string) {
-        this.baseURL = baseURL;
-        this.api = axios.create({
-            baseURL,
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
+        this.baseURL = this.normalizeBaseURL(baseURL);
         this.projectId = projectId;
+    }
+
+    private normalizeBaseURL(baseURL: string): string {
+        try {
+            const parsed = new URL(baseURL.trim());
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                throw new Error(`unsupported protocol "${parsed.protocol}"`);
+            }
+            return parsed.href.replace(/\/+$/, '');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Invalid ADAM server URL "${baseURL}": ${message}`);
+        }
+    }
+
+    private buildRequestUrl(path: string, query?: Record<string, QueryValue>): string {
+        const trimmedPath = path.trim();
+
+        if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmedPath) || trimmedPath.startsWith('//')) {
+            throw new Error(`Refusing to request an absolute URL: ${trimmedPath}`);
+        }
+
+        const normalizedPath = trimmedPath.startsWith('/') ? trimmedPath : `/${trimmedPath}`;
+        const url = new URL(`${this.baseURL}${normalizedPath}`);
+
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+            throw new Error(`Refusing to request unsupported protocol "${url.protocol}"`);
+        }
+
+        for (const [key, value] of Object.entries(query || {})) {
+            if (value === undefined || value === null) {
+                continue;
+            }
+            url.searchParams.set(key, String(value));
+        }
+
+        return url.toString();
+    }
+
+    private buildErrorMessage(status: number, text: string): string {
+        if (!text) {
+            return `Request failed with status ${status}`;
+        }
+
+        try {
+            const parsed = JSON.parse(text) as { detail?: unknown; error?: unknown; message?: unknown };
+            const detail = parsed.detail ?? parsed.error ?? parsed.message;
+            if (typeof detail === 'string' && detail.trim()) {
+                return detail;
+            }
+        } catch {
+            // Fall back to raw text below.
+        }
+
+        return text.length > 500 ? `${text.slice(0, 500)}...` : text;
+    }
+
+    private encodeRequestBody(body: unknown): string | undefined {
+        if (body === undefined) {
+            return undefined;
+        }
+
+        const json = JSON.stringify(body);
+        if (Buffer.byteLength(json, 'utf8') > MAX_REQUEST_BYTES) {
+            throw new Error(`Request body exceeds ${MAX_REQUEST_BYTES} bytes`);
+        }
+
+        return json;
+    }
+
+    private async sendRequest(path: string, options: RequestOptions): Promise<string> {
+        const url = this.buildRequestUrl(path, options.query);
+        const body = this.encodeRequestBody(options.body);
+        const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+            const response = await fetch(url, {
+                method: options.method,
+                headers: {
+                    Accept: 'application/json, text/plain, */*',
+                    ...(body ? { 'Content-Type': 'application/json' } : {})
+                },
+                body,
+                redirect: 'error',
+                signal: controller.signal
+            });
+
+            const contentLength = response.headers.get('content-length');
+            if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES) {
+                throw new Error(`Response exceeds ${MAX_RESPONSE_BYTES} bytes`);
+            }
+
+            const text = await response.text();
+            if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) {
+                throw new Error(`Response exceeds ${MAX_RESPONSE_BYTES} bytes`);
+            }
+
+            if (!response.ok) {
+                throw new Error(
+                    `${options.method} ${url} failed (${response.status}): ${this.buildErrorMessage(response.status, text)}`
+                );
+            }
+
+            return text;
+        } catch (error) {
+            if (controller.signal.aborted) {
+                throw new Error(`Request timed out after ${timeoutMs}ms: ${options.method} ${url}`);
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    private async requestJson<T>(path: string, options: RequestOptions): Promise<T> {
+        const text = await this.sendRequest(path, options);
+        if (!text) {
+            return undefined as T;
+        }
+
+        try {
+            return JSON.parse(text) as T;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Invalid JSON response for ${options.method} ${path}: ${message}`);
+        }
+    }
+
+    private async requestText(path: string, options: RequestOptions): Promise<string> {
+        return this.sendRequest(path, options);
     }
 
     setResponseStyle(style: 'normal' | 'concise' | 'explanatory') {
@@ -85,10 +222,16 @@ export class ADAMClient {
     /** Ensure a conversation exists, creating one if needed */
     private async ensureConversation(): Promise<string> {
         if (!this.conversationId) {
-            const convResponse = await this.api.post(`/api/projects/${this.projectId}/conversations`, {
-                title: `VSCode Session ${new Date().toLocaleString()}`
-            });
-            this.conversationId = convResponse.data.id;
+            const convResponse = await this.requestJson<{ id: string }>(
+                `/api/projects/${this.projectId}/conversations`,
+                {
+                    method: 'POST',
+                    body: {
+                        title: `VSCode Session ${new Date().toLocaleString()}`
+                    }
+                }
+            );
+            this.conversationId = convResponse.id;
         }
         return this.conversationId!;
     }
@@ -183,16 +326,19 @@ export class ADAMClient {
             const conversationId = await this.ensureConversation();
             const payload = this.buildMessagePayload(content, useMemory);
 
-            const response = await this.api.post(
+            const response = await this.requestJson<any[]>(
                 `/api/conversations/${conversationId}/messages`,
-                payload
+                {
+                    method: 'POST',
+                    body: payload
+                }
             );
 
-            console.log('ADAM Response:', response.data);
+            console.log('ADAM Response:', response);
 
             // The endpoint returns an array of [user_message, assistant_message]
-            if (response.data && Array.isArray(response.data)) {
-                const assistantMsg = response.data.find((m: any) => m.role === 'assistant');
+            if (response && Array.isArray(response)) {
+                const assistantMsg = response.find((m: any) => m.role === 'assistant');
                 if (assistantMsg) {
                     return {
                         role: 'assistant',
@@ -216,9 +362,10 @@ export class ADAMClient {
     /**
      * Send a message with SSE streaming.
      *
-     * Uses fetch() instead of axios because we need access to ReadableStream
-     * for incremental SSE parsing. Calls onEvent() for each parsed SSE event,
-     * letting the caller update the UI progressively.
+     * Uses fetch() so we can access ReadableStream directly for incremental
+     * SSE parsing without pulling in an extra HTTP client dependency. Calls
+     * onEvent() for each parsed SSE event, letting the caller update the UI
+     * progressively.
      *
      * Returns the final accumulated assistant content and metadata.
      */
@@ -442,14 +589,15 @@ export class ADAMClient {
                 throw new Error('No workspace folder open');
             }
 
-            const response = await this.api.post('/api/dbt/columns/document-model', {
-                project_path: workspaceFolder.uri.fsPath,
-                model_name: modelName,
-                use_ai: true,
-                preserve_existing: true
+            const data = await this.requestJson<any>('/api/dbt/columns/document-model', {
+                method: 'POST',
+                body: {
+                    project_path: workspaceFolder.uri.fsPath,
+                    model_name: modelName,
+                    use_ai: true,
+                    preserve_existing: true
+                }
             });
-
-            const data = response.data;
 
             const documentation = Object.values(data.columns)
                 .map((col: any) => `- **${col.name}**: ${col.description}${col.is_foreign_key ? ` (FK -> ${col.references})` : ''}`)
@@ -473,12 +621,13 @@ export class ADAMClient {
                 throw new Error('No workspace folder open');
             }
 
-            const response = await this.api.post('/api/dbt/columns/analyze', {
-                project_path: workspaceFolder.uri.fsPath,
-                use_ai: true
+            return await this.requestJson<any>('/api/dbt/columns/analyze', {
+                method: 'POST',
+                body: {
+                    project_path: workspaceFolder.uri.fsPath,
+                    use_ai: true
+                }
             });
-
-            return response.data;
         } catch (error) {
             console.error('DBT column analysis error:', error);
             throw error;
@@ -492,12 +641,13 @@ export class ADAMClient {
                 throw new Error('No workspace folder open');
             }
 
-            const response = await this.api.post('/api/dbt/columns/common-columns', {
-                project_path: workspaceFolder.uri.fsPath,
-                min_occurrences: 2
+            return await this.requestJson<any[]>('/api/dbt/columns/common-columns', {
+                method: 'POST',
+                body: {
+                    project_path: workspaceFolder.uri.fsPath,
+                    min_occurrences: 2
+                }
             });
-
-            return response.data;
         } catch (error) {
             console.error('Common columns search error:', error);
             return [];
@@ -506,13 +656,14 @@ export class ADAMClient {
 
     async generateDBTSchema(folderPath: string): Promise<string> {
         try {
-            const response = await this.api.post('/api/dbt/columns/generate-schema', {
-                project_path: folderPath,
-                use_ai: true,
-                include_tests: true
+            return await this.requestText('/api/dbt/columns/generate-schema', {
+                method: 'POST',
+                body: {
+                    project_path: folderPath,
+                    use_ai: true,
+                    include_tests: true
+                }
             });
-
-            return response.data;
         } catch (error) {
             console.error('Schema generation error:', error);
             throw error;
@@ -562,10 +713,10 @@ ${col.is_foreign_key ? `          - relationships:
 
     async searchMemory(query: string): Promise<any[]> {
         try {
-            const response = await this.api.get('/api/memories/search', {
-                params: { query, project_id: this.projectId, limit: 10 }
+            return await this.requestJson<any[]>('/api/memories/search', {
+                method: 'GET',
+                query: { query, project_id: this.projectId, limit: 10 }
             });
-            return response.data;
         } catch (error) {
             console.error('Memory search error:', error);
             return [];
@@ -574,10 +725,10 @@ ${col.is_foreign_key ? `          - relationships:
 
     async getMemoryStats(): Promise<any> {
         try {
-            const response = await this.api.get('/api/memories/stats', {
-                params: { project_id: this.projectId }
+            return await this.requestJson<any>('/api/memories/stats', {
+                method: 'GET',
+                query: { project_id: this.projectId }
             });
-            return response.data;
         } catch (error) {
             console.error('Memory stats error:', error);
             return {};
@@ -668,7 +819,7 @@ ${col.is_foreign_key ? `          - relationships:
     /** Update configuration for an existing Deep Discussion session */
     async updateDeepDiscussionConfig(
         sessionId: string,
-        config: { model_assignments?: Record<string, string>; pattern?: string; budget?: number }
+        config: { model_assignments?: Record<string, string>; pattern?: string; budget?: number; prefer_local?: boolean }
     ): Promise<any> {
         try {
             const response = await fetch(`${this.baseURL}/api/deep-discussion/sessions/${sessionId}/config`, {
@@ -677,7 +828,8 @@ ${col.is_foreign_key ? `          - relationships:
                 body: JSON.stringify({
                     model_assignments: config.model_assignments,
                     pattern: config.pattern,
-                    budget: config.budget
+                    budget: config.budget,
+                    prefer_local: config.prefer_local
                 })
             });
 
