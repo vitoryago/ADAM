@@ -20,6 +20,9 @@ A dedicated interface where the user configures which AI model powers each agent
 | Design spec (VS Code extension) | Done | 2026-03-25 | `1a2ebe8` |
 | Implementation plan (VS Code extension) | Done | 2026-03-25 | `ee83623` |
 | VS Code extension implementation | Done | 2026-03-25 | `5514fc0`..`e3783c7` (7 commits) |
+| Local model integration spec | Done | 2026-03-31 | `306dbb3` |
+| Local model integration plan | Done | 2026-03-31 | `9f4b793` |
+| Local model integration implementation | Done | 2026-03-31 | `f1f5a17`..`98571e7` (8 commits) |
 | Manual end-to-end testing | **Not done** | — | — |
 | README update | Not done | — | — |
 
@@ -32,7 +35,8 @@ A dedicated interface where the user configures which AI model powers each agent
 | Where should it live in UI? | Both: sidebar page + "Go Deep" from chat | Flexibility — fresh sessions or escalate mid-conversation |
 | Model config approach | Smart defaults + manual override | Frictionless but full control |
 | Providers for v1 | Grok, Claude, OpenAI, Gemini | Big 4 cloud providers only |
-| Custom/local models (Ollama, vLLM) | Deferred to v2 | Simplify v1 scope |
+| Custom/local models (Ollama, vLLM) | Generic LocalModelProvider (OpenAI-compatible) | Backend-agnostic, future-proof for LoRA fine-tuning |
+| Local model UX | "Prefer Local" toggle in Advanced settings | Clean, non-intrusive — cloud-only by default |
 | User intervention | Watch-only with replay for v1 | Simpler; mid-discussion intervention deferred |
 | New orchestration pattern | Peer Review (with rebuttal loop) | Combines best of Round Table + Peer Review |
 | Number of new patterns | 1 for v1 (Peer Review) | Ship 3 total: Sequential, Debate, Peer Review |
@@ -281,8 +285,9 @@ Smart defaults span all 4 providers. If you only have some keys, override model 
 | Feature | Priority | Notes |
 |---------|----------|-------|
 | Manual end-to-end testing | **High** | Not yet tested with real LLM calls |
+| LoRA fine-tuning pipeline (Critic first) | **High** | Synthetic data → LoRA → quantize → serve via Ollama. TurboQuant-style 4-bit for M4 Pro 48GB |
 | Mid-discussion intervention | Medium | Pause between steps, inject context, redirect agents |
-| Custom/local model providers | Medium | Ollama, vLLM via OpenAI-compatible endpoint (NOT LiteLLM — security concerns) |
+| ~~Custom/local model providers~~ | **Done** | LocalModelProvider with auto-discovery, "Prefer Local" toggle, zero-cost tracking |
 | VS Code "Go Deep" from chat | Medium | Button in chat input to escalate conversation |
 | New orchestration patterns | Low | Round Table, Mosaic, etc. |
 | Memory integration | Low | Auto-store best multi-agent artifacts, reuse for similar problems |
