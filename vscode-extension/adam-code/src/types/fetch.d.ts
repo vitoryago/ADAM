@@ -37,5 +37,6 @@ declare function fetch(input: string, init?: {
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    redirect?: 'follow' | 'error' | 'manual';
     signal?: AbortSignal;
 }): Promise<FetchResponse>;
