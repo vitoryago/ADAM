@@ -266,7 +266,7 @@ class LLMService:
             model = self._select_model_by_complexity(complexity)
 
         # Use the specified model or default
-        final_model = model or self.default_model or "gpt-4o-mini"
+        final_model = model or self.default_model or "grok-4.20-0309-non-reasoning"
 
         try:
             model_config = MODEL_CONFIGS.get(final_model)
@@ -324,9 +324,10 @@ class LLMService:
                 "max_tokens": style_max_tokens
             }
 
-            if use_search and final_model in ["grok-3-mini", "grok-3-mini-high", "grok-4", "grok-4-reasoning"]:
+            if use_search:
                 complete_kwargs["search_parameters"] = True
-                logger.info(f"Live search enabled for model: {final_model}")
+                complete_kwargs["search_mode"] = search_mode or "web"
+                logger.info(f"Live search enabled for model: {final_model} (mode: {search_mode or 'web'})")
 
             if image_data and model_config and model_config.supports_vision:
                 if isinstance(image_data, str):
@@ -497,7 +498,7 @@ class LLMService:
             complexity, _ = self.query_analyzer.analyze_query(message)
             model = self._select_model_by_complexity(complexity)
 
-        final_model = model or self.default_model or "gpt-4o-mini"
+        final_model = model or self.default_model or "grok-4.20-0309-non-reasoning"
 
         try:
             model_config = MODEL_CONFIGS.get(final_model)
@@ -549,9 +550,10 @@ class LLMService:
                 "stream": True
             }
 
-            if use_search and final_model in ["grok-3-mini", "grok-3-mini-high", "grok-4", "grok-4-reasoning"]:
+            if use_search:
                 complete_kwargs["search_parameters"] = True
-                logger.info(f"Live search enabled for streaming with model: {final_model}")
+                complete_kwargs["search_mode"] = search_mode or "web"
+                logger.info(f"Live search enabled for streaming with model: {final_model} (mode: {search_mode or 'web'})")
 
             if image_data and model_config and model_config.supports_vision:
                 if isinstance(image_data, str):
@@ -681,14 +683,14 @@ class LLMService:
     def _select_model_by_complexity(self, complexity: 'QueryComplexity') -> str:
         """Select model based on query complexity"""
         if not QueryComplexity:
-            return "gpt-4o-mini"
+            return "grok-4.20-0309-non-reasoning"
 
         if complexity == QueryComplexity.HIGH:
-            return "grok-4-reasoning"
+            return "grok-4.20-0309-reasoning"
         elif complexity == QueryComplexity.MEDIUM:
-            return "grok-4"
+            return "grok-4.20-0309-non-reasoning"
         else:
-            return "gpt-4o-mini"
+            return "grok-4.20-0309-non-reasoning"
 
     def estimate_cost(
         self,
@@ -702,7 +704,7 @@ class LLMService:
 
         estimated_tokens = len(message.split()) * 1.5
 
-        model_name = model or self.default_model or "gpt-4o-mini"
+        model_name = model or self.default_model or "grok-4.20-0309-non-reasoning"
         model_config = MODEL_CONFIGS.get(model_name)
 
         if not model_config:

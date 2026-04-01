@@ -237,16 +237,16 @@ class QueryAnalyzer:
         if complexity == QueryComplexity.HIGH:
             if is_code_task:
                 # Use Claude Sonnet 4.5 for code generation tasks
-                model_preferences = ['claude-sonnet-4-5', 'grok-4-fast-reasoning', 'grok-4-reasoning', 'grok-4', 'o4-mini-high']
+                model_preferences = ['claude-opus-4-6', 'grok-4.20-0309-reasoning', 'gpt-5.4-2026-03-05']
             else:
-                # Use grok-4-fast-reasoning for complex reasoning tasks
-                model_preferences = ['grok-4-fast-reasoning', 'grok-4-reasoning', 'grok-4', 'o4-mini-high']
+                # Use reasoning model for complex tasks
+                model_preferences = ['grok-4.20-0309-reasoning', 'gpt-5.4-2026-03-05', 'claude-opus-4-6']
         elif complexity == QueryComplexity.MEDIUM:
-            # Use fast non-reasoning for medium queries
-            model_preferences = ['grok-4-fast-non-reasoning', 'grok-4', 'gpt-4', 'gpt-4o-mini']
+            # Use non-reasoning for medium queries
+            model_preferences = ['grok-4.20-0309-non-reasoning', 'gpt-5.4-2026-03-05', 'claude-sonnet-4-6']
         else:  # LOW complexity
-            # Use fast non-reasoning for basic queries
-            model_preferences = ['grok-4-fast-non-reasoning', 'gpt-4.1-mini-2025-04-14', 'gpt-4o-mini', 'gpt-3.5-turbo', 'grok-3-mini']
+            # Use fast models for basic queries
+            model_preferences = ['grok-4.20-0309-non-reasoning', 'gpt-5.4-mini-2026-03-17', 'claude-haiku-4-5']
         
         # Find first available model from preferences
         for preferred_model in model_preferences:

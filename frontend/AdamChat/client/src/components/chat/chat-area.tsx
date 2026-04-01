@@ -70,8 +70,9 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
   }, [onMessage]);
 
   // Auto-scroll to bottom when new messages arrive
+  // Use instant scroll during streaming to avoid overlapping smooth animations
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: isTyping ? "auto" : "smooth" });
   }, [messages, isTyping]);
 
   // Show connection error toast

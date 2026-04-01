@@ -92,7 +92,8 @@ class UnifiedLLMClient:
         reasoning_effort: Optional[str] = None,  # 'low', 'medium', 'high'
         stream: bool = False,
         image_data: Optional[bytes] = None,
-        search_parameters: Optional[Dict] = None  # For live search
+        search_parameters: Optional[Dict] = None,  # For live search
+        search_mode: Optional[str] = None  # "web", "x", "news", "auto"
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """
         Get completion from any configured model
@@ -184,13 +185,13 @@ class UnifiedLLMClient:
         # Route to appropriate provider
         if model_config.provider == ModelProvider.GROK:
             return await self._complete_grok(
-                prompt, model_config, system_prompt, temperature, 
-                max_tokens, reasoning_effort, stream, image_data, routing_decision, search_parameters
+                prompt, model_config, system_prompt, temperature,
+                max_tokens, reasoning_effort, stream, image_data, routing_decision, search_parameters, search_mode
             )
         elif model_config.provider == ModelProvider.OPENAI:
             return await self._complete_openai(
                 prompt, model_config, system_prompt, temperature,
-                max_tokens, reasoning_effort, stream, image_data, routing_decision
+                max_tokens, reasoning_effort, stream, image_data, routing_decision, search_parameters
             )
         elif model_config.provider == ModelProvider.ANTHROPIC:
             return await self._complete_anthropic(
@@ -211,25 +212,26 @@ class UnifiedLLMClient:
         stream: bool,
         image_data: Optional[bytes] = None,
         routing_decision: Optional[Dict] = None,
-        search_parameters: Optional[Dict] = None
+        search_parameters: Optional[Dict] = None,
+        search_mode: Optional[str] = None
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """Handle Grok model completion"""
+
+        # For search requests, use the OpenAI-compatible REST API (tools-based)
+        # The old xai_sdk SearchParameters is deprecated
+        if search_parameters:
+            return await self._complete_grok_with_search(
+                prompt, model_config, system_prompt, temperature,
+                max_tokens, stream, search_mode
+            )
+
         client = self.clients[ModelProvider.GROK]
-        
+
         # Create chat session
         chat_params = {
             "model": model_config.api_name,
             "temperature": temperature
         }
-        
-        # Add search parameters if provided
-        if search_parameters:
-            # Import SearchParameters from xai_sdk
-            from xai_sdk.search import SearchParameters
-            # Create SearchParameters object with mode="on"
-            search_params = SearchParameters(mode="on")
-            chat_params["search_parameters"] = search_params
-            logger.info(f"Search enabled for model {model_config.api_name}")
         
         # Add reasoning effort for models that support it
         if reasoning_effort and model_config.reasoning_param:
@@ -377,6 +379,68 @@ class UnifiedLLMClient:
                 raw_response=raw_response_data
             )
     
+    async def _complete_grok_with_search(
+        self,
+        prompt: str,
+        model_config: ModelConfig,
+        system_prompt: Optional[str],
+        temperature: float,
+        max_tokens: Optional[int],
+        stream: bool,
+        search_mode: Optional[str] = None
+    ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
+        """Handle Grok search via OpenAI-compatible tools API (replaces deprecated SearchParameters)"""
+        from openai import AsyncOpenAI
+        import os
+
+        xai_client = AsyncOpenAI(
+            base_url="https://api.x.ai/v1",
+            api_key=os.getenv("XAI_API_KEY"),
+            timeout=300.0,
+        )
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        # Map search modes to x.ai tool types
+        search_tool = {"type": "live_search"}
+        if search_mode == "x":
+            search_tool = {"type": "live_search"}
+
+        logger.info(f"Grok search enabled: tool={search_tool['type']} for model {model_config.api_name}")
+
+        if stream:
+            async def stream_generator():
+                async for chunk in await xai_client.chat.completions.create(
+                    model=model_config.api_name,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens or 4096,
+                    stream=True,
+                    tools=[search_tool],
+                ):
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            return stream_generator()
+        else:
+            response = await xai_client.chat.completions.create(
+                model=model_config.api_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens or 4096,
+                tools=[search_tool],
+            )
+            return LLMResponse(
+                content=response.choices[0].message.content,
+                model=model_config.name,
+                total_tokens=response.usage.total_tokens if response.usage else 0,
+                completion_tokens=response.usage.completion_tokens if response.usage else 0,
+                cost=0.0,
+                raw_response=response.model_dump() if hasattr(response, 'model_dump') else {}
+            )
+
     async def _complete_openai(
         self,
         prompt: str,
@@ -387,7 +451,8 @@ class UnifiedLLMClient:
         reasoning_effort: Optional[str],
         stream: bool,
         image_data: Optional[bytes] = None,
-        routing_decision: Optional[Dict] = None
+        routing_decision: Optional[Dict] = None,
+        search_parameters: Optional[Dict] = None
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """Handle OpenAI model completion"""
         client = self.clients[ModelProvider.OPENAI]
@@ -473,13 +538,21 @@ class UnifiedLLMClient:
             else:
                 messages.append({"role": "user", "content": prompt})
             
-            response = await client.chat.completions.create(
-                model=model_config.api_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=stream
-            )
+            create_kwargs = {
+                "model": model_config.api_name,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": stream,
+            }
+
+            if search_parameters:
+                create_kwargs["extra_body"] = {
+                    "tools": [{"type": "web_search_preview"}],
+                }
+                logger.info(f"OpenAI web search enabled for model: {model_config.api_name}")
+
+            response = await client.chat.completions.create(**create_kwargs)
             
             if stream:
                 # Return async generator

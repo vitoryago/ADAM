@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Globe, Twitter, Newspaper, Rss } from "lucide-react";
+import { Search, Globe, Twitter } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SearchToggleProps {
@@ -15,12 +15,6 @@ interface SearchToggleProps {
 
 const searchModes = [
   {
-    value: "auto",
-    name: "Auto",
-    description: "Let ADAM decide when to search",
-    icon: Search,
-  },
-  {
     value: "web",
     name: "Web",
     description: "Search the entire web",
@@ -31,18 +25,6 @@ const searchModes = [
     name: "X/Twitter",
     description: "Search X (Twitter) posts",
     icon: Twitter,
-  },
-  {
-    value: "news",
-    name: "News",
-    description: "Search news articles",
-    icon: Newspaper,
-  },
-  {
-    value: "rss",
-    name: "RSS",
-    description: "Search RSS feeds",
-    icon: Rss,
   },
 ];
 

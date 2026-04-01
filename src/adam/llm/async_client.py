@@ -318,6 +318,33 @@ class AsyncLLMClient:
 
         client = self.clients[AsyncLLMProvider.XAI]
 
+        # Handle search — use OpenAI-compatible REST API with tools (deprecated xai_sdk SearchParameters)
+        use_search = kwargs.pop("use_search", False)
+        if use_search:
+            import os
+            search_mode = kwargs.pop("search_mode", "web")
+            search_tool = {"type": "live_search"}
+            rest_client = AsyncOpenAI(
+                base_url="https://api.x.ai/v1",
+                api_key=os.getenv("XAI_API_KEY"),
+                timeout=300.0,
+            )
+            msgs = []
+            if system_prompt:
+                msgs.append({"role": "system", "content": system_prompt})
+            msgs.append({"role": "user", "content": prompt})
+            logger.info("Grok search enabled (tool=%s) for model: %s", search_tool["type"], model)
+            response = await rest_client.chat.completions.create(
+                model=model, messages=msgs, temperature=temperature,
+                max_tokens=max_tokens or 4096, tools=[search_tool],
+            )
+            return AsyncLLMResponse(
+                content=response.choices[0].message.content,
+                model=model, provider="xai",
+                total_tokens=response.usage.total_tokens if response.usage else 0,
+                completion_tokens=response.usage.completion_tokens if response.usage else 0,
+            )
+
         messages = []
         if system_prompt:
             messages.append(system(system_prompt))
@@ -368,19 +395,31 @@ class AsyncLLMClient:
         """Complete request using OpenAI"""
         client = self.clients[AsyncLLMProvider.OPENAI]
 
+        # Handle search — OpenAI uses web_search tool via extra_body
+        use_search = kwargs.pop("use_search", False)
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        create_kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        if use_search:
+            create_kwargs["extra_body"] = {
+                "tools": [{"type": "web_search_preview"}],
+            }
+            logger.info("OpenAI web search enabled for model: %s", model)
+
+        create_kwargs.update(kwargs)
+
         try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs
-            )
+            response = await client.chat.completions.create(**create_kwargs)
 
             return AsyncLLMResponse(
                 content=response.choices[0].message.content,
@@ -406,6 +445,7 @@ class AsyncLLMClient:
     ) -> AsyncLLMResponse:
         """Complete request using Anthropic"""
         client = self.clients[AsyncLLMProvider.ANTHROPIC]
+        kwargs.pop("use_search", None)  # Claude has no native search
 
         try:
             response = await client.messages.create(
@@ -442,19 +482,30 @@ class AsyncLLMClient:
         """Complete request using Gemini (via OpenAI-compatible endpoint)"""
         client = self.clients[AsyncLLMProvider.GEMINI]
 
+        use_search = kwargs.pop("use_search", False)
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        create_kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        if use_search:
+            create_kwargs["extra_body"] = {
+                "tools": [{"google_search_retrieval": {}}],
+            }
+            logger.info("Gemini Google Search enabled for model: %s", model)
+
+        create_kwargs.update(kwargs)
+
         try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs
-            )
+            response = await client.chat.completions.create(**create_kwargs)
 
             return AsyncLLMResponse(
                 content=response.choices[0].message.content,
@@ -474,20 +525,31 @@ class AsyncLLMClient:
         """Stream from xAI"""
         client = self.clients[AsyncLLMProvider.XAI]
 
+        use_search = kwargs.pop("use_search", False)
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        create_kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens or 4096,
+            "stream": True,
+        }
+
+        if use_search:
+            search_mode = kwargs.pop("search_mode", "web")
+            search_tool = {"type": "live_search"}
+            create_kwargs["tools"] = [search_tool]
+            logger.info("Grok search enabled (tool=%s) for streaming model: %s", search_tool["type"], model)
+
+        create_kwargs.update(kwargs)
+
         try:
-            async for chunk in await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens or 4096,
-                stream=True,
-                **kwargs
-            ):
+            async for chunk in await client.chat.completions.create(**create_kwargs):
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
         except Exception as e:
@@ -499,20 +561,31 @@ class AsyncLLMClient:
         """Stream from OpenAI"""
         client = self.clients[AsyncLLMProvider.OPENAI]
 
+        use_search = kwargs.pop("use_search", False)
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        create_kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+
+        if use_search:
+            create_kwargs["extra_body"] = {
+                "tools": [{"type": "web_search_preview"}],
+            }
+            logger.info("OpenAI web search enabled for streaming model: %s", model)
+
+        create_kwargs.update(kwargs)
+
         try:
-            async for chunk in await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-                **kwargs
-            ):
+            async for chunk in await client.chat.completions.create(**create_kwargs):
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
         except Exception as e:
@@ -523,6 +596,7 @@ class AsyncLLMClient:
                                temperature: float, max_tokens: Optional[int], **kwargs) -> AsyncGenerator[str, None]:
         """Stream from Anthropic"""
         client = self.clients[AsyncLLMProvider.ANTHROPIC]
+        kwargs.pop("use_search", None)  # Claude has no native search
 
         try:
             async for chunk in await client.messages.create(
@@ -545,20 +619,31 @@ class AsyncLLMClient:
         """Stream from Gemini (via OpenAI-compatible endpoint)"""
         client = self.clients[AsyncLLMProvider.GEMINI]
 
+        use_search = kwargs.pop("use_search", False)
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        create_kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+
+        if use_search:
+            create_kwargs["extra_body"] = {
+                "tools": [{"google_search_retrieval": {}}],
+            }
+            logger.info("Gemini Google Search enabled for streaming model: %s", model)
+
+        create_kwargs.update(kwargs)
+
         try:
-            async for chunk in await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-                **kwargs
-            ):
+            async for chunk in await client.chat.completions.create(**create_kwargs):
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
         except Exception as e:
@@ -575,6 +660,7 @@ class AsyncLLMClient:
         **kwargs
     ) -> AsyncLLMResponse:
         """Complete request using a local model (via OpenAI-compatible endpoint)"""
+        kwargs.pop("use_search", None)  # Local models don't support search
         base_url = self._local_provider.get_base_url(model)
         client = self.clients.get((AsyncLLMProvider.LOCAL, base_url))
         if not client:
@@ -614,6 +700,7 @@ class AsyncLLMClient:
     async def _stream_local(self, model: str, prompt: str, system_prompt: Optional[str],
                             temperature: float, max_tokens: Optional[int], **kwargs) -> AsyncGenerator[str, None]:
         """Stream from a local model (via OpenAI-compatible endpoint)"""
+        kwargs.pop("use_search", None)  # Local models don't support search
         base_url = self._local_provider.get_base_url(model)
         client = self.clients.get((AsyncLLMProvider.LOCAL, base_url))
         if not client:
