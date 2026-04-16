@@ -183,7 +183,7 @@ class MessageCreate(BaseModel):
 
     # For live search
     use_search: bool = False
-    search_mode: Optional[str] = None  # auto, web, x, news, rss
+    search_mode: Optional[str] = None  # web, x
 
     # For VSCode workspace context
     workspace_context: Optional[Dict[str, Any]] = None

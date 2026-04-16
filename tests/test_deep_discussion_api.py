@@ -60,8 +60,11 @@ class TestRouterRegistration:
             "/api/deep-discussion/sessions/{session_id}",
             "/api/deep-discussion/sessions/{session_id}/config",
             "/api/deep-discussion/sessions/{session_id}/start",
+            "/api/deep-discussion/sessions/{session_id}/stop",
+            "/api/deep-discussion/sessions/{session_id}/run",
             "/api/deep-discussion/sessions/{session_id}/replay",
             "/api/deep-discussion/sessions/from-conversation/{conversation_id}",
+            "/api/deep-discussion/from-conversation",
         ]
         for endpoint in expected:
             assert endpoint in routes, f"Endpoint {endpoint} not found in app routes"
@@ -154,13 +157,82 @@ class TestUpdateConfig:
         })
         session_id = create_resp.json()["id"]
 
-        new_assignments = {"reasoner": "gpt-5.4-2026-03-05", "coder": "o3", "critic": "gemini-2.5-pro", "synthesizer": "claude-opus-4-6"}
+        new_assignments = {
+            "reasoner": "gpt-5.4-2026-03-05",
+            "coder": "gpt-5.4-mini-2026-03-17",
+            "critic": "grok-4.20-0309-non-reasoning",
+            "synthesizer": "grok-4.20-0309-reasoning",
+        }
         resp = client.put(f"/api/deep-discussion/sessions/{session_id}/config", json={
             "model_assignments": new_assignments,
         })
         assert resp.status_code == 200
         data = resp.json()
         assert data["model_assignments"] == new_assignments
+
+    def test_update_config_rejects_unavailable_provider_model(self, client, project_id):
+        from adam.llm.config import LLMConfig
+
+        create_resp = client.post("/api/deep-discussion/sessions", json={
+            "project_id": project_id,
+            "question": "Unavailable provider model test",
+        })
+        session_id = create_resp.json()["id"]
+
+        llm_config = LLMConfig()
+        available = set(llm_config.get_available_models())
+        unavailable_model = next(
+            (
+                model_id
+                for model_id in (
+                    "claude-sonnet-4-6",
+                    "gemini-3.1-pro-preview",
+                    "grok-4.20-0309-reasoning",
+                    "gpt-5.4-2026-03-05",
+                )
+                if model_id not in available
+            ),
+            None,
+        )
+        if unavailable_model is None:
+            pytest.skip("All tested cloud providers are configured in this environment")
+
+        resp = client.put(f"/api/deep-discussion/sessions/{session_id}/config", json={
+            "model_assignments": {
+                "reasoner": unavailable_model,
+                "coder": "gpt-5.4-mini-2026-03-17",
+                "critic": "grok-4.20-0309-non-reasoning",
+                "synthesizer": "grok-4.20-0309-reasoning",
+            },
+        })
+        assert resp.status_code == 400
+        assert "not configured" in resp.json()["detail"]
+
+    def test_available_models_endpoint_returns_configured_models(self, client):
+        resp = client.get("/api/deep-discussion/available-models")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "available_models" in data
+        assert "gpt-5.4-2026-03-05" in data["available_models"]
+        assert "grok-4.20-multi-agent-0309" not in data["available_models"]
+
+    def test_update_config_rejects_multi_agent_role_model(self, client, project_id):
+        create_resp = client.post("/api/deep-discussion/sessions", json={
+            "project_id": project_id,
+            "question": "Unsupported multi-agent role model test",
+        })
+        session_id = create_resp.json()["id"]
+
+        resp = client.put(f"/api/deep-discussion/sessions/{session_id}/config", json={
+            "model_assignments": {
+                "reasoner": "grok-4.20-multi-agent-0309",
+                "coder": "gpt-5.4-mini-2026-03-17",
+                "critic": "grok-4.20-0309-non-reasoning",
+                "synthesizer": "gpt-5.4-2026-03-05",
+            },
+        })
+        assert resp.status_code == 400
+        assert "not supported in Deep Discussion role slots" in resp.json()["detail"]
 
     def test_update_config_changes_pattern(self, client, project_id):
         create_resp = client.post("/api/deep-discussion/sessions", json={
@@ -180,6 +252,19 @@ class TestUpdateConfig:
             "budget": 5.0,
         })
         assert resp.status_code == 404
+
+    def test_patch_update_config_alias_changes_budget(self, client, project_id):
+        create_resp = client.post("/api/deep-discussion/sessions", json={
+            "project_id": project_id,
+            "question": "PATCH alias test",
+        })
+        session_id = create_resp.json()["id"]
+
+        resp = client.patch(f"/api/deep-discussion/sessions/{session_id}/config", json={
+            "budget": 3.5,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["budget"] == 3.5
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +290,25 @@ class TestGetSession:
 
     def test_get_session_nonexistent_returns_404(self, client):
         resp = client.get("/api/deep-discussion/sessions/nonexistent-id")
+        assert resp.status_code == 404
+
+
+class TestStopSession:
+    """POST /sessions/{session_id}/stop cancels a session."""
+
+    def test_stop_session_marks_configuring_session_cancelled(self, client, project_id):
+        create_resp = client.post("/api/deep-discussion/sessions", json={
+            "project_id": project_id,
+            "question": "Stop session test",
+        })
+        session_id = create_resp.json()["id"]
+
+        resp = client.post(f"/api/deep-discussion/sessions/{session_id}/stop")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "cancelled"
+
+    def test_stop_session_nonexistent_returns_404(self, client):
+        resp = client.post("/api/deep-discussion/sessions/nonexistent-id/stop")
         assert resp.status_code == 404
 
 
@@ -300,3 +404,16 @@ class TestFromConversation:
         assert data["status"] == "configuring"
         # Smart defaults applied
         assert "reasoner" in data["model_assignments"]
+
+    def test_from_conversation_legacy_alias_creates_session(self, client, conversation_id):
+        resp = client.post(
+            "/api/deep-discussion/from-conversation",
+            json={
+                "conversation_id": conversation_id,
+                "question": "Legacy path session creation",
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["conversation_id"] == conversation_id
+        assert "Legacy path session creation" in data["question"]

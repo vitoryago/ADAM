@@ -194,6 +194,23 @@ class AsyncLLMClient:
         if not self._initialized:
             await self.initialize()
 
+    def _normalize_openai_chat_create_kwargs(
+        self,
+        model_name: str,
+        create_kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Use the correct token-limit parameter for newer OpenAI chat models."""
+        normalized = dict(create_kwargs)
+        max_tokens = normalized.pop("max_tokens", None)
+        if max_tokens is None:
+            return normalized
+
+        if model_name.startswith("gpt-5"):
+            normalized["max_completion_tokens"] = max_tokens
+        else:
+            normalized["max_tokens"] = max_tokens
+        return normalized
+
     @AsyncRetry(max_attempts=3, base_delay=1.0)
     async def complete(
         self,
@@ -322,28 +339,44 @@ class AsyncLLMClient:
         use_search = kwargs.pop("use_search", False)
         if use_search:
             import os
+            from adam.llm.config import ModelProvider
+
             search_mode = kwargs.pop("search_mode", "web")
-            search_tool = {"type": "live_search"}
+            search_tool = {"type": "x_search" if search_mode == "x" else "web_search"}
             rest_client = AsyncOpenAI(
                 base_url="https://api.x.ai/v1",
-                api_key=os.getenv("XAI_API_KEY"),
+                api_key=self.config.get_api_key(ModelProvider.GROK) or os.getenv("XAI_API_KEY"),
                 timeout=300.0,
             )
-            msgs = []
+            create_kwargs = {
+                "model": model,
+                "input": prompt,
+                "temperature": temperature,
+                "max_output_tokens": max_tokens or 4096,
+                "tools": [search_tool],
+            }
             if system_prompt:
-                msgs.append({"role": "system", "content": system_prompt})
-            msgs.append({"role": "user", "content": prompt})
-            logger.info("Grok search enabled (tool=%s) for model: %s", search_tool["type"], model)
-            response = await rest_client.chat.completions.create(
-                model=model, messages=msgs, temperature=temperature,
-                max_tokens=max_tokens or 4096, tools=[search_tool],
+                create_kwargs["instructions"] = system_prompt
+
+            logger.info(
+                "Grok search enabled via Responses API (tool=%s) for model: %s",
+                search_tool["type"],
+                model,
             )
+            response = await rest_client.responses.create(**create_kwargs)
+            usage = getattr(response, "usage", None)
             return AsyncLLMResponse(
-                content=response.choices[0].message.content,
+                content=response.output_text,
                 model=model, provider="xai",
-                total_tokens=response.usage.total_tokens if response.usage else 0,
-                completion_tokens=response.usage.completion_tokens if response.usage else 0,
+                total_tokens=getattr(usage, "total_tokens", 0) if usage else 0,
+                completion_tokens=(
+                    getattr(usage, "output_tokens", None)
+                    or getattr(usage, "completion_tokens", 0)
+                ) if usage else 0,
+                raw_response=response.model_dump() if hasattr(response, "model_dump") else None,
             )
+
+        kwargs = self._normalize_xai_kwargs(model, kwargs)
 
         messages = []
         if system_prompt:
@@ -383,6 +416,33 @@ class AsyncLLMClient:
             logger.error(f"xAI completion failed: {e}")
             raise
 
+    def _normalize_xai_kwargs(self, model: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Map or drop unified kwargs to what the current xAI SDK actually supports."""
+        normalized = dict(kwargs)
+        reasoning_effort = normalized.pop("reasoning_effort", None)
+        if not reasoning_effort:
+            return normalized
+
+        model_config = self.config.get_model_config(model) if self.config else None
+        if not model_config or not model_config.reasoning_param:
+            logger.info(
+                "Ignoring reasoning_effort for xAI model %s; model does not expose it",
+                model,
+            )
+            return normalized
+
+        # xAI currently only accepts reasoning_effort on grok-3-mini.
+        if "grok-3-mini" not in model_config.api_name:
+            logger.info(
+                "Ignoring reasoning_effort for xAI model %s; xAI no longer accepts it",
+                model_config.api_name,
+            )
+            return normalized
+
+        effort_map = {"low": "low", "medium": "high", "high": "high"}
+        normalized[model_config.reasoning_param] = effort_map.get(reasoning_effort, "high")
+        return normalized
+
     async def _complete_openai(
         self,
         model: str,
@@ -417,6 +477,7 @@ class AsyncLLMClient:
             logger.info("OpenAI web search enabled for model: %s", model)
 
         create_kwargs.update(kwargs)
+        create_kwargs = self._normalize_openai_chat_create_kwargs(model, create_kwargs)
 
         try:
             response = await client.chat.completions.create(**create_kwargs)
@@ -527,6 +588,46 @@ class AsyncLLMClient:
 
         use_search = kwargs.pop("use_search", False)
 
+        if use_search:
+            import os
+            from adam.llm.config import ModelProvider
+
+            search_mode = kwargs.pop("search_mode", "web")
+            search_tool = {"type": "x_search" if search_mode == "x" else "web_search"}
+            rest_client = AsyncOpenAI(
+                base_url="https://api.x.ai/v1",
+                api_key=self.config.get_api_key(ModelProvider.GROK) or os.getenv("XAI_API_KEY"),
+                timeout=300.0,
+            )
+            create_kwargs = {
+                "model": model,
+                "input": prompt,
+                "temperature": temperature,
+                "max_output_tokens": max_tokens or 4096,
+                "tools": [search_tool],
+                "stream": True,
+            }
+            if system_prompt:
+                create_kwargs["instructions"] = system_prompt
+
+            logger.info(
+                "Grok search enabled via Responses API (tool=%s) for streaming model: %s",
+                search_tool["type"],
+                model,
+            )
+
+            try:
+                response_stream = await rest_client.responses.create(**create_kwargs)
+                async for event in response_stream:
+                    if getattr(event, "type", None) == "response.output_text.delta" and getattr(event, "delta", None):
+                        yield event.delta
+                return
+            except Exception as e:
+                logger.error(f"xAI search streaming failed: {e}")
+                raise
+
+        kwargs = self._normalize_xai_kwargs(model, kwargs)
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -539,12 +640,6 @@ class AsyncLLMClient:
             "max_tokens": max_tokens or 4096,
             "stream": True,
         }
-
-        if use_search:
-            search_mode = kwargs.pop("search_mode", "web")
-            search_tool = {"type": "live_search"}
-            create_kwargs["tools"] = [search_tool]
-            logger.info("Grok search enabled (tool=%s) for streaming model: %s", search_tool["type"], model)
 
         create_kwargs.update(kwargs)
 
@@ -583,6 +678,7 @@ class AsyncLLMClient:
             logger.info("OpenAI web search enabled for streaming model: %s", model)
 
         create_kwargs.update(kwargs)
+        create_kwargs = self._normalize_openai_chat_create_kwargs(model, create_kwargs)
 
         try:
             async for chunk in await client.chat.completions.create(**create_kwargs):

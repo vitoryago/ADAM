@@ -50,6 +50,14 @@ def test_llmconfig_has_new_grok_models():
     assert "grok-4.20-0309-non-reasoning" in cfg.models
 
 
+def test_grok_420_models_do_not_expose_reasoning_effort():
+    """Current Grok 4.20 models should not advertise reasoning_effort support."""
+    from adam.llm.config import LLMConfig
+    cfg = LLMConfig()
+    assert cfg.models["grok-4.20-multi-agent-0309"].reasoning_param is None
+    assert cfg.models["grok-4.20-0309-reasoning"].reasoning_param is None
+
+
 def test_llmconfig_has_new_claude_models():
     """LLMConfig must contain the three new Claude model entries."""
     from adam.llm.config import LLMConfig
@@ -133,6 +141,81 @@ def test_grok_model_still_routes_to_xai():
     client = AsyncLLMClient.__new__(AsyncLLMClient)
     assert client._get_provider_for_model("grok-4.20-0309-reasoning") == AsyncLLMProvider.XAI
     assert client._get_provider_for_model("grok-4.20-non-reasoning") == AsyncLLMProvider.XAI
+
+
+def test_unified_client_ignores_reasoning_effort_for_grok_420_models():
+    """Unified client should drop reasoning_effort for Grok 4.20 models."""
+    from adam.llm.client import UnifiedLLMClient
+    from adam.llm.config import LLMConfig
+
+    client = UnifiedLLMClient.__new__(UnifiedLLMClient)
+    cfg = LLMConfig()
+
+    assert client._get_grok_reasoning_param_value(
+        cfg.models["grok-4.20-0309-reasoning"],
+        "high",
+    ) is None
+    assert client._get_grok_reasoning_param_value(
+        cfg.models["grok-3-mini"],
+        "medium",
+    ) == ("reasoning_effort", "high")
+
+
+def test_async_client_normalizes_xai_reasoning_effort_by_model():
+    """Async client should only forward reasoning_effort where xAI still accepts it."""
+    from adam.llm.async_client import AsyncLLMClient
+    from adam.llm.config import LLMConfig
+
+    client = AsyncLLMClient.__new__(AsyncLLMClient)
+    client.config = LLMConfig()
+
+    dropped = client._normalize_xai_kwargs(
+        "grok-4.20-0309-reasoning",
+        {"reasoning_effort": "high", "foo": "bar"},
+    )
+    assert dropped == {"foo": "bar"}
+
+    kept = client._normalize_xai_kwargs(
+        "grok-3-mini",
+        {"reasoning_effort": "medium", "foo": "bar"},
+    )
+    assert kept["reasoning_effort"] == "high"
+    assert kept["foo"] == "bar"
+
+
+def test_unified_client_uses_max_completion_tokens_for_gpt5_chat_models():
+    """GPT-5 chat-completions models must use max_completion_tokens instead of max_tokens."""
+    from adam.llm.client import UnifiedLLMClient
+
+    client = UnifiedLLMClient.__new__(UnifiedLLMClient)
+
+    normalized = client._normalize_openai_chat_create_kwargs(
+        "gpt-5.4-2026-03-05",
+        {"max_tokens": 512, "stream": False},
+    )
+    assert normalized["max_completion_tokens"] == 512
+    assert "max_tokens" not in normalized
+
+    legacy = client._normalize_openai_chat_create_kwargs(
+        "gpt-4o-mini",
+        {"max_tokens": 256, "stream": False},
+    )
+    assert legacy["max_tokens"] == 256
+    assert "max_completion_tokens" not in legacy
+
+
+def test_async_client_uses_max_completion_tokens_for_gpt5_chat_models():
+    """Async OpenAI chat path should mirror the GPT-5 token-limit normalization."""
+    from adam.llm.async_client import AsyncLLMClient
+
+    client = AsyncLLMClient.__new__(AsyncLLMClient)
+
+    normalized = client._normalize_openai_chat_create_kwargs(
+        "gpt-5.4-mini-2026-03-17",
+        {"max_tokens": 512, "stream": True},
+    )
+    assert normalized["max_completion_tokens"] == 512
+    assert "max_tokens" not in normalized
 
 
 def test_claude_model_still_routes_to_anthropic():

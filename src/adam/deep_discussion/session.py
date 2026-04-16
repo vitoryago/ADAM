@@ -39,6 +39,7 @@ class DeepDiscussionSession:
         self.result: Optional[str] = None
         self.scratchpad_data: Optional[Dict[str, Any]] = None
         self.total_cost: float = 0.0
+        self.used_fallback_synthesis: bool = False
         self.created_at: datetime = datetime.now()
         self.completed_at: Optional[datetime] = None
 
@@ -151,9 +152,11 @@ class DeepDiscussionSession:
             synthesis_entries = scratchpad.get_entries_by_type(EntryType.SYNTHESIS)
             if synthesis_entries:
                 response = synthesis_entries[-1].content
+                self.used_fallback_synthesis = False
             else:
                 logger.warning("No synthesis entry — using FallbackSynthesizer")
                 response = FallbackSynthesizer.synthesize(scratchpad)
+                self.used_fallback_synthesis = True
 
             self.result = response
             self.scratchpad_data = scratchpad.to_dict()
@@ -230,9 +233,11 @@ class DeepDiscussionSession:
             synthesis_entries = scratchpad.get_entries_by_type(EntryType.SYNTHESIS)
             if synthesis_entries:
                 response = synthesis_entries[-1].content
+                self.used_fallback_synthesis = False
             else:
                 logger.warning("No synthesis entry — using FallbackSynthesizer")
                 response = FallbackSynthesizer.synthesize(scratchpad)
+                self.used_fallback_synthesis = True
 
             self.result = response
             self.scratchpad_data = scratchpad.to_dict()
@@ -245,6 +250,7 @@ class DeepDiscussionSession:
                 "session_id": self.id,
                 "total_cost": self.total_cost,
                 "result": self.result,
+                "fallback_synthesis": self.used_fallback_synthesis,
             }
 
         except Exception as exc:

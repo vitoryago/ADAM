@@ -160,10 +160,9 @@ async def stream_sequential_pipeline(
                     "Fallback think() also failed for %s -- skipping", name,
                 )
                 yield {
-                    "type": "agent_done",
+                    "type": "agent_error",
                     "agent": name,
-                    "cost": 0.0,
-                    "tokens": 0,
+                    "error": f"{name} failed during streaming and fallback execution.",
                 }
                 continue
 

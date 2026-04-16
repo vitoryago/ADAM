@@ -11,6 +11,26 @@ from dotenv import load_dotenv
 # Load environment variables from .env file with override
 load_dotenv(override=True)
 
+
+def _normalize_api_key(value: Optional[str]) -> Optional[str]:
+    """Treat empty/example placeholder values as missing credentials."""
+    if not value:
+        return None
+
+    stripped = value.strip()
+    lowered = stripped.lower()
+    placeholder_markers = (
+        "your_",
+        "replace_me",
+        "changeme",
+        "example",
+        "placeholder",
+        "_api_key_here",
+    )
+    if any(marker in lowered for marker in placeholder_markers):
+        return None
+    return stripped
+
 class ModelProvider(Enum):
     GROK = "grok"
     OPENAI = "openai"
@@ -33,7 +53,7 @@ class ModelConfig:
     api_name: str  # The actual name to use in API calls
     capabilities: List[ModelCapability]
     supports_reasoning: bool
-    reasoning_param: Optional[str]  # 'reasoning_effort' for Grok, 'effort' for OpenAI
+    reasoning_param: Optional[str]  # 'reasoning_effort' for grok-3-mini, 'effort' for OpenAI
     max_tokens: int
     temperature_range: tuple = (0.0, 1.0)
     supports_streaming: bool = True
@@ -49,10 +69,10 @@ class LLMConfig:
     def __init__(self):
         # API Keys - Set these as environment variables
         self.api_keys = {
-            ModelProvider.GROK: os.getenv("XAI_API_KEY"),
-            ModelProvider.OPENAI: os.getenv("OPENAI_API_KEY"),
-            ModelProvider.ANTHROPIC: os.getenv("ANTHROPIC_API_KEY"),
-            ModelProvider.GEMINI: os.getenv("GEMINI_API_KEY"),
+            ModelProvider.GROK: _normalize_api_key(os.getenv("XAI_API_KEY")),
+            ModelProvider.OPENAI: _normalize_api_key(os.getenv("OPENAI_API_KEY")),
+            ModelProvider.ANTHROPIC: _normalize_api_key(os.getenv("ANTHROPIC_API_KEY")),
+            ModelProvider.GEMINI: _normalize_api_key(os.getenv("GEMINI_API_KEY")),
         }
         
         # Model configurations
@@ -308,8 +328,8 @@ class LLMConfig:
                     ModelCapability.COMPLEX_ANALYSIS,
                     ModelCapability.CODE_GENERATION
                 ],
-                supports_reasoning=True,
-                reasoning_param="reasoning_effort",
+                supports_reasoning=False,
+                reasoning_param=None,
                 max_tokens=128000,
                 supports_streaming=True,
                 supports_vision=True,
@@ -324,8 +344,8 @@ class LLMConfig:
                     ModelCapability.COMPLEX_ANALYSIS,
                     ModelCapability.CODE_GENERATION
                 ],
-                supports_reasoning=True,
-                reasoning_param="reasoning_effort",
+                supports_reasoning=False,
+                reasoning_param=None,
                 max_tokens=128000,
                 supports_streaming=True,
                 supports_vision=True,

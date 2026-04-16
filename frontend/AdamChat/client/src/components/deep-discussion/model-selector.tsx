@@ -20,7 +20,6 @@ const CLOUD_MODEL_GROUPS = [
   {
     label: "X.AI",
     models: [
-      { id: "grok-4.20-multi-agent-0309", name: "Grok Multi-Agent" },
       { id: "grok-4.20-0309-reasoning", name: "Grok Reasoning" },
       { id: "grok-4.20-0309-non-reasoning", name: "Grok Standard" },
     ],
@@ -59,6 +58,19 @@ export function ModelSelector({ value, onChange, className }: ModelSelectorProps
     },
     staleTime: 30_000,
   });
+  const { data: availableCloudModels } = useQuery<string[]>({
+    queryKey: ["/api/deep-discussion/available-models"],
+    queryFn: async () => {
+      const res = await fetch("/api/deep-discussion/available-models");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.available_models ?? [];
+    },
+    staleTime: 30_000,
+  });
+
+  const availableCloudModelSet = new Set(availableCloudModels ?? []);
+  const cloudAvailabilityLoaded = Array.isArray(availableCloudModels);
 
   return (
     <select
@@ -83,8 +95,15 @@ export function ModelSelector({ value, onChange, className }: ModelSelectorProps
       {CLOUD_MODEL_GROUPS.map((group) => (
         <optgroup key={group.label} label={group.label}>
           {group.models.map((model) => (
-            <option key={model.id} value={model.id}>
+            <option
+              key={model.id}
+              value={model.id}
+              disabled={cloudAvailabilityLoaded && !availableCloudModelSet.has(model.id)}
+            >
               {model.name}
+              {cloudAvailabilityLoaded && !availableCloudModelSet.has(model.id)
+                ? " (Unavailable)"
+                : ""}
             </option>
           ))}
         </optgroup>

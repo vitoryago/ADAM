@@ -81,6 +81,43 @@ class UnifiedLLMClient:
             self.clients[ModelProvider.ANTHROPIC] = AsyncAnthropic(
                 api_key=self.config.get_api_key(ModelProvider.ANTHROPIC)
             )
+
+    def _get_grok_reasoning_param_value(
+        self,
+        model_config: ModelConfig,
+        reasoning_effort: Optional[str],
+    ) -> Optional[tuple[str, str]]:
+        """Map unified reasoning effort only for xAI models that still support it."""
+        if not reasoning_effort or not model_config.reasoning_param:
+            return None
+
+        # xAI's current SDK only accepts reasoning_effort on grok-3-mini.
+        if "grok-3-mini" not in model_config.api_name:
+            logger.info(
+                "Ignoring reasoning_effort for Grok model %s; xAI no longer accepts it",
+                model_config.api_name,
+            )
+            return None
+
+        effort_map = {"low": "low", "medium": "high", "high": "high"}
+        return model_config.reasoning_param, effort_map.get(reasoning_effort, "high")
+
+    def _normalize_openai_chat_create_kwargs(
+        self,
+        model_name: str,
+        create_kwargs: Dict,
+    ) -> Dict:
+        """Use the correct token-limit parameter for newer OpenAI chat models."""
+        normalized = dict(create_kwargs)
+        max_tokens = normalized.pop("max_tokens", None)
+        if max_tokens is None:
+            return normalized
+
+        if model_name.startswith("gpt-5"):
+            normalized["max_completion_tokens"] = max_tokens
+        else:
+            normalized["max_tokens"] = max_tokens
+        return normalized
     
     async def complete(
         self,
@@ -93,7 +130,7 @@ class UnifiedLLMClient:
         stream: bool = False,
         image_data: Optional[bytes] = None,
         search_parameters: Optional[Dict] = None,  # For live search
-        search_mode: Optional[str] = None  # "web", "x", "news", "auto"
+        search_mode: Optional[str] = None  # "web" or "x"
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
         """
         Get completion from any configured model
@@ -233,21 +270,12 @@ class UnifiedLLMClient:
             "temperature": temperature
         }
         
-        # Add reasoning effort for models that support it
-        if reasoning_effort and model_config.reasoning_param:
-            # Check if this is grok-4 (which doesn't support reasoning_effort)
-            if model_config.api_name == "grok-4":
-                logger.warning(f"grok-4 doesn't support reasoning_effort, ignoring parameter")
-                # Don't add reasoning_effort to chat_params
-            else:
-                # Map our unified effort levels to model-specific values
-                # grok-3-mini and grok-3-mini-fast only support: low, high (no medium)
-                if "grok-3-mini" in model_config.api_name:
-                    effort_map = {"low": "low", "medium": "high", "high": "high"}
-                else:
-                    # grok-4-reasoning supports: low, medium, high
-                    effort_map = {"low": "low", "medium": "medium", "high": "high"}
-                chat_params[model_config.reasoning_param] = effort_map.get(reasoning_effort, "high")
+        reasoning_param = self._get_grok_reasoning_param_value(
+            model_config, reasoning_effort
+        )
+        if reasoning_param:
+            param_name, param_value = reasoning_param
+            chat_params[param_name] = param_value
         
         chat = client.chat.create(**chat_params)
         
@@ -389,8 +417,7 @@ class UnifiedLLMClient:
         stream: bool,
         search_mode: Optional[str] = None
     ) -> Union[LLMResponse, AsyncGenerator[str, None]]:
-        """Handle Grok search via OpenAI-compatible tools API (replaces deprecated SearchParameters)"""
-        from openai import AsyncOpenAI
+        """Handle Grok search via xAI's Responses API."""
         import os
 
         xai_client = AsyncOpenAI(
@@ -399,45 +426,45 @@ class UnifiedLLMClient:
             timeout=300.0,
         )
 
-        messages = []
+        search_tool = {"type": "x_search" if search_mode == "x" else "web_search"}
+        create_kwargs = {
+            "model": model_config.api_name,
+            "input": prompt,
+            "temperature": temperature,
+            "max_output_tokens": max_tokens or 4096,
+            "tools": [search_tool],
+        }
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+            create_kwargs["instructions"] = system_prompt
 
-        # Map search modes to x.ai tool types
-        search_tool = {"type": "live_search"}
-        if search_mode == "x":
-            search_tool = {"type": "live_search"}
-
-        logger.info(f"Grok search enabled: tool={search_tool['type']} for model {model_config.api_name}")
+        logger.info(
+            "Grok search enabled via Responses API: tool=%s for model %s",
+            search_tool["type"],
+            model_config.api_name,
+        )
 
         if stream:
             async def stream_generator():
-                async for chunk in await xai_client.chat.completions.create(
-                    model=model_config.api_name,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens or 4096,
+                response_stream = await xai_client.responses.create(
                     stream=True,
-                    tools=[search_tool],
-                ):
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
+                    **create_kwargs,
+                )
+                async for event in response_stream:
+                    if getattr(event, "type", None) == "response.output_text.delta" and getattr(event, "delta", None):
+                        yield event.delta
             return stream_generator()
         else:
-            response = await xai_client.chat.completions.create(
-                model=model_config.api_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens or 4096,
-                tools=[search_tool],
-            )
+            response = await xai_client.responses.create(**create_kwargs)
+            usage = getattr(response, "usage", None)
             return LLMResponse(
-                content=response.choices[0].message.content,
+                content=response.output_text,
                 model=model_config.name,
-                total_tokens=response.usage.total_tokens if response.usage else 0,
-                completion_tokens=response.usage.completion_tokens if response.usage else 0,
-                cost=0.0,
+                total_tokens=getattr(usage, "total_tokens", 0) if usage else 0,
+                completion_tokens=(
+                    getattr(usage, "output_tokens", None)
+                    or getattr(usage, "completion_tokens", 0)
+                ) if usage else 0,
+                cost=self._calculate_cost(model_config, response) if usage else 0.0,
                 raw_response=response.model_dump() if hasattr(response, 'model_dump') else {}
             )
 
@@ -551,6 +578,11 @@ class UnifiedLLMClient:
                     "tools": [{"type": "web_search_preview"}],
                 }
                 logger.info(f"OpenAI web search enabled for model: {model_config.api_name}")
+
+            create_kwargs = self._normalize_openai_chat_create_kwargs(
+                model_config.api_name,
+                create_kwargs,
+            )
 
             response = await client.chat.completions.create(**create_kwargs)
             

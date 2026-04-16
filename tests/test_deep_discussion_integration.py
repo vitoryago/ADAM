@@ -231,9 +231,9 @@ class TestSessionConfigUpdate:
         session_id = create_resp.json()["id"]
 
         new_assignments: Dict[str, str] = {
-            "reasoner": "grok-4.20-multi-agent-0309",
-            "coder": "claude-opus-4-6",
-            "critic": "gemini-2.5-pro",
+            "reasoner": "grok-4.20-0309-reasoning",
+            "coder": "gpt-5.4-mini-2026-03-17",
+            "critic": "grok-4.20-0309-non-reasoning",
             "synthesizer": "gpt-5.4-2026-03-05",
         }
         new_budget = 7.5
@@ -476,3 +476,38 @@ class TestPeerReviewPatternUnitIntegration:
         await session.run(mock_client)
 
         assert isinstance(session.completed_at, datetime)
+
+
+class TestFallbackSynthesisIntegration:
+    """Sequential sessions should surface when fallback synthesis was used."""
+
+    @pytest.mark.asyncio
+    async def test_session_marks_fallback_synthesis_when_synthesizer_never_runs(self) -> None:
+        from adam.deep_discussion.config import SessionConfig
+        from adam.deep_discussion.session import DeepDiscussionSession
+
+        mock_client = _MockLLMClient(
+            responses={
+                _REASONER_KEY: "Reasoner plan only",
+                _CODER_KEY: "Coder output",
+                _CRITIC_KEY: "Critic notes",
+                _SYNTHESIZER_KEY: "Synth output should not be reached",
+            }
+        )
+        config = SessionConfig(
+            question="Fallback synthesis test?",
+            pattern="sequential",
+            budget=0.01,
+            model_assignments={
+                "reasoner": "mock-reasoner",
+                "coder": "mock-coder",
+                "critic": "mock-critic",
+                "synthesizer": "mock-synthesizer",
+            },
+        )
+        session = DeepDiscussionSession(config=config)
+
+        result = await session.run(mock_client)
+
+        assert session.used_fallback_synthesis is True
+        assert "Approach" in result

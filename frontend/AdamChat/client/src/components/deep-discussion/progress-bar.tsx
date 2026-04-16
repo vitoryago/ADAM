@@ -16,6 +16,7 @@ const PATTERN_STEPS: Record<string, { id: string; label: string }[]> = {
   debate: [
     { id: "debate_a", label: "Position A" },
     { id: "debate_b", label: "Position B" },
+    { id: "rebuttal", label: "Rebuttal" },
     { id: "reconcile", label: "Reconcile" },
   ],
   peer_review: [

@@ -15,6 +15,46 @@ export interface ParsedContent {
   level?: number;
 }
 
+function renderInlinePart(part: ParsedContent, key: string): React.ReactNode {
+  switch (part.type) {
+    case 'inline-code':
+      return (
+        <InlineCode key={key}>
+          {part.content}
+        </InlineCode>
+      );
+    case 'bold':
+      return (
+        <strong key={key} style={{ fontWeight: 700 }}>
+          {part.content}
+        </strong>
+      );
+    case 'italic':
+      return (
+        <em key={key} className="italic">
+          {part.content}
+        </em>
+      );
+    case 'link':
+      return (
+        <a
+          key={key}
+          href={part.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 dark:text-blue-400 hover:underline break-all"
+        >
+          {part.content}
+        </a>
+      );
+    case 'linebreak':
+      return <br key={key} />;
+    case 'text':
+    default:
+      return <React.Fragment key={key}>{part.content}</React.Fragment>;
+  }
+}
+
 // Enhanced message parser that handles multiple markdown elements
 export function parseMessageContent(content: string): ParsedContent[] {
   const parts: ParsedContent[] = [];
@@ -88,7 +128,39 @@ export function parseMessageContent(content: string): ParsedContent[] {
       continue;
     }
     
-    // Check for links
+    // Check for links, allowing URLs with nested parentheses.
+    if (remaining.startsWith('[')) {
+      const labelEnd = remaining.indexOf('](');
+      if (labelEnd > 0) {
+        let depth = 0;
+        let hrefEnd = -1;
+        for (let i = labelEnd + 2; i < remaining.length; i += 1) {
+          const char = remaining[i];
+          if (char === '(') depth += 1;
+          if (char === ')') {
+            if (depth === 0) {
+              hrefEnd = i;
+              break;
+            }
+            depth -= 1;
+          }
+        }
+
+        if (hrefEnd !== -1) {
+          const text = remaining.slice(1, labelEnd);
+          const href = remaining.slice(labelEnd + 2, hrefEnd);
+          const fullMatch = remaining.slice(0, hrefEnd + 1);
+          parts.push({
+            type: 'link',
+            content: text,
+            href,
+          });
+          remaining = remaining.slice(fullMatch.length);
+          continue;
+        }
+      }
+    }
+
     const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
     if (linkMatch) {
       const [fullMatch, text, href] = linkMatch;
@@ -192,58 +264,19 @@ export function MessageContent({ content, className }: MessageContentProps) {
         break;
         
       case 'inline-code':
-        elements.push(
-          <code 
-            key={key} 
-            className="inline-code"
-            style={{
-              display: 'inline-block',
-              borderRadius: '0.375rem',
-              backgroundColor: 'hsl(var(--muted))',
-              paddingLeft: '0.3rem',
-              paddingRight: '0.3rem',
-              paddingTop: '0.1rem',
-              paddingBottom: '0.1rem',
-              fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-              fontSize: '0.875rem'
-            }}
-          >
-            {part.content}
-          </code>
-        );
+        elements.push(renderInlinePart(part, key));
         break;
         
       case 'bold':
-        elements.push(
-          <strong 
-            key={key} 
-            style={{ fontWeight: 700 }}
-          >
-            {part.content}
-          </strong>
-        );
+        elements.push(renderInlinePart(part, key));
         break;
         
       case 'italic':
-        elements.push(
-          <em key={key} className="italic">
-            {part.content}
-          </em>
-        );
+        elements.push(renderInlinePart(part, key));
         break;
         
       case 'link':
-        elements.push(
-          <a 
-            key={key}
-            href={part.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 dark:text-blue-400 hover:underline"
-          >
-            {part.content}
-          </a>
-        );
+        elements.push(renderInlinePart(part, key));
         break;
         
       case 'heading':
@@ -256,10 +289,11 @@ export function MessageContent({ content, className }: MessageContentProps) {
           5: 'text-sm font-semibold mt-1 mb-1',
           6: 'text-sm font-semibold mt-1 mb-1'
         };
+        const headingLevel = (part.level || 3) as keyof typeof headingClasses;
         elements.push(
           React.createElement(
             HeadingTag,
-            { key, className: headingClasses[part.level || 3] },
+            { key, className: headingClasses[headingLevel] },
             part.content
           )
         );
@@ -268,39 +302,9 @@ export function MessageContent({ content, className }: MessageContentProps) {
       case 'list':
         // Parse the list item content for markdown
         const listContent = parseMessageContent(part.content);
-        const listElements: React.ReactNode[] = [];
-        
-        listContent.forEach((listPart, i) => {
-          const listKey = `${key}-${i}`;
-          switch (listPart.type) {
-            case 'bold':
-              listElements.push(<strong key={listKey} style={{ fontWeight: 700 }}>{listPart.content}</strong>);
-              break;
-            case 'inline-code':
-              listElements.push(
-                <code 
-                  key={listKey}
-                  className="inline-code"
-                  style={{
-                    display: 'inline-block',
-                    borderRadius: '0.375rem',
-                    backgroundColor: 'hsl(var(--muted))',
-                    paddingLeft: '0.3rem',
-                    paddingRight: '0.3rem',
-                    paddingTop: '0.1rem',
-                    paddingBottom: '0.1rem',
-                    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-                    fontSize: '0.875rem'
-                  }}
-                >
-                  {listPart.content}
-                </code>
-              );
-              break;
-            default:
-              listElements.push(listPart.content);
-          }
-        });
+        const listElements = listContent.map((listPart, i) =>
+          renderInlinePart(listPart, `${key}-${i}`)
+        );
         
         listItems.push(
           <span key={key}>{listElements}</span>

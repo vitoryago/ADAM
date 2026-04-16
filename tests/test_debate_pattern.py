@@ -1,4 +1,4 @@
-"""Tests for the debate pattern (two perspectives + reconciler)."""
+"""Tests for the debate pattern (point, counterpoint, rebuttal, reconcile)."""
 
 import asyncio
 from dataclasses import dataclass
@@ -12,9 +12,11 @@ from adam.agents.patterns.debate import (
     stream_debate_pipeline,
     _create_debater_a,
     _create_debater_b,
+    _create_rebuttal_agent,
     _create_reconciler,
     DEBATER_A_PROMPT,
     DEBATER_B_PROMPT,
+    REBUTTAL_PROMPT,
     RECONCILER_PROMPT,
 )
 
@@ -89,7 +91,8 @@ class TestRunDebatePipeline:
     async def test_both_debaters_run(self):
         client = MockLLMClient(responses={
             DEBATER_A_PROMPT: "Solution A: use quicksort",
-            DEBATER_B_PROMPT: "Solution B: use mergesort",
+            DEBATER_B_PROMPT: "Solution B: use mergesort because A ignores stable ordering",
+            REBUTTAL_PROMPT: "Rebuttal: stability is not required for this workload",
             RECONCILER_PROMPT: "Combined: use timsort",
         })
         pad = Scratchpad(query="Sort a list efficiently")
@@ -101,12 +104,16 @@ class TestRunDebatePipeline:
         names = {e.agent_name for e in plan_entries}
         assert "Perspective A" in names
         assert "Perspective B" in names
+        rebuttals = result.get_entries_by_type(EntryType.REBUTTAL)
+        assert len(rebuttals) == 1
+        assert rebuttals[0].agent_name == "Perspective A Rebuttal"
 
     @pytest.mark.asyncio
-    async def test_reconciler_sees_both_outputs(self):
+    async def test_reconciler_sees_entire_debate(self):
         client = MockLLMClient(responses={
             DEBATER_A_PROMPT: "Solution A: use quicksort",
             DEBATER_B_PROMPT: "Solution B: use mergesort",
+            REBUTTAL_PROMPT: "Rebuttal: quicksort is still fine in-memory",
             RECONCILER_PROMPT: "Combined: use timsort",
         })
         pad = Scratchpad(query="Sort a list efficiently")
@@ -126,6 +133,7 @@ class TestRunDebatePipeline:
         prompt_text = reconciler_call[0]["prompt"]
         assert "Solution A" in prompt_text
         assert "Solution B" in prompt_text
+        assert "Rebuttal" in prompt_text
 
     @pytest.mark.asyncio
     async def test_budget_exceeded_before_debaters(self):
@@ -146,6 +154,7 @@ class TestRunDebatePipeline:
         client = MockLLMClient(responses={
             DEBATER_A_PROMPT: "A output",
             DEBATER_B_PROMPT: "B output",
+            REBUTTAL_PROMPT: "A rebuttal",
         })
         pad = Scratchpad(query="test", budget=0.02)
         result = await run_debate_pipeline(pad, client)
@@ -154,7 +163,9 @@ class TestRunDebatePipeline:
         plan_entries = result.get_entries_by_type(EntryType.PLAN)
         assert len(plan_entries) == 2
 
-        # Reconciler should NOT have run — budget exhausted
+        # Rebuttal and reconciler should NOT have run — budget exhausted
+        rebuttals = result.get_entries_by_type(EntryType.REBUTTAL)
+        assert len(rebuttals) == 0
         synth = result.get_entries_by_type(EntryType.SYNTHESIS)
         assert len(synth) == 0
 
@@ -163,6 +174,7 @@ class TestRunDebatePipeline:
         client = MockLLMClient(
             responses={
                 DEBATER_A_PROMPT: "A succeeded",
+                REBUTTAL_PROMPT: "A rebuttal",
                 RECONCILER_PROMPT: "Reconciled from A only",
             },
             fail_for={DEBATER_B_PROMPT},
@@ -231,6 +243,12 @@ class TestDebaterCreation:
         assert agent.config.name == "Reconciler"
         assert agent.config.entry_type == EntryType.SYNTHESIS
 
+    def test_rebuttal_agent_is_reasoner(self):
+        agent = _create_rebuttal_agent(MockLLMClient())
+        assert agent.config.role == AgentRole.REASONER
+        assert agent.config.name == "Perspective A Rebuttal"
+        assert agent.config.entry_type == EntryType.REBUTTAL
+
     def test_debaters_have_different_prompts(self):
         a = _create_debater_a(MockLLMClient())
         b = _create_debater_b(MockLLMClient())
@@ -249,6 +267,7 @@ class TestStreamDebatePipeline:
         client = MockLLMClient(responses={
             DEBATER_A_PROMPT: "alpha response",
             DEBATER_B_PROMPT: "beta response",
+            REBUTTAL_PROMPT: "alpha rebuttal",
             RECONCILER_PROMPT: "reconciled output",
         })
         pad = Scratchpad(query="test streaming")
@@ -261,19 +280,21 @@ class TestStreamDebatePipeline:
 
         # Must start with debate_start
         assert types[0] == "debate_start"
-        assert events[0]["debaters"] == ["Perspective A", "Perspective B"]
+        assert events[0]["debaters"] == ["Perspective A", "Perspective B", "Perspective A Rebuttal"]
 
-        # Must contain agent_start for both debaters and reconciler
+        # Must contain agent_start for both debaters, rebuttal, and reconciler
         agent_starts = [e for e in events if e["type"] == "agent_start"]
         agent_start_names = {e["agent"] for e in agent_starts}
         assert "Perspective A" in agent_start_names
         assert "Perspective B" in agent_start_names
+        assert "Perspective A Rebuttal" in agent_start_names
         assert "Reconciler" in agent_start_names
 
-        # Must have agent_chunk events for both debaters
+        # Must have agent_chunk events for both debaters, rebuttal, and reconciler
         chunk_agents = {e["agent"] for e in events if e["type"] == "agent_chunk"}
         assert "Perspective A" in chunk_agents
         assert "Perspective B" in chunk_agents
+        assert "Perspective A Rebuttal" in chunk_agents
         assert "Reconciler" in chunk_agents
 
         # Must have reconciliation_start before reconciler chunks
@@ -289,29 +310,24 @@ class TestStreamDebatePipeline:
         assert events[-1]["reason"] == "complete"
 
     @pytest.mark.asyncio
-    async def test_interleaved_debater_chunks(self):
+    async def test_debate_turns_run_in_order(self):
         client = MockLLMClient(responses={
             DEBATER_A_PROMPT: "word1 word2 word3",
             DEBATER_B_PROMPT: "alpha beta gamma",
+            REBUTTAL_PROMPT: "rebuttal one two",
             RECONCILER_PROMPT: "merged",
         })
         pad = Scratchpad(query="test interleaving")
 
         chunks = []
         async for event in stream_debate_pipeline(pad, client):
-            if event["type"] == "agent_chunk" and event["agent"] in (
-                "Perspective A", "Perspective B"
-            ):
+            if event["type"] == "agent_chunk":
                 chunks.append(event["agent"])
 
-        # Both perspectives should appear, and they should be interleaved
-        assert "Perspective A" in chunks
-        assert "Perspective B" in chunks
-        # Interleaving means we see alternation (A, B, A, B, ...)
-        # Check that the first A and first B are within 2 positions of each other
-        first_a = chunks.index("Perspective A")
+        last_a = max(i for i, agent in enumerate(chunks) if agent == "Perspective A")
         first_b = chunks.index("Perspective B")
-        assert abs(first_a - first_b) <= 1
+        first_rebuttal = chunks.index("Perspective A Rebuttal")
+        assert last_a < first_b < first_rebuttal
 
     @pytest.mark.asyncio
     async def test_stream_budget_exceeded_early_exit(self):
@@ -338,6 +354,7 @@ class TestStreamDebatePipeline:
         client = MockLLMClient(responses={
             DEBATER_A_PROMPT: "A output",
             DEBATER_B_PROMPT: "B output",
+            REBUTTAL_PROMPT: "A rebuttal output",
             RECONCILER_PROMPT: "reconciled",
         })
         pad = Scratchpad(query="test pad update")
@@ -347,6 +364,8 @@ class TestStreamDebatePipeline:
 
         plans = pad.get_entries_by_type(EntryType.PLAN)
         assert len(plans) == 2
+        rebuttals = pad.get_entries_by_type(EntryType.REBUTTAL)
+        assert len(rebuttals) == 1
 
         synth = pad.get_entries_by_type(EntryType.SYNTHESIS)
         assert len(synth) == 1

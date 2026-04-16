@@ -82,6 +82,60 @@ class MockLLMClient:
             yield w + " "
 
 
+class EmptyStreamFallbackClient(MockLLMClient):
+    """Return empty content for streaming calls and normal content for fallback calls."""
+
+    async def complete(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        system_prompt: str = "",
+        temperature: float = 0.7,
+        max_tokens: int = 4000,
+        stream: bool = False,
+    ):
+        self.calls.append({
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "stream": stream,
+            "model": model,
+        })
+
+        content = "default response"
+        for key, value in self.responses.items():
+            if key in system_prompt:
+                content = value
+                break
+
+        if stream:
+            return self._stream_chunks("")
+
+        return MockLLMResponse(content=content)
+
+
+class EmptyEverywhereClient(EmptyStreamFallbackClient):
+    """Return empty content for both streaming and non-streaming calls."""
+
+    async def complete(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        system_prompt: str = "",
+        temperature: float = 0.7,
+        max_tokens: int = 4000,
+        stream: bool = False,
+    ):
+        self.calls.append({
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "stream": stream,
+            "model": model,
+        })
+        if stream:
+            return self._stream_chunks("")
+        return MockLLMResponse(content="")
+
+
 # ---------------------------------------------------------------------------
 # System prompt identifiers (used to key mock responses)
 # ---------------------------------------------------------------------------
@@ -475,3 +529,40 @@ class TestStreamPeerReviewPipeline:
             assert "content" in c
             assert len(c["content"]) > 0
             assert "agent" in c
+
+    @pytest.mark.asyncio
+    async def test_empty_stream_falls_back_to_non_stream_content(self):
+        """An empty stream should retry once in non-stream mode before marking done."""
+        client = EmptyStreamFallbackClient(responses={
+            REASONER_KEY: "plan",
+            CODER_KEY: "code",
+            CRITIC_KEY: "critique from fallback",
+            SYNTHESIZER_KEY: "synth",
+        })
+        pad = Scratchpad(query="test empty stream fallback", budget=1.0)
+
+        events = []
+        async for event in stream_peer_review_pipeline(pad, client):
+            events.append(event)
+
+        critic_chunks = [
+            e for e in events
+            if e["type"] == "agent_chunk" and e["agent"] == "Critic"
+        ]
+        assert any("critique from fallback" in e["content"] for e in critic_chunks)
+
+    @pytest.mark.asyncio
+    async def test_empty_stream_and_fallback_emit_agent_error(self):
+        """Empty output in both modes should surface as an agent error, not blank success."""
+        client = EmptyEverywhereClient()
+        pad = Scratchpad(query="test empty stream error", budget=1.0)
+
+        events = []
+        async for event in stream_peer_review_pipeline(pad, client):
+            events.append(event)
+
+        critic_errors = [
+            e for e in events
+            if e["type"] == "agent_error" and e["agent"] == "Critic"
+        ]
+        assert critic_errors

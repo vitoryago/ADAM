@@ -436,6 +436,17 @@ async def _stream_single_agent(
     accumulated = ""
     prompt = context + f"\nAs the {name}, provide your analysis:"
 
+    async def _fallback_complete() -> str:
+        response = await agent.llm_client.complete(
+            prompt=prompt,
+            model=agent.config.preferred_model,
+            system_prompt=agent.config.system_prompt,
+            temperature=agent.config.temperature,
+            max_tokens=agent.config.max_tokens,
+            stream=False,
+        )
+        return response.content or ""
+
     try:
         result = await agent.llm_client.complete(
             prompt=prompt,
@@ -453,24 +464,31 @@ async def _stream_single_agent(
                 yield {"type": "agent_chunk", "agent": name, "content": chunk}
         else:
             accumulated = result.content
-            yield {"type": "agent_chunk", "agent": name, "content": accumulated}
+            if accumulated.strip():
+                yield {"type": "agent_chunk", "agent": name, "content": accumulated}
 
     except Exception as exc:
         logger.warning("Streaming failed for %s: %s -- trying fallback", name, exc)
         try:
-            response = await agent.llm_client.complete(
-                prompt=prompt,
-                model=agent.config.preferred_model,
-                system_prompt=agent.config.system_prompt,
-                temperature=agent.config.temperature,
-                max_tokens=agent.config.max_tokens,
-                stream=False,
-            )
-            accumulated = response.content
+            accumulated = await _fallback_complete()
+            if not accumulated.strip():
+                raise ValueError(f"{name} returned empty content during fallback")
             yield {"type": "agent_chunk", "agent": name, "content": accumulated}
         except Exception:
             logger.exception("Fallback also failed for %s -- skipping", name)
-            yield {"type": "agent_done", "agent": name, "cost": 0.0, "tokens": 0}
+            yield {"type": "agent_error", "agent": name, "error": f"{name} returned no content."}
+            return
+
+    if not accumulated.strip():
+        logger.warning("%s returned no streamed content -- trying fallback", name)
+        try:
+            accumulated = await _fallback_complete()
+            if not accumulated.strip():
+                raise ValueError(f"{name} returned empty content during fallback")
+            yield {"type": "agent_chunk", "agent": name, "content": accumulated}
+        except Exception:
+            logger.exception("Empty-output fallback also failed for %s -- skipping", name)
+            yield {"type": "agent_error", "agent": name, "error": f"{name} returned no content."}
             return
 
     # Estimate tokens from text length: words * 1.3

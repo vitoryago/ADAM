@@ -96,6 +96,17 @@ class TotallyBrokenClient:
         raise ConnectionError("LLM service unavailable")
 
 
+class BrokenStreamingAndFallbackClient:
+    """Client where both streaming and non-streaming fail."""
+
+    def __init__(self):
+        self.call_count = 0
+
+    async def complete(self, **kwargs):
+        self.call_count += 1
+        raise RuntimeError("both paths failed")
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -483,6 +494,25 @@ class TestStreamSequentialPipeline:
         # The final done event should show 4 agents used.
         assert events[-1]["type"] == "done"
         assert events[-1]["agents_used"] == 4
+
+    @pytest.mark.asyncio
+    async def test_stream_emits_agent_error_when_stream_and_fallback_fail(self):
+        client = BrokenStreamingAndFallbackClient()
+        pad = Scratchpad(query="test", budget=1.0)
+
+        events = []
+        async for event in stream_sequential_pipeline(pad, client):
+            events.append(event)
+
+        starts = [e for e in events if e["type"] == "agent_start"]
+        errors = [e for e in events if e["type"] == "agent_error"]
+        dones = [e for e in events if e["type"] == "agent_done"]
+
+        assert len(starts) == 4
+        assert len(errors) == 4
+        assert len(dones) == 0
+        assert events[-1]["type"] == "done"
+        assert events[-1]["agents_used"] == 0
 
     @pytest.mark.asyncio
     async def test_stream_order_is_sequential(self, scratchpad, mock_client):

@@ -30,9 +30,10 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isStreamingResponse, setIsStreamingResponse] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("automatic");
   const [searchEnabled, setSearchEnabled] = useState(false);
-  const [searchMode, setSearchMode] = useState<string>("auto");
+  const [searchMode, setSearchMode] = useState<string>("web");
   const [responseStyle, setResponseStyle] = useState<string>("normal");
   
   const { isConnected, isTyping, error, sendMessage, onMessage, reconnect } = useWebSocket();
@@ -69,11 +70,12 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
     return unsubscribe;
   }, [onMessage]);
 
-  // Auto-scroll to bottom when new messages arrive
-  // Use instant scroll during streaming to avoid overlapping smooth animations
+  // Auto-scroll to bottom when new messages arrive.
+  // Streaming updates should never use smooth scrolling or the viewport will fight itself.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: isTyping ? "auto" : "smooth" });
-  }, [messages, isTyping]);
+    const behavior = isTyping || isStreamingResponse ? "auto" : "smooth";
+    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
+  }, [messages, isTyping, isStreamingResponse]);
 
   // Show connection error toast
   useEffect(() => {
@@ -161,6 +163,7 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
 
     // Send message via REST API
     setIsProcessing(true);
+    setIsStreamingResponse(false);
     try {
       const requestBody: any = {
         content,
@@ -237,6 +240,7 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
       
       // Remove processing indicator since streaming has started
       setIsProcessing(false);
+      setIsStreamingResponse(true);
 
       if (reader) {
         let accumulatedContent = '';
@@ -339,6 +343,7 @@ export function ChatArea({ project, conversationId, onConversationCreated, onTog
       });
     } finally {
       setIsProcessing(false);
+      setIsStreamingResponse(false);
     }
   };
 

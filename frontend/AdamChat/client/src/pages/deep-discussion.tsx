@@ -32,6 +32,7 @@ export default function DeepDiscussion() {
     queryKey: [`/api/deep-discussion/sessions`, projectId],
     queryFn: () => listSessions(projectId!),
     enabled: !!projectId,
+    refetchInterval: activeSessionId ? 2000 : false,
   });
 
   const handleStart = (sessionId: string) => {

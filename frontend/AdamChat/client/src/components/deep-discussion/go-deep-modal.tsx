@@ -19,33 +19,54 @@ interface AgentCard {
   role: string;
   badge: "Producer" | "Reviewer" | "Final";
   description: string;
-  defaultModelKey: string;
+  assignmentKey: string;
 }
 
-const AGENT_CARDS: AgentCard[] = [
+const DEFAULT_AGENT_CARDS: AgentCard[] = [
   {
-    role: "Planner",
+    role: "Reasoner",
     badge: "Producer",
-    description: "Breaks down the problem into structured steps and produces an initial plan.",
-    defaultModelKey: "planner",
+    description: "Analyzes the question and frames the first structured approach.",
+    assignmentKey: "reasoner",
   },
   {
-    role: "Implementer",
+    role: "Coder",
     badge: "Producer",
-    description: "Executes the plan or codes the solution based on the planner's output.",
-    defaultModelKey: "implementer",
+    description: "Executes the plan or builds the concrete implementation.",
+    assignmentKey: "coder",
   },
   {
-    role: "Reviewer",
+    role: "Critic",
     badge: "Reviewer",
-    description: "Critiques the implementation for correctness, quality, and edge cases.",
-    defaultModelKey: "reviewer",
+    description: "Challenges the work for correctness, trade-offs, and edge cases.",
+    assignmentKey: "critic",
   },
   {
     role: "Synthesizer",
     badge: "Final",
     description: "Integrates all feedback and produces the final polished response.",
-    defaultModelKey: "synthesizer",
+    assignmentKey: "synthesizer",
+  },
+];
+
+const DEBATE_AGENT_CARDS: AgentCard[] = [
+  {
+    role: "Perspective A",
+    badge: "Producer",
+    description: "Opens the debate and later returns for the rebuttal using the reasoner slot.",
+    assignmentKey: "reasoner",
+  },
+  {
+    role: "Perspective B",
+    badge: "Producer",
+    description: "Counters the opening argument and presses the opposing case using the coder slot.",
+    assignmentKey: "coder",
+  },
+  {
+    role: "Reconciler",
+    badge: "Reviewer",
+    description: "Weighs both arguments and produces the final reconciliation using the critic slot.",
+    assignmentKey: "critic",
   },
 ];
 
@@ -58,22 +79,22 @@ const BADGE_STYLES: Record<string, string> = {
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const DEFAULT_BUDGET = 2.0;
 
+function getVisibleAgentCards(pattern: string): AgentCard[] {
+  if (pattern === "debate") return DEBATE_AGENT_CARDS;
+  return DEFAULT_AGENT_CARDS;
+}
+
 export function GoDeepModal({ isOpen, onClose, projectId, conversationId }: GoDeepModalProps) {
   const [, setLocation] = useLocation();
   const [question, setQuestion] = useState("");
   const [pattern, setPattern] = useState("sequential");
   const [modelAssignments, setModelAssignments] = useState<Record<string, string>>(
-    Object.fromEntries(AGENT_CARDS.map((a) => [a.defaultModelKey, DEFAULT_MODEL])),
+    Object.fromEntries(DEFAULT_AGENT_CARDS.map((a) => [a.assignmentKey, DEFAULT_MODEL])),
   );
   const [budget, setBudget] = useState(DEFAULT_BUDGET);
   const [error, setError] = useState<string | null>(null);
 
-  const defaultAssignments = Object.fromEntries(
-    AGENT_CARDS.map((a) => [a.defaultModelKey, DEFAULT_MODEL]),
-  );
-
-  const hasCustomAssignments =
-    JSON.stringify(modelAssignments) !== JSON.stringify(defaultAssignments);
+  const visibleAgentCards = getVisibleAgentCards(pattern);
 
   const startMutation = useMutation({
     mutationFn: async () => {
@@ -86,12 +107,10 @@ export function GoDeepModal({ isOpen, onClose, projectId, conversationId }: GoDe
         pattern,
         conversationId,
       );
-      if (hasCustomAssignments || budget !== DEFAULT_BUDGET) {
-        await updateSessionConfig(session.id, {
-          model_assignments: modelAssignments,
-          budget,
-        });
-      }
+      await updateSessionConfig(session.id, {
+        model_assignments: modelAssignments,
+        budget,
+      });
       return session;
     },
     onSuccess: (session) => {
@@ -154,10 +173,15 @@ export function GoDeepModal({ isOpen, onClose, projectId, conversationId }: GoDe
           {/* Agent Cards */}
           <div className="flex flex-col gap-2">
             <label className="text-sm font-semibold">Agent Models</label>
+            {pattern === "debate" && (
+              <p className="text-xs text-muted-foreground">
+                Debate runs as point, counterpoint, rebuttal, then reconciliation. Perspective A is used twice.
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {AGENT_CARDS.map((agent) => (
+              {visibleAgentCards.map((agent) => (
                 <div
-                  key={agent.defaultModelKey}
+                  key={agent.assignmentKey}
                   className="rounded-lg border border-border bg-card p-4 flex flex-col gap-2"
                 >
                   <div className="flex items-center gap-2">
@@ -170,8 +194,8 @@ export function GoDeepModal({ isOpen, onClose, projectId, conversationId }: GoDe
                   </div>
                   <p className="text-xs text-muted-foreground">{agent.description}</p>
                   <ModelSelector
-                    value={modelAssignments[agent.defaultModelKey]}
-                    onChange={(modelId) => handleModelChange(agent.defaultModelKey, modelId)}
+                    value={modelAssignments[agent.assignmentKey]}
+                    onChange={(modelId) => handleModelChange(agent.assignmentKey, modelId)}
                   />
                 </div>
               ))}

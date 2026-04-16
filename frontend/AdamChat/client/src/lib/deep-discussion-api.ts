@@ -39,7 +39,7 @@ export async function updateSessionConfig(
   },
 ) {
   const res = await fetch(`${API_BASE}/sessions/${sessionId}/config`, {
-    method: "PATCH",
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(config),
     credentials: "include",
@@ -49,7 +49,16 @@ export async function updateSessionConfig(
 }
 
 export function startSession(sessionId: string): EventSource {
-  return new EventSource(`${API_BASE}/sessions/${sessionId}/run`);
+  return new EventSource(`${API_BASE}/sessions/${sessionId}/start`);
+}
+
+export async function stopSession(sessionId: string) {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/stop`, {
+    method: "POST",
+    credentials: "include",
+  });
+  await throwIfResNotOk(res);
+  return res.json();
 }
 
 export async function getSession(sessionId: string) {
@@ -81,10 +90,10 @@ export async function createFromConversation(
   conversationId: string,
   question: string,
 ) {
-  const res = await fetch(`${API_BASE}/from-conversation`, {
+  const res = await fetch(`${API_BASE}/sessions/from-conversation/${conversationId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conversation_id: conversationId, question }),
+    body: JSON.stringify({ question }),
     credentials: "include",
   });
   await throwIfResNotOk(res);

@@ -10,6 +10,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from adam.llm.config import LLMConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,11 +46,58 @@ def get_smart_defaults(prefer_local: bool = False) -> Dict[str, str]:
                 "synthesizer": best_local.model_id,
             }
 
-    return {
+    llm_config = LLMConfig()
+    available_models = set(llm_config.get_available_models())
+
+    def pick(*candidates: str) -> Optional[str]:
+        for candidate in candidates:
+            if candidate in available_models:
+                return candidate
+        return None
+
+    defaults = {
+        "reasoner": pick(
+            "grok-4.20-0309-reasoning",
+            "gpt-5.4-2026-03-05",
+            "grok-4.20-0309-non-reasoning",
+            "gpt-5.4-mini-2026-03-17",
+            "grok-3-mini-high",
+            "gpt-4.1-mini-2025-04-14",
+        ),
+        "coder": pick(
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "gpt-5.4-2026-03-05",
+            "gpt-5.4-mini-2026-03-17",
+            "grok-4.20-0309-reasoning",
+            "grok-4.20-0309-non-reasoning",
+        ),
+        "critic": pick(
+            "gpt-5.4-2026-03-05",
+            "gpt-5.4-mini-2026-03-17",
+            "claude-sonnet-4-6",
+            "grok-4.20-0309-reasoning",
+            "grok-4.20-0309-non-reasoning",
+        ),
+        "synthesizer": pick(
+            "claude-sonnet-4-6",
+            "gpt-5.4-2026-03-05",
+            "gpt-5.4-mini-2026-03-17",
+            "grok-4.20-0309-non-reasoning",
+            "grok-4.20-0309-reasoning",
+        ),
+    }
+
+    fallback_defaults = {
         "reasoner": "grok-4.20-multi-agent-0309",
         "coder": "claude-opus-4-6",
         "critic": "gpt-5.4-2026-03-05",
         "synthesizer": "claude-sonnet-4-6",
+    }
+
+    return {
+        role: model or fallback_defaults[role]
+        for role, model in defaults.items()
     }
 
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { MessageContent } from "@/lib/message-parser";
 
 export interface AgentCardProps {
   role: string;
@@ -147,9 +148,10 @@ export function AgentCard({
 
           {content && (
             <div className="relative">
-              <pre className="text-sm whitespace-pre-wrap break-words font-sans leading-relaxed text-foreground">
-                {content}
-              </pre>
+              <MessageContent
+                content={content}
+                className="text-sm leading-relaxed text-foreground"
+              />
               {status === "thinking" && (
                 <span className="inline-flex items-center gap-1 text-amber-600 text-xs ml-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />

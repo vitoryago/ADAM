@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { BookOpen, MessageSquare, Sparkles } from "lucide-react";
+import { BookOpen, Briefcase, MessageSquare, Scale, Sparkles } from "lucide-react";
 
 interface ResponseStyle {
   value: string;
@@ -28,7 +28,7 @@ const responseStyles: ResponseStyle[] = [
     value: "normal",
     label: "Normal",
     description: "Balanced default responses",
-    icon: null
+    icon: <Scale className="w-4 h-4" />
   },
   {
     value: "explanatory",
@@ -40,7 +40,7 @@ const responseStyles: ResponseStyle[] = [
     value: "formal",
     label: "Formal",
     description: "Professional, formal tone",
-    icon: null
+    icon: <Briefcase className="w-4 h-4" />
   },
   {
     value: "friendly",
